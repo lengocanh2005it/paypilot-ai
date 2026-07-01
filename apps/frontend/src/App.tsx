@@ -1,59 +1,85 @@
-import { Activity, Server } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useHealthCheck } from '@/hooks/useHealthCheck';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { Toaster } from 'sonner';
+import { TenantLayout } from '@/components/layout/TenantLayout';
+import { AuthProvider } from '@/contexts/auth-context';
+import { ThemeProvider } from '@/contexts/theme-context';
+import LoginPage from '@/pages/auth/LoginPage';
+import RegisterPage from '@/pages/auth/RegisterPage';
+import DashboardPage from '@/pages/dashboard/DashboardPage';
+import OnboardingCallbackPage from '@/pages/onboarding/OnboardingCallbackPage';
+import OnboardingPage from '@/pages/onboarding/OnboardingPage';
+import PartnerPage from '@/pages/partner/PartnerPage';
+import TransactionsPage from '@/pages/transactions/TransactionsPage';
+import { GuestRoute, ProtectedRoute } from '@/routes/ProtectedRoute';
 
 function App() {
-  const { data, isLoading, isError, refetch, isFetching } = useHealthCheck();
-
   return (
-    <div className="flex min-h-svh items-center justify-center bg-muted/40 p-6">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Activity className="size-5 text-primary" />
-            <CardTitle>PayPilot AI</CardTitle>
-          </div>
-          <CardDescription>
-            Sprint 1 tuần 1 — Frontend foundation: Tailwind, ShadCN/UI, TanStack Query, Axios.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg border bg-background px-4 py-3">
-            <div className="flex items-center gap-2 text-sm">
-              <Server className="size-4 text-muted-foreground" />
-              <span>Backend health</span>
-            </div>
-            {isLoading ? (
-              <Skeleton className="h-5 w-16" />
-            ) : isError ? (
-              <Badge variant="destructive">Offline</Badge>
-            ) : (
-              <Badge variant="secondary">{data?.status ?? 'unknown'}</Badge>
-            )}
-          </div>
+    <BrowserRouter>
+      <ThemeProvider>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-          <p className="text-sm text-muted-foreground">
-            API base:{' '}
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-              {import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api/v1'}
-            </code>
-          </p>
+            <Route
+              path="/login"
+              element={
+                <GuestRoute>
+                  <LoginPage />
+                </GuestRoute>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <GuestRoute>
+                  <RegisterPage />
+                </GuestRoute>
+              }
+            />
 
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            disabled={isFetching}
-            onClick={() => refetch()}
-          >
-            {isFetching ? 'Đang kiểm tra...' : 'Kiểm tra lại kết nối API'}
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+            <Route
+              path="/onboarding"
+              element={
+                <ProtectedRoute>
+                  <OnboardingPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/onboarding/callback"
+              element={
+                <ProtectedRoute>
+                  <OnboardingCallbackPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/partner"
+              element={
+                <ProtectedRoute>
+                  <PartnerPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              element={
+                <ProtectedRoute requireOnboarding>
+                  <TenantLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/transactions" element={<TransactionsPage />} />
+            </Route>
+
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+          <Toaster richColors position="top-right" />
+        </AuthProvider>
+      </ThemeProvider>
+    </BrowserRouter>
   );
 }
 

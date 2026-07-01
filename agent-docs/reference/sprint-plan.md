@@ -84,11 +84,17 @@
 
 **Tuần 2:**
 
-- [ ] Layout chính: Sidebar + Header + Main content
-- [ ] Routing setup (React Router)
-- [ ] Màn hình Auth: form Register (tên DN, email, mật khẩu) + Login
-- [ ] Màn hình Onboarding bước 2: nút "Liên kết ngân hàng" → mở Cas Link trong iframe/popup, xử lý redirect callback
-- [ ] API client cho Auth (email/password) + Onboarding (Cas Link flow)
+- [x] Layout chính: Sidebar + Header + Main content (`TenantLayout`)
+- [x] Routing setup (React Router) + `ProtectedRoute` / `GuestRoute`
+- [x] Màn hình Auth: form Register (tên DN, email, mật khẩu) + Login
+- [x] Màn hình Onboarding bước 2: nút "Liên kết ngân hàng" → mở Cas Link popup, xử lý redirect callback
+- [x] API client cho Auth (email/password) + Onboarding (Cas Link flow)
+- [x] Toggle dark/light mode (`ThemeProvider`, `ThemeToggle`, `localStorage` key `paypilot-theme`)
+- [x] Responsive: sidebar drawer mobile (`lg`), card list giao dịch `<md`
+- [x] **Design system Casso/payOS:** nền trắng `#FFFFFF`, primary `#16AB64`, surface `#F8FAFB`, text `#1E2022` — xem `03-frontend-conventions.md` + `ui-design.md` mục Brand palette
+- [x] **ShadCN/UI first:** primitives từ `@/components/ui` (button, card, table, label...); thêm component qua `shadcn add`, không tự viết HTML thuần — docs: [ui.shadcn.com/docs/components](https://ui.shadcn.com/docs/components)
+
+**Ghi chú design (bắt buộc cho mọi màn Sprint 2+):** Mọi page mới phải dùng token `primary`/`background` từ `index.css` và component ShadCN (`Button`, `Card`, `Table`...). Tham chiếu: [casso.vn](https://casso.vn), [payos.vn](https://payos.vn), [ShadCN components](https://ui.shadcn.com/docs/components), `03-frontend-conventions.md` mục ShadCN/UI.
 
 ---
 
@@ -106,6 +112,7 @@
 - [ ] Docker Compose chạy local
 - [ ] CI/CD deploy lên VPS thành công
 - [ ] UI Đăng ký/Đăng nhập + Onboarding (liên kết ngân hàng thật qua Cas Link) hoạt động
+- [ ] UI responsive + theme Casso/payOS (`#16AB64` / nền trắng) trên auth, dashboard, transactions
 
 ---
 
