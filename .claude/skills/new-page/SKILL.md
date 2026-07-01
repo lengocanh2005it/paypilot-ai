@@ -8,8 +8,8 @@ description: Scaffold một page/màn hình React mới trong apps/frontend/src/
 ## Trước khi chạy
 
 Đọc trước:
-- [`agent-docs/03-frontend-conventions.md`](../../agent-docs/03-frontend-conventions.md) — cấu trúc thư mục, 2 layout tách biệt, pattern TanStack Query
-- [`agent-docs/reference/ui-design.md`](../../agent-docs/reference/ui-design.md) — **đa số màn hình đã có spec + code JSX mẫu gần như đầy đủ**, tìm đúng mục màn hình trước khi tự viết từ đầu. Nếu màn hình cần tạo đã có trong đây (Dashboard, Transactions, Human Review, Invoices, Customers, Analytics, AI Copilot, Settings, Partner Dashboard) — copy sát code mẫu, không tự sáng tác lại UI.
+- [`agent-docs/03-frontend-conventions.md`](../../agent-docs/03-frontend-conventions.md) — cấu trúc thư mục, 2 layout tách biệt, TanStack Query, **palette Casso/payOS, responsive, dark mode**
+- [`agent-docs/reference/ui-design.md`](../../agent-docs/reference/ui-design.md) — **đa số màn hình đã có spec + code JSX mẫu**; đọc mục **Brand palette (Casso/payOS)** trước khi chọn màu/layout. Nếu màn hình cần tạo đã có trong đây (Dashboard, Transactions, Human Review, Invoices, Customers, Analytics, AI Copilot, Settings, Partner Dashboard) — copy sát code mẫu, không tự sáng tác lại UI.
 - [`agent-docs/reference/rbac.md`](../../agent-docs/reference/rbac.md) mục "Frontend — Ẩn/hiện UI theo role" — xác định hành động nào trên trang cần bọc `usePermission()`.
 
 Xác định trang mới thuộc **Tenant Layout** (8 màn hình nghiệp vụ, có Sidebar) hay **Partner Layout** (`/partner`, chỉ Cas Partner, không Sidebar). Hai layout không dùng chung — hỏi lại user nếu không rõ trang mới thuộc phía nào.
@@ -41,6 +41,14 @@ Cho page tên `<page>` (kebab-case, vd `invoices`, `human-review`):
 6. Bắt buộc có đủ 3 state cho mọi danh sách/bảng: Loading (Skeleton), Empty (icon + message tiếng Việt), Error (toast + nút retry) — theo pattern cuối mỗi mục màn hình trong `reference/ui-design.md`.
 
 7. Toàn bộ text hiển thị (label, placeholder, message) viết tiếng Việt, đúng văn phong đã dùng trong `reference/ui-design.md` (không tự dịch khác đi).
+
+8. **Phong cách UI (bắt buộc):**
+   - Màu: dùng Tailwind token `primary`, `background`, `muted` từ `index.css` — primary `#16AB64` (Casso/payOS). Không dùng `green-600`, `blue-500`... trừ khi spec confidence/status trong `ui-design.md`.
+   - **ShadCN trước:** dùng `@/components/ui/*` (Button, Card, Table, Input, Label, Badge...). Thiếu component → `pnpm dlx shadcn@latest add <tên>` trong `apps/frontend`, không tự viết HTML+Tailwind thay thế. Tra docs: [ui.shadcn.com/docs/components](https://ui.shadcn.com/docs/components).
+   - Layout tenant: bọc trong `Header` + content `p-4 sm:p-6`, nền surface `#F8FAFB`.
+   - Bảng: ShadCN `Table` trên desktop; mobile có thể dùng `Card` list (xem `TransactionsPage`).
+   - CTA chính: `<Button>` default variant; link phụ: `text-primary hover:underline` hoặc `Button variant="link"`.
+   - Mọi layout phải có `ThemeToggle` (đã có trong `Header` / `Sidebar` / `AuthLayout`).
 
 ## Sau khi scaffold xong
 

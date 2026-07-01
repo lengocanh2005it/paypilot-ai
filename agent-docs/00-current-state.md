@@ -2,13 +2,13 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: sau Sprint 1 tuần 2 backend (Ngọc Anh) — onboarding, banking webhook, transaction list/detail.
+Cập nhật lần cuối: sau Sprint 1 tuần 2 — backend (Ngọc Anh) + frontend auth/onboarding (Thế Vinh).
 
 ## Repo đang ở giai đoạn nào
 
-**Trạng thái: Sprint 1 tuần 2 backend xong (Ngọc Anh).** Backend thêm: Onboarding (Cas Link grant/callback/status), Banking webhook Cas Balance Hook (signature verify, Redis idempotency, quota), Transaction list/detail. Tuần 1 foundation vẫn giữ nguyên (Auth, RBAC, Prisma, Cas SDK, Redis/BullMQ, Swagger, frontend foundation Vinh).
+**Trạng thái: Sprint 1 tuần 2 xong (cả backend + frontend foundation).** Backend: Onboarding, Banking webhook, Transaction list/detail. Frontend: React Router, TenantLayout (Sidebar + Header), Auth (Register/Login), Onboarding (Cas Link popup + callback), Dashboard + Transactions list cơ bản.
 
-**Chưa có (Sprint 1 tuần 2 frontend + sau):** Layout/Router/Auth UI, Onboarding UI (Vinh tuần 2), AI matching pipeline (Sprint 2), deploy VPS thật (cần cấu hình GitHub Secrets + VPS).
+**Chưa có (Sprint 2+):** AI matching pipeline, Invoice/Customer CRUD UI, Partner Dashboard đầy đủ, deploy VPS thật.
 
 ## Cây file thực tế toàn repo (không tính `node_modules`, `.git`, `.turbo`)
 
@@ -64,18 +64,27 @@ paypilot-ai/
 │   │       ├── app.e2e-spec.ts
 │   │       └── jest-setup.ts
 │   └── frontend/
-│       ├── components.json                 # ShadCN config
-│       ├── .env.example                    # VITE_API_BASE_URL
+│       ├── vite.config.ts                  # Tailwind v4 + @ alias
+│       ├── package.json                    # + react-router-dom, sonner
 │       ├── src/
 │       │   ├── main.tsx                    # QueryClientProvider
-│       │   ├── App.tsx                     # foundation demo (health check)
-│       │   ├── components/ui/              # ShadCN: button, card, badge, input, skeleton
-│       │   ├── hooks/useHealthCheck.ts
-│       │   ├── lib/api.ts                  # Axios + refresh interceptor
-│       │   ├── lib/utils.ts                # cn()
-│       │   └── types/auth.ts
-│       ├── vite.config.ts                  # Tailwind v4 + @ alias
-│       └── package.json
+│       │   ├── App.tsx                     # React Router + AuthProvider + Toaster
+│       │   ├── contexts/auth-context.tsx   # Auth state, login/register/logout, onboarding status
+│       │   ├── contexts/theme-context.tsx  # dark/light mode (localStorage paypilot-theme)
+│       │   ├── routes/ProtectedRoute.tsx   # GuestRoute, ProtectedRoute (onboarding gate)
+│       │   ├── components/
+│       │   │   ├── layout/                 # TenantLayout, Sidebar, Header, AuthLayout
+│       │   │   ├── shared/ThemeToggle.tsx
+│       │   │   └── ui/                     # ShadCN: button, card, badge, input, skeleton, table, label
+│       │   ├── pages/
+│       │   │   ├── auth/                   # LoginPage, RegisterPage
+│       │   │   ├── onboarding/             # OnboardingPage, OnboardingCallbackPage (Cas Link)
+│       │   │   ├── dashboard/              # DashboardPage
+│       │   │   ├── transactions/           # TransactionsPage
+│       │   │   └── partner/                # PartnerPage placeholder (Sprint 3)
+│       │   ├── hooks/useAuth.ts, useOnboarding.ts, useHealthCheck.ts
+│       │   ├── lib/api.ts, casLink.ts, errors.ts, utils.ts
+│       │   └── types/auth.ts, onboarding.ts
 ├── packages/shared-types/                  # build → dist/ (CommonJS)
 ├── biome.json, package.json, turbo.json, pnpm-workspace.yaml
 ```
@@ -132,7 +141,7 @@ postinstall      → prisma generate
 
 - [ ] Copy `.env` local từ `.env.example` (gitignore — không commit): root (docker), `apps/backend/.env`, `apps/frontend/.env` — xem `04-environment-setup.md`
 - [ ] Chạy `docker compose up -d` + migrate (hoặc `docker compose --profile fullstack up -d --build` cho full stack)
-- [ ] Frontend tuần 2: Layout, React Router, Auth UI, Onboarding UI (Thế Vinh)
+- [ ] Smoke test E2E: Register → Onboarding Cas Link → webhook → xem Transactions trên UI
 - [ ] Cấu hình GitHub Secrets + deploy VPS thật (workflow deploy.yml đã có template)
 - [ ] AI matching pipeline (Sprint 2)
 
@@ -159,6 +168,13 @@ postinstall      → prisma generate
 - [x] Transaction module — `GET /transactions`, `GET /transactions/:id` với filter/pagination tenant-scoped (`modules/transaction/`)
 - [x] `CasClientService` mở rộng — `exchangeGrant()`, `getIdentity()`, `parseIdentity()`
 - [x] Test `banking.service.spec.ts` — idempotency, quota block, happy path, signature verify
+- [x] Frontend tuần 2 (Vinh): React Router, TenantLayout (Sidebar + Header), Auth UI (Register/Login), Onboarding Cas Link (popup + `/onboarding/callback`), Dashboard + Transactions list
+- [x] Dark/light mode toggle — `ThemeProvider` + `ThemeToggle` (Sidebar, Header, Auth layout), lưu `localStorage` key `paypilot-theme`
+- [x] Responsive UI — mobile sidebar drawer + top bar (`lg` breakpoint), card list giao dịch trên mobile
+- [x] Casso/payOS design system — primary `#16AB64`, nền `#FFFFFF`, surface `#F8FAFB` (`index.css`); docs: `03-frontend-conventions.md`, `ui-design.md` Brand palette, skill `new-page` bước 8
+- [x] ShadCN/UI first — ưu tiên `@/components/ui/*`; thêm component qua `shadcn add`; docs [ui.shadcn.com/docs/components](https://ui.shadcn.com/docs/components); `table`, `label` đã có
+- [x] `AuthProvider` + `ProtectedRoute`/`GuestRoute` — redirect theo auth + onboarding status
+- [x] Dependencies FE mới: `react-router-dom`, `sonner` (toast)
 
 ## Quy tắc giữ file này luôn đúng
 

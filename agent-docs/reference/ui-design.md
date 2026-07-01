@@ -47,8 +47,9 @@ Toàn bộ app dùng layout 2 cột: **Sidebar cố định bên trái + Main co
 ### Tech stack áp dụng
 
 ```
-- Layout: Tailwind CSS (flex, grid)
-- Components: ShadCN/UI (Button, Card, Table, Badge, Dialog, Sheet, Input, Select...)
+- Layout: Tailwind CSS (flex, grid) — layout shell only; UI primitives = ShadCN
+- Components: [ShadCN/UI](https://ui.shadcn.com/docs/components) (`@/components/ui`) — Button, Card, Table, Badge, Input, Label, Dialog, Sheet...
+  → Thêm thiếu gì bằng `pnpm dlx shadcn@latest add <tên>` trong `apps/frontend` — **không** tự viết button/table/card HTML thuần; tra docs component trước khi dùng
 - Data fetching: TanStack Query (useQuery, useMutation)
 - Charts: Recharts (LineChart, BarChart, PieChart)
 - Icons: Lucide React
@@ -56,20 +57,43 @@ Toàn bộ app dùng layout 2 cột: **Sidebar cố định bên trái + Main co
 - Real-time: polling mỗi 10 giây hoặc WebSocket
 ```
 
-### Color convention
+### Brand palette (Casso / payOS — đã áp dụng Sprint 1 tuần 2)
+
+Tham chiếu trực tiếp [`casso.vn`](https://casso.vn) và [`payos.vn`](https://payos.vn). Token implement tại `apps/frontend/src/index.css`; chi tiết convention tại [`03-frontend-conventions.md`](../03-frontend-conventions.md).
+
+| Token | Hex | Dùng cho |
+|---|---|---|
+| Primary (Finverse Green) | `#16AB64` | CTA, link, nav active, số tiền, icon brand |
+| Background | `#FFFFFF` | Nền trang, sidebar, header |
+| Surface | `#F8FAFB` | Vùng content dashboard/list |
+| Text | `#1E2022` | Tiêu đề, body |
+| Tint | `primary/10` | Nav selected, outline button, hero gradient |
+
+**Quy tắc:**
+- Nền **trắng sạch** + accent xanh — không phủ toàn trang bằng gradient xanh đậm.
+- Nút chính: `Button` variant default (`bg-primary text-primary-foreground`).
+- Nav active: `bg-primary/10 text-primary font-medium`.
+- Auth/hero: gradient `from-primary/10` phía trên, card trắng giữa.
+- Dark mode: giữ undertone xanh qua CSS variables `.dark` — dùng `ThemeToggle`, không hard-code màu.
+
+**Responsive (breakpoint `lg` = 1024px):**
+- Desktop: sidebar cố định `w-64`, header trắng.
+- Mobile: top bar + drawer sidebar; bảng → card list dưới `md`.
+
+### Color convention (confidence / status)
 
 ```
-- Confidence ≥ 95%: Badge variant="success" (green)
-- Confidence 50–95%: Badge variant="warning" (yellow)
-- Confidence < 50%: Badge variant="destructive" (red)
+- Confidence ≥ 95%: Badge / text `primary` hoặc variant success (xanh #16AB64)
+- Confidence 50–95%: Badge variant="warning" (vàng)
+- Confidence < 50%: Badge variant="destructive" (đỏ)
 
-- Status Matched: Badge green
-- Status Review: Badge yellow
-- Status Pending: Badge gray
-- Status Skipped: Badge outline
+- Status Matched: primary/xanh | Status Review: vàng
+- Status Pending: xám | Status Skipped: outline
 ```
 
 ### ShadCN components dùng xuyên suốt
+
+> Catalog đầy đủ + API từng component: [ui.shadcn.com/docs/components](https://ui.shadcn.com/docs/components)
 
 ```jsx
 import { Button } from "@/components/ui/button"
