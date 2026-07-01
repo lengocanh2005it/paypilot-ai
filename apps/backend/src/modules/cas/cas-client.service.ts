@@ -12,6 +12,23 @@ export interface CasGrantTokenResponse {
   expiresAt?: string;
 }
 
+export interface CasGrantExchangeResponse {
+  accessToken: string;
+  grantId: string;
+}
+
+export interface CasIdentityAccount {
+  accountNumber?: string;
+  bankName?: string;
+  fiName?: string;
+}
+
+export interface CasIdentityResponse {
+  accountNumber?: string;
+  bankName?: string;
+  accounts?: CasIdentityAccount[];
+}
+
 @Injectable()
 export class CasClientService {
   private readonly logger = new Logger(CasClientService.name);
@@ -43,6 +60,32 @@ export class CasClientService {
         redirectUri: payload.redirectUri,
       }),
     });
+  }
+
+  async exchangeGrant(publicToken: string): Promise<CasGrantExchangeResponse> {
+    return this.request<CasGrantExchangeResponse>('/grant/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ publicToken }),
+    });
+  }
+
+  async getIdentity(accessToken: string): Promise<CasIdentityResponse> {
+    return this.requestWithAccessToken<CasIdentityResponse>(
+      '/identity',
+      { method: 'GET' },
+      accessToken,
+    );
+  }
+
+  parseIdentity(identity: CasIdentityResponse): {
+    accountNumber: string | null;
+    bankName: string | null;
+  } {
+    const firstAccount = identity.accounts?.[0];
+    return {
+      accountNumber: identity.accountNumber ?? firstAccount?.accountNumber ?? null,
+      bankName: identity.bankName ?? firstAccount?.bankName ?? firstAccount?.fiName ?? null,
+    };
   }
 
   async ping(): Promise<{ ok: boolean; message: string }> {
@@ -81,6 +124,48 @@ export class CasClientService {
         'x-client-id': this.clientId,
         'x-secret-key': this.secretKey,
         'X-BankHub-Api-Version': this.apiVersion,
+        ...(init.headers ?? {}),
+      },
+    });
+
+    const text = await response.text();
+    let data: unknown = {};
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+    }
+
+    if (!response.ok) {
+      const errorMessage =
+        typeof data === 'object' && data !== null && 'message' in data
+          ? String((data as { message: unknown }).message)
+          : `Cas API error ${response.status}`;
+      throw new Error(errorMessage);
+    }
+
+    return data as T;
+  }
+
+  private async requestWithAccessToken<T>(
+    path: string,
+    init: RequestInit,
+    accessToken: string,
+  ): Promise<T> {
+    if (!this.isConfigured()) {
+      throw new Error('Thiếu CAS_CLIENT_ID hoặc CAS_SECRET_KEY trong biến môi trường');
+    }
+
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-client-id': this.clientId,
+        'x-secret-key': this.secretKey,
+        'X-BankHub-Api-Version': this.apiVersion,
+        Authorization: `Bearer ${accessToken}`,
         ...(init.headers ?? {}),
       },
     });

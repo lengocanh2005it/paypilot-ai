@@ -16,4 +16,14 @@ export default () => ({
   CAS_GRANT_REDIRECT_URI:
     process.env.CAS_GRANT_REDIRECT_URI ?? 'http://localhost:5173/onboarding/callback',
   CORS_ORIGIN: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  WEBHOOK_SIGNATURE_HEADER: process.env.WEBHOOK_SIGNATURE_HEADER ?? 'X-Cas-Signature',
+  WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS: Number.parseInt(
+    process.env.WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS ?? '300',
+    10,
+  ),
+  WEBHOOK_IDEMPOTENCY_TTL_SECONDS: Number.parseInt(
+    process.env.WEBHOOK_IDEMPOTENCY_TTL_SECONDS ?? '86400',
+    10,
+  ),
+  WEBHOOK_SKIP_SIGNATURE_VERIFY: process.env.WEBHOOK_SKIP_SIGNATURE_VERIFY ?? 'false',
 });
