@@ -1,0 +1,70 @@
+# Agent Docs — Mục lục
+
+Tài liệu này dành cho AI coding agent (Claude Code) và developer làm việc trên monorepo PayPilot AI. Đọc theo thứ tự dưới đây tùy việc bạn đang làm.
+
+## Bắt đầu từ đâu
+
+**Luôn đọc [`00-current-state.md`](./00-current-state.md) trước tiên** — file đó chụp chính xác trạng thái repo ngay lúc này (cây file thật, script thật, cái gì đã có/chưa có). Đọc xong file đó thường là đủ để biết bước tiếp theo, không cần `find`/`grep`/`ls` lại từ đầu.
+
+| Bạn đang làm gì | Đọc file nào |
+|---|---|
+| **Bất kỳ việc gì** — đọc trước tiên | [`00-current-state.md`](./00-current-state.md) |
+| Mới vào repo, cần hiểu tổng quan nghiệp vụ | [`reference/business-overview.md`](./reference/business-overview.md) |
+| Setup môi trường dev lần đầu | [`04-environment-setup.md`](./04-environment-setup.md) |
+| Thêm app/package mới vào monorepo | [`01-monorepo-structure.md`](./01-monorepo-structure.md) |
+| Viết code backend (NestJS module, controller, service) | [`02-backend-conventions.md`](./02-backend-conventions.md) |
+| Viết code frontend (React component, page, hook) | [`03-frontend-conventions.md`](./03-frontend-conventions.md) |
+| Viết Prisma schema / migration | [`reference/database-schema.md`](./reference/database-schema.md) |
+| Thêm API endpoint mới, cần biết role nào được gọi | [`reference/rbac.md`](./reference/rbac.md) |
+| Cần hiểu 1 luồng nghiệp vụ cụ thể (onboarding, webhook, billing...) | [`reference/user-journey.md`](./reference/user-journey.md) |
+| Build UI 1 màn hình cụ thể | [`reference/ui-design.md`](./reference/ui-design.md) |
+| Biết task nào thuộc sprint nào, ai phụ trách | [`reference/sprint-plan.md`](./reference/sprint-plan.md) |
+
+## Cấu trúc `agent-docs/`
+
+```
+agent-docs/
+├── README.md                      ← file này
+├── 00-current-state.md            ← ĐỌC TRƯỚC TIÊN — trạng thái repo chính xác lúc này
+├── 01-monorepo-structure.md       ← cấu trúc Turborepo, lệnh, quy tắc thêm package
+├── 02-backend-conventions.md      ← quy ước code NestJS (module, DTO, guard...)
+├── 03-frontend-conventions.md     ← quy ước code React (component, hook, API client)
+├── 04-environment-setup.md        ← setup local dev (Docker, DB, env vars, Cas sandbox)
+└── reference/                     ← tài liệu nghiệp vụ GỐC — nguồn sự thật, không tự diễn giải khác đi
+    ├── business-overview.md       ← tổng quan hệ thống, tech stack, API design, security
+    ├── rbac.md                    ← 4 role, ma trận phân quyền, pricing model, Cas Partner
+    ├── database-schema.md         ← 11 bảng, ERD, index bắt buộc
+    ├── user-journey.md            ← hành trình người dùng thực tế theo 4 giai đoạn
+    ├── ui-design.md                ← spec chi tiết 9 màn hình (kèm JSX mẫu)
+    └── sprint-plan.md              ← kế hoạch 4 sprint / 8 tuần, phân việc 2 thành viên
+```
+
+## Skills sẵn có (`.claude/skills/`)
+
+Gọi qua `/tên-skill` hoặc để agent tự nhận diện lúc làm task tương ứng:
+
+| Skill | Dùng khi |
+|---|---|
+| `new-module` | Tạo NestJS module mới (controller/service/DTO + guard + tenant scoping) |
+| `new-page` | Tạo page React mới (route + layout đúng + TanStack Query + RBAC UI) |
+| `db-migrate` | Sửa/thêm Prisma schema |
+| `add-endpoint` | Thêm 1 route mới vào controller có sẵn (checklist RBAC + tenant scoping + test) |
+| `verify` | **Chạy sau mọi lần sửa code**, trước khi báo task xong — `pnpm verify` |
+| `sync-agent-docs` | **Chạy sau `verify`** nếu thay đổi ảnh hưởng cấu trúc/convention — đồng bộ lại `agent-docs/` và skills để không bị lệch thực tế |
+
+Quy trình chuẩn đầy đủ (đọc → code → verify → sync docs) xem tại [`../CLAUDE.md`](../CLAUDE.md).
+
+## Quy tắc đọc tài liệu `reference/`
+
+- Đây là các file đã được đội dự án (Lê Ngọc Anh, Lưu Nguyễn Thế Vinh) rà soát kỹ và **thống nhất** — từng có mâu thuẫn ở các bản nháp trước (vd: bảng `users` từng định nghĩa 2 nơi khác nhau), nay đã gộp lại một chuẩn duy nhất trong `database-schema.md`.
+- Khi 2 file `reference/` có vẻ nói khác nhau về cùng 1 thứ, **ưu tiên bản mới nhất được note rõ là "đã gộp"/"đã chuẩn hóa"** — cụ thể: `database-schema.md` là nguồn chuẩn cho schema (không dùng lại bảng rút gọn trong `business-overview.md`).
+- Không sửa các file trong `reference/` khi code — nếu phát hiện nghiệp vụ cần thay đổi, hỏi lại người dùng trước, vì đây là tài liệu đồ án đã được duyệt.
+
+## Thông tin nhanh (tóm tắt cực ngắn)
+
+- **Stack:** NestJS + TypeScript + Prisma + PostgreSQL (pgvector) + Redis + BullMQ (backend) · React + Vite + TypeScript + Tailwind + ShadCN/UI + TanStack Query + Recharts (frontend) · Turborepo + pnpm (monorepo tooling)
+- **AI:** OpenAI API only (`text-embedding-3-small`, `gpt-4o-mini`) + LangChain + pgvector — không tự train model.
+- **Banking:** Cas SDK (sandbox thật) — Grant/Link/Exchange flow để liên kết ngân hàng, Balance Hook để nhận giao dịch real-time.
+- **Billing:** PayOS (account riêng của PayPilot) — chỉ dùng để thu phí doanh nghiệp khi nâng cấp gói, KHÔNG liên quan luồng nghiệp vụ (khách hàng cuối trả tiền qua QR VietQR tĩnh, không qua payment gateway).
+- **RBAC:** `cas_partner` (system-level) / `admin` / `accountant` / `viewer` (3 role sau thuộc 1 tenant).
+- **Team:** Lê Ngọc Anh (23520048) — Backend & AI · Lưu Nguyễn Thế Vinh (22521653) — Frontend, Backend Modules, DevOps.
