@@ -2,13 +2,13 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: sau Sprint 1 tuần 1 — backend (Ngọc Anh) + frontend/DevOps foundation (Thế Vinh).
+Cập nhật lần cuối: sau Sprint 1 tuần 2 backend (Ngọc Anh) — onboarding, banking webhook, transaction list/detail.
 
 ## Repo đang ở giai đoạn nào
 
-**Trạng thái: Sprint 1 tuần 1 xong (cả Ngọc Anh + Thế Vinh).** Backend: Prisma schema 11 bảng, Auth, RBAC, Cas SDK, Redis/BullMQ, Swagger. Frontend foundation: Tailwind v4, ShadCN/UI (button/card/badge/input/skeleton), TanStack Query, Axios client (refresh token interceptor), demo health-check page. DevOps: `docker-compose.yml` full stack (profile `fullstack` / `production`), Dockerfiles (`docker/backend.Dockerfile`, `docker/frontend.Dockerfile`), CI verify + **deploy workflow** (`.github/workflows/deploy.yml`), nginx template (`deploy/nginx/paypilot.conf`).
+**Trạng thái: Sprint 1 tuần 2 backend xong (Ngọc Anh).** Backend thêm: Onboarding (Cas Link grant/callback/status), Banking webhook Cas Balance Hook (signature verify, Redis idempotency, quota), Transaction list/detail. Tuần 1 foundation vẫn giữ nguyên (Auth, RBAC, Prisma, Cas SDK, Redis/BullMQ, Swagger, frontend foundation Vinh).
 
-**Chưa có (Sprint 1 tuần 2+):** Cas Link onboarding, webhook banking, transaction CRUD, Layout/Router/Auth UI, deploy VPS thật (cần cấu hình GitHub Secrets + VPS).
+**Chưa có (Sprint 1 tuần 2 frontend + sau):** Layout/Router/Auth UI, Onboarding UI (Vinh tuần 2), AI matching pipeline (Sprint 2), deploy VPS thật (cần cấu hình GitHub Secrets + VPS).
 
 ## Cây file thực tế toàn repo (không tính `node_modules`, `.git`, `.turbo`)
 
@@ -40,9 +40,9 @@ paypilot-ai/
 │   │   │       └── 20260301120000_init_sprint1_week1/
 │   │   ├── package.json                    # đã thêm NestJS deps, Prisma 6, bcryptjs
 │   │   ├── src/
-│   │   │   ├── main.ts                     # global prefix api/v1, Swagger, CORS, ValidationPipe, cookie-parser
+│   │   │   ├── main.ts                     # global prefix api/v1, Swagger, CORS, ValidationPipe, cookie-parser, rawBody: true (webhook signature)
 │   │   │   ├── app.module.ts
-│   │   │   ├── config/configuration.ts
+│   │   │   ├── config/configuration.ts     # + WEBHOOK_* env vars
 │   │   │   ├── common/
 │   │   │   │   ├── decorators/           # @Roles(), @CurrentUser()
 │   │   │   │   ├── guards/auth.guards.ts # JwtAuthGuard, RolesGuard, PartnerGuard
@@ -55,8 +55,11 @@ paypilot-ai/
 │   │   │   ├── queue/queue.module.ts     # BullMQ root + webhook-processing queue placeholder
 │   │   │   └── modules/
 │   │   │       ├── auth/                 # register, login, refresh, logout, me
-│   │   │       ├── cas/                  # CasClientService + health/ping endpoints
-│   │   │       └── health/               # GET /api/v1/health
+│   │   │       ├── banking/              # POST /webhook/cas — signature, idempotency, quota, save transaction
+│   │   │       ├── cas/                  # CasClientService (+ exchangeGrant, getIdentity) + health/ping
+│   │   │       ├── health/               # GET /api/v1/health
+│   │   │       ├── onboarding/           # grant-token, banking/callback, status
+│   │   │       └── transaction/          # GET list + detail (tenant-scoped)
 │   │   └── test/
 │   │       ├── app.e2e-spec.ts
 │   │       └── jest-setup.ts
@@ -89,6 +92,12 @@ paypilot-ai/
 | GET | `/auth/me` | Bearer JWT | User hiện tại |
 | GET | `/cas/health` | Public | Kiểm tra Cas SDK config |
 | GET | `/cas/ping` | Admin only | Gọi thử `POST /grant/token` — demo RBAC |
+| POST | `/onboarding/banking/grant-token` | Admin, Accountant | Tạo grantToken mở Cas Link |
+| POST | `/onboarding/banking/callback` | Admin, Accountant | Đổi publicToken → grantId, lưu `cas_grants` |
+| GET | `/onboarding/status` | Bearer JWT (mọi role tenant) | Trạng thái onboarding tenant |
+| POST | `/webhook/cas` | Public (signature) | Cas Balance Hook — **không JWT** |
+| GET | `/transactions` | Bearer JWT | Danh sách giao dịch (filter + pagination) |
+| GET | `/transactions/:id` | Bearer JWT | Chi tiết giao dịch (tenant-scoped) |
 
 Swagger UI: `http://localhost:3000/api/docs`
 
@@ -123,11 +132,9 @@ postinstall      → prisma generate
 
 - [ ] Copy `.env` local từ `.env.example` (gitignore — không commit): root (docker), `apps/backend/.env`, `apps/frontend/.env` — xem `04-environment-setup.md`
 - [ ] Chạy `docker compose up -d` + migrate (hoặc `docker compose --profile fullstack up -d --build` cho full stack)
-- [ ] `apps/backend/src/modules/onboarding/` — Cas Link Grant/Exchange (Sprint 1 tuần 2)
-- [ ] `apps/backend/src/modules/banking/` — webhook Cas Balance Hook (tuần 2)
-- [ ] `apps/backend/src/modules/transaction/` — CRUD giao dịch (tuần 2)
-- [ ] Frontend tuần 2: Layout, React Router, Auth UI, Onboarding UI
+- [ ] Frontend tuần 2: Layout, React Router, Auth UI, Onboarding UI (Thế Vinh)
 - [ ] Cấu hình GitHub Secrets + deploy VPS thật (workflow deploy.yml đã có template)
+- [ ] AI matching pipeline (Sprint 2)
 
 ## Việc ĐÃ làm xong (mới so với bootstrap)
 
@@ -147,6 +154,11 @@ postinstall      → prisma generate
 - [x] GitHub Actions deploy — `.github/workflows/deploy.yml` (workflow_dispatch, SSH)
 - [x] Deploy docs + nginx template — `deploy/README.md`, `deploy/nginx/paypilot.conf`
 - [x] `@paypilot/shared-types` build → `dist/` (CommonJS) — FE/BE import từ package exports
+- [x] Onboarding module — Cas Link grant-token, banking/callback, status (`modules/onboarding/`)
+- [x] Banking webhook — `POST /webhook/cas`: HMAC signature verify, Redis idempotency (txn id, TTL 24h), grant→tenant routing, free-plan quota block, save `transactions` + increment usage (`modules/banking/`)
+- [x] Transaction module — `GET /transactions`, `GET /transactions/:id` với filter/pagination tenant-scoped (`modules/transaction/`)
+- [x] `CasClientService` mở rộng — `exchangeGrant()`, `getIdentity()`, `parseIdentity()`
+- [x] Test `banking.service.spec.ts` — idempotency, quota block, happy path, signature verify
 
 ## Quy tắc giữ file này luôn đúng
 

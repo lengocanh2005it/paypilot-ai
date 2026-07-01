@@ -44,7 +44,7 @@ echo "VITE_API_BASE_URL=http://localhost:3000/api/v1" > apps/frontend/.env
 | Cas SDK | `CAS_API_BASE_URL`, `CAS_CLIENT_ID`, `CAS_SECRET_KEY`, `CAS_GRANT_REDIRECT_URI` | sandbox thật, lấy tại `sandbox.console.bankhub.dev/developer/keys` |
 | Cas Webhook | `NGROK_WEBHOOK_URL` | chỉ cần khi test webhook local qua ngrok |
 | PayOS (billing) | `PAYOS_CHECKSUM_KEY`, `PAYOS_BILLING_WEBHOOK_URL` | mock qua Postman, chưa có account PayOS thật |
-| Webhook security | `WEBHOOK_SIGNATURE_HEADER`, `WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS`, `WEBHOOK_IDEMPOTENCY_TTL_SECONDS` | **cần đọc kỹ `https://cas.so/general/api/webhook` trước khi code phần verify signature** — tài liệu Cas chưa nêu rõ tên header chữ ký |
+| Webhook security | `WEBHOOK_SIGNATURE_HEADER`, `WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS`, `WEBHOOK_IDEMPOTENCY_TTL_SECONDS`, `WEBHOOK_SKIP_SIGNATURE_VERIFY` | dev local/ngrok: set `WEBHOOK_SKIP_SIGNATURE_VERIFY=true` để bỏ qua verify chữ ký; production **phải** `false` |
 | AI Matching | `AI_MATCHING_AUTO_THRESHOLD=95`, `AI_MATCHING_MIN_THRESHOLD=50` | mặc định, tenant có thể override qua `tenants.matching_threshold` |
 | Frontend | `VITE_API_BASE_URL` | `apps/frontend/.env` — prefix `VITE_` bắt buộc |
 | Docker Compose | `POSTGRES_*`, `REDIS_PORT` | `.env` ở **root** repo |

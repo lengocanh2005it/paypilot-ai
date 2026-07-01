@@ -6,8 +6,11 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import configuration from './config/configuration';
 import { AuthModule } from './modules/auth/auth.module';
+import { BankingModule } from './modules/banking/banking.module';
 import { CasModule } from './modules/cas/cas.module';
 import { HealthModule } from './modules/health/health.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { TransactionModule } from './modules/transaction/transaction.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { QueueModule } from './queue/queue.module';
 import { RedisModule } from './redis/redis.module';
@@ -25,6 +28,9 @@ import { RedisModule } from './redis/redis.module';
     AuthModule,
     CasModule,
     HealthModule,
+    OnboardingModule,
+    BankingModule,
+    TransactionModule,
   ],
   providers: [
     {
