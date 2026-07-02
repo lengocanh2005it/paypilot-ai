@@ -39,7 +39,9 @@ paypilot-ai/
 │   │   │   └── migrations/
 │   │   │       ├── migration_lock.toml
 │   │   │       └── 20260301120000_init_sprint1_week1/
-│   │   ├── package.json                    # đã thêm NestJS deps, Prisma 6, bcryptjs
+│   │   ├── package.json                    # đã thêm NestJS deps, Prisma 6, bcryptjs, SWC
+│   │   ├── nest-cli.json                   # builder: swc
+│   │   ├── .swcrc                          # decoratorMetadata cho Nest DI
 │   │   ├── src/
 │   │   │   ├── main.ts                     # global prefix api/v1, Swagger, CORS, ValidationPipe, cookie-parser, rawBody: true (webhook signature)
 │   │   │   ├── app.module.ts
@@ -136,7 +138,9 @@ postinstall      → prisma generate
 
 **Dependencies mới chính:** `@nestjs/config`, `@nestjs/swagger`, `@nestjs/jwt`, `@nestjs/passport`, `@nestjs/bullmq`, `@prisma/client` ^6.8, `bcryptjs`, `bullmq`, `class-validator`, `class-transformer`, `cookie-parser`, `ioredis`, `passport`, `passport-jwt`, `@paypilot/shared-types`.
 
-**DevDependencies mới:** `prisma` ^6.8, `@types/bcryptjs`, `@types/cookie-parser`, `@types/passport-jwt`.
+**DevDependencies mới:** `prisma` ^6.8, `@types/bcryptjs`, `@types/cookie-parser`, `@types/passport-jwt`, `@swc/core`, `@swc/cli`.
+
+**Build:** `nest build` dùng **SWC** (`nest-cli.json` → `compilerOptions.builder: "swc"`, config `.swcrc`). Type-check vẫn qua `tsc --noEmit` riêng trong `pnpm verify` — SWC chỉ transpile, không thay type-check.
 
 ## Danh sách việc CHƯA làm
 

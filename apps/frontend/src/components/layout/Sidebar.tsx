@@ -4,6 +4,8 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  PanelLeft,
+  PanelLeftClose,
   Receipt,
   Settings,
   Users,
@@ -12,7 +14,6 @@ import {
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
@@ -32,14 +33,18 @@ interface SidebarContentProps {
   onNavigate?: () => void;
   showClose?: boolean;
   onClose?: () => void;
-  showThemeToggle?: boolean;
+  collapsed?: boolean;
+  showCollapseToggle?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 export function SidebarContent({
   onNavigate,
   showClose,
   onClose,
-  showThemeToggle = true,
+  collapsed = false,
+  showCollapseToggle = false,
+  onToggleCollapsed,
 }: SidebarContentProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -57,13 +62,37 @@ export function SidebarContent({
 
   return (
     <>
-      <div className="flex items-start justify-between gap-2 border-b px-4 py-4 sm:px-5">
-        <div className="min-w-0">
-          <p className="truncate text-lg font-semibold text-primary">PayPilot AI</p>
-          <p className="truncate text-xs text-muted-foreground">Đối soát thông minh</p>
-        </div>
+      <div
+        className={cn(
+          'border-b px-4 py-4 sm:px-5',
+          collapsed
+            ? 'flex flex-col items-center gap-2 px-2'
+            : 'flex items-start justify-between gap-2',
+        )}
+      >
+        {!collapsed ? (
+          <div className="min-w-0">
+            <p className="truncate text-lg font-semibold text-primary">PayPilot AI</p>
+            <p className="truncate text-xs text-muted-foreground">Đối soát thông minh</p>
+          </div>
+        ) : (
+          <p className="text-sm font-semibold text-primary" title="PayPilot AI">
+            PP
+          </p>
+        )}
         <div className="flex shrink-0 items-center gap-1">
-          {showThemeToggle ? <ThemeToggle /> : null}
+          {showCollapseToggle ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+              title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+            >
+              {collapsed ? <PanelLeft className="size-4" /> : <PanelLeftClose className="size-4" />}
+            </Button>
+          ) : null}
           {showClose ? (
             <Button
               type="button"
@@ -86,10 +115,14 @@ export function SidebarContent({
             return (
               <div
                 key={item.to}
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground opacity-50"
+                className={cn(
+                  'flex items-center rounded-lg px-3 py-2 text-sm text-muted-foreground opacity-50',
+                  collapsed ? 'justify-center' : 'gap-3',
+                )}
+                title={collapsed ? item.label : undefined}
               >
                 <Icon className="size-4 shrink-0" />
-                <span className="truncate">{item.label}</span>
+                {!collapsed ? <span className="truncate">{item.label}</span> : null}
               </div>
             );
           }
@@ -99,9 +132,11 @@ export function SidebarContent({
               key={item.to}
               to={item.to}
               onClick={onNavigate}
+              title={collapsed ? item.label : undefined}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                  'flex items-center rounded-lg px-3 py-2 text-sm transition-colors',
+                  collapsed ? 'justify-center' : 'gap-3',
                   isActive
                     ? 'bg-primary/10 font-medium text-primary'
                     : 'text-sidebar-foreground hover:bg-primary/5 hover:text-primary',
@@ -109,30 +144,54 @@ export function SidebarContent({
               }
             >
               <Icon className="size-4 shrink-0" />
-              <span className="truncate">{item.label}</span>
+              {!collapsed ? <span className="truncate">{item.label}</span> : null}
             </NavLink>
           );
         })}
       </nav>
 
-      <div className="border-t p-4">
-        <div className="mb-3 min-w-0">
-          <p className="truncate text-sm font-medium">{user?.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
-        </div>
-        <Button type="button" variant="outline" size="sm" className="w-full" onClick={handleLogout}>
+      <div className={cn('border-t p-4', collapsed && 'px-2')}>
+        {!collapsed ? (
+          <div className="mb-3 min-w-0">
+            <p className="truncate text-sm font-medium">{user?.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+          </div>
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size={collapsed ? 'icon-sm' : 'sm'}
+          className={cn(!collapsed && 'w-full')}
+          onClick={handleLogout}
+          aria-label="Đăng xuất"
+          title={collapsed ? 'Đăng xuất' : undefined}
+        >
           <LogOut className="size-4" />
-          Đăng xuất
+          {!collapsed ? 'Đăng xuất' : null}
         </Button>
       </div>
     </>
   );
 }
 
-export function DesktopSidebar() {
+interface DesktopSidebarProps {
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+}
+
+export function DesktopSidebar({ collapsed, onToggleCollapsed }: DesktopSidebarProps) {
   return (
-    <aside className="hidden h-svh w-64 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground lg:flex">
-      <SidebarContent />
+    <aside
+      className={cn(
+        'hidden h-svh shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex',
+        collapsed ? 'w-16' : 'w-64',
+      )}
+    >
+      <SidebarContent
+        collapsed={collapsed}
+        showCollapseToggle
+        onToggleCollapsed={onToggleCollapsed}
+      />
     </aside>
   );
 }
@@ -156,7 +215,7 @@ export function MobileSidebar({ open, onClose }: MobileSidebarProps) {
         onClick={onClose}
       />
       <aside className="fixed inset-y-0 left-0 z-50 flex w-[min(100vw-3rem,18rem)] flex-col border-r bg-sidebar text-sidebar-foreground shadow-xl lg:hidden">
-        <SidebarContent onNavigate={onClose} showClose onClose={onClose} showThemeToggle={false} />
+        <SidebarContent onNavigate={onClose} showClose onClose={onClose} />
       </aside>
     </>
   );

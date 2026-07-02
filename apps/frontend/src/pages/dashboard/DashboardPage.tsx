@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CheckCircle2 } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { BankStatusCard } from '@/components/dashboard/BankStatusCard';
+import { DashboardStatCard } from '@/components/dashboard/DashboardStatCard';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,51 +38,31 @@ export default function DashboardPage() {
 
       <div className="space-y-6 p-4 sm:p-6">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Trạng thái ngân hàng</CardDescription>
-              <CardTitle className="text-lg">
-                {onboardingStatus?.bankingLinked ? 'Đã liên kết' : 'Chưa liên kết'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {onboardingStatus?.bankingLinked ? (
-                <p className="flex items-center gap-2 text-sm text-primary">
-                  <CheckCircle2 className="size-4" />
-                  Sẵn sàng nhận giao dịch
-                </p>
-              ) : (
-                <Button asChild size="sm" variant="outline">
-                  <Link to="/onboarding">Tiếp tục onboarding</Link>
-                </Button>
-              )}
-            </CardContent>
-          </Card>
+          <BankStatusCard
+            bankingLinked={Boolean(onboardingStatus?.bankingLinked)}
+            grants={onboardingStatus?.grants ?? []}
+          />
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Tổng giao dịch</CardDescription>
-              <CardTitle className="text-lg">{data?.total ?? 0}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Button asChild size="sm" variant="ghost">
+          <DashboardStatCard
+            label="Tổng giao dịch"
+            value={data?.total ?? 0}
+            footer={
+              <Button asChild size="sm" variant="ghost" className="h-auto px-0">
                 <Link to="/transactions">
                   Xem giao dịch
                   <ArrowRight className="size-4" />
                 </Link>
               </Button>
-            </CardContent>
-          </Card>
+            }
+          />
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Gói dịch vụ</CardDescription>
-              <CardTitle className="text-lg">Free</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <DashboardStatCard
+            label="Gói dịch vụ"
+            value="Free"
+            footer={
               <p className="text-sm text-muted-foreground">Nâng cấp gói sẽ có ở Sprint sau</p>
-            </CardContent>
-          </Card>
+            }
+          />
         </div>
 
         <Card>
