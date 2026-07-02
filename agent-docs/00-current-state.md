@@ -2,15 +2,17 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: Sprint 2 **tuần 3 (backend Anh) đang làm** — AI matching pipeline + Invoice/Customer module.
+Cập nhật lần cuối: Sprint 2 **tuần 3** — backend AI + Invoice xong; FE Dashboard + Transactions nâng cấp (Vinh) xong.
 
 ## Repo đang ở giai đoạn nào
 
-**Trạng thái: Sprint 2 tuần 3 — backend AI + Invoice xong, FE tuần 3 chưa làm.**
+**Trạng thái: Sprint 2 tuần 3 — backend AI + Invoice + FE Dashboard/Transactions xong; tuần 4 (Review queue, Invoices UI) chưa làm.**
 
-Backend mới: `ai` (OpenAI embedding, pgvector search, matching pipeline, BullMQ processor), `invoice` (CRUD, QR VietQR, import Excel/CSV), `customer` (create/list/detail + embedding). Webhook Cas sau khi lưu giao dịch → enqueue job `ai-matching`. Transaction API thêm `GET /transactions/:id/matches`.
+Backend: `ai` (OpenAI embedding, pgvector search, matching pipeline, BullMQ processor), `invoice` (CRUD, QR VietQR, import Excel/CSV), `customer` (create/list/detail + embedding). Webhook Cas sau khi lưu giao dịch → enqueue job `ai-matching`. Transaction API thêm `GET /transactions/:id/matches`.
 
-**Chưa có (Sprint 2 tuần 4+):** Human Review module, Customer CRUD đầy đủ (update/delete/import), AI Explain, Audit log module, FE Dashboard/Transactions nâng cấp, Partner Dashboard.
+Frontend tuần 3: Dashboard 4 stat cards (doanh thu, pending, review, AI accuracy), Revenue LineChart, Recent feed polling 10s; Transactions table + filter status/date, ConfidenceBadge, TransactionDetailSheet với AI top 3.
+
+**Chưa có (Sprint 2 tuần 4+):** Human Review module, Customer CRUD đầy đủ (update/delete/import), AI Explain, Audit log module, FE Review/Invoices, Partner Dashboard.
 
 **Hoãn Sprint 4:** deploy VPS thật + GitHub Secrets + HTTPS production (workflow `deploy.yml` + `deploy/README.md` đã có template, chưa chạy trên VPS).
 
@@ -84,14 +86,14 @@ paypilot-ai/
 │       │   ├── routes/ProtectedRoute.tsx   # GuestRoute, ProtectedRoute (onboarding gate)
 │       │   ├── components/
 │       │   │   ├── layout/                 # TenantLayout, Sidebar (collapse), Header, AuthLayout
-│       │   │   ├── dashboard/              # BankStatusCard, TransactionTrendChart, TransactionStatusChart, RecentTransactionsCard
-│       │   │   ├── shared/                 # ThemeToggle, SensitiveField
-│       │   │   └── ui/                     # ShadCN: button, card, badge, input, skeleton, table, label, dialog
+│       │   │   ├── dashboard/              # BankStatusCard, RevenueLineChart, TransactionTrendChart, TransactionStatusChart, RecentTransactionsCard, DashboardStatCard
+│       │   │   ├── shared/                 # ThemeToggle, SensitiveField, ConfidenceBadge, TransactionStatusBadge, EmptyState, TableSkeleton
+│       │   │   └── ui/                     # ShadCN: button, card, badge, input, skeleton, table, label, dialog, sheet
 │       │   ├── pages/
 │       │   │   ├── auth/                   # LoginPage, RegisterPage
 │       │   │   ├── onboarding/             # OnboardingPage, OnboardingCallbackPage (Cas Link)
-│       │   │   ├── dashboard/              # DashboardPage (Recharts: area 7 ngày + donut trạng thái)
-│       │   │   ├── transactions/           # TransactionsPage
+│       │   │   ├── dashboard/              # DashboardPage — 4 stat cards, revenue chart, recent feed (polling 10s)
+│       │   │   ├── transactions/           # TransactionsPage + TransactionDetailSheet (AI matches top 3)
 │       │   │   └── partner/                # PartnerPage placeholder (Sprint 3)
 │       │   ├── hooks/useAuth.ts, useOnboarding.ts, useHealthCheck.ts
 │       │   ├── lib/api.ts, casLink.ts, dashboard-transactions.ts, mask-sensitive.ts, errors.ts, utils.ts
@@ -167,7 +169,7 @@ postinstall      → prisma generate
 - [ ] Human Review module (Sprint 2 tuần 4)
 - [ ] Customer CRUD đầy đủ — update/delete/import (Sprint 2 tuần 4)
 - [ ] AI Explain endpoint (Sprint 2 tuần 4)
-- [ ] FE Dashboard/Transactions nâng cấp — confidence badge, detail sheet (Sprint 2 tuần 3 Vinh)
+- [ ] FE Human Review + Invoices (Sprint 2 tuần 4 Vinh)
 - [ ] Deploy VPS thật + HTTPS production (**hoãn Sprint 4** — xem `deploy/README.md`)
 - [ ] **AI Smart Excel Import** (Sprint 3+) — AI gợi ý map cột Excel lộn xộn → định dạng chuẩn, user confirm trước import (xem `reference/business-overview.md` Future Enhancements)
 
@@ -215,6 +217,9 @@ postinstall      → prisma generate
 - [x] Banking webhook enqueue BullMQ job `ai-matching` sau khi lưu transaction
 - [x] `GET /transactions/:id/matches` — top 3 AI suggestions
 - [x] Dependencies BE mới: `openai`, `xlsx`
+- [x] **Sprint 2 tuần 3 (Vinh):** Dashboard — 4 stat cards (doanh thu hôm nay, pending, review, AI accuracy), Revenue LineChart (Recharts), recent transactions feed polling 10s
+- [x] **Sprint 2 tuần 3 (Vinh):** Transactions — filter status + date, ConfidenceBadge (xanh/vàng/đỏ), TransactionDetailSheet (slide phải), AI suggestion top 3 từ `GET /transactions/:id/matches`
+- [x] Shared FE: `ConfidenceBadge`, `TransactionStatusBadge`, `EmptyState`, `TableSkeleton`, `sheet` UI component; badge variants `success`/`warning`
 
 ## Quy tắc giữ file này luôn đúng
 
