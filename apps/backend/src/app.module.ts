@@ -5,10 +5,13 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import configuration from './config/configuration';
+import { AiModule } from './modules/ai/ai.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BankingModule } from './modules/banking/banking.module';
 import { CasModule } from './modules/cas/cas.module';
+import { CustomerModule } from './modules/customer/customer.module';
 import { HealthModule } from './modules/health/health.module';
+import { InvoiceModule } from './modules/invoice/invoice.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { TransactionModule } from './modules/transaction/transaction.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -30,6 +33,9 @@ import { RedisModule } from './redis/redis.module';
     HealthModule,
     OnboardingModule,
     BankingModule,
+    AiModule,
+    CustomerModule,
+    InvoiceModule,
     TransactionModule,
   ],
   providers: [
