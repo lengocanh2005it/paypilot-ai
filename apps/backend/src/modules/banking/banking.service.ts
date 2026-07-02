@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
   ForbiddenException,
@@ -9,8 +10,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, SubscriptionPlan, TransactionStatus } from '@prisma/client';
+import type { Queue } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WEBHOOK_QUEUE } from '../../queue/queue.module';
 import { RedisService } from '../../redis/redis.service';
+import { AI_MATCHING_JOB } from '../ai/matching.processor';
 import type { CasWebhookDto } from './dto/banking.dto';
 
 export interface CasWebhookResult {
@@ -33,6 +37,7 @@ export class BankingService {
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
+    @InjectQueue(WEBHOOK_QUEUE) private readonly webhookQueue: Queue,
   ) {}
 
   verifyWebhookSignature(
@@ -204,6 +209,8 @@ export class BankingService {
 
       return transaction;
     });
+
+    await this.webhookQueue.add(AI_MATCHING_JOB, { transactionDbId: saved.id });
 
     return {
       duplicate: false,

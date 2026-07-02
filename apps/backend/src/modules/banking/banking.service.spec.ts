@@ -1,9 +1,11 @@
 import { createHmac } from 'node:crypto';
+import { getQueueToken } from '@nestjs/bullmq';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SubscriptionPlan, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WEBHOOK_QUEUE } from '../../queue/queue.module';
 import { RedisService } from '../../redis/redis.service';
 import { BankingService } from './banking.service';
 
@@ -47,6 +49,10 @@ describe('BankingService', () => {
     },
   };
 
+  const webhookQueue = {
+    add: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -61,6 +67,7 @@ describe('BankingService', () => {
             get: (key: string, defaultValue?: string) => configValues[key] ?? defaultValue,
           },
         },
+        { provide: getQueueToken(WEBHOOK_QUEUE), useValue: webhookQueue },
       ],
     }).compile();
 
@@ -144,6 +151,7 @@ describe('BankingService', () => {
       status: TransactionStatus.pending,
     });
     expect(redisClient.set).toHaveBeenCalledWith('webhook:cas:txn:txn-1', '1', 'EX', 86400, 'NX');
+    expect(webhookQueue.add).toHaveBeenCalledWith('ai-matching', { transactionDbId: 'db-txn-1' });
   });
 
   it('rejects invalid webhook signature when verify is enabled', () => {

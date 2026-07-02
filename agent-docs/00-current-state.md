@@ -2,15 +2,15 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: Sprint 1 **đã đóng** (07/2026) — smoke test E2E pass (Postman mock webhook); deploy VPS **hoãn Sprint 4**.
+Cập nhật lần cuối: Sprint 2 **tuần 3 (backend Anh) đang làm** — AI matching pipeline + Invoice/Customer module.
 
 ## Repo đang ở giai đoạn nào
 
-**Trạng thái: Sprint 1 xong — sẵn sàng Sprint 2.** Backend: Onboarding, Banking webhook, Transaction list/detail. Frontend: React Router, TenantLayout, Auth, Onboarding Cas Link, Dashboard (Recharts + stat cards), Transactions list.
+**Trạng thái: Sprint 2 tuần 3 — backend AI + Invoice xong, FE tuần 3 chưa làm.**
 
-**Smoke test E2E đã pass (local):** Register → Cas Link (sandbox) → Postman mock `POST /webhook/cas` → Dashboard/Transactions hiển thị giao dịch thật. Webhook Cas Console / ngrok **không bắt buộc** khi dùng Postman gọi thẳng `localhost`.
+Backend mới: `ai` (OpenAI embedding, pgvector search, matching pipeline, BullMQ processor), `invoice` (CRUD, QR VietQR, import Excel/CSV), `customer` (create/list/detail + embedding). Webhook Cas sau khi lưu giao dịch → enqueue job `ai-matching`. Transaction API thêm `GET /transactions/:id/matches`.
 
-**Chưa có (Sprint 2+):** AI matching pipeline, Invoice/Customer CRUD UI, Partner Dashboard đầy đủ.
+**Chưa có (Sprint 2 tuần 4+):** Human Review module, Customer CRUD đầy đủ (update/delete/import), AI Explain, Audit log module, FE Dashboard/Transactions nâng cấp, Partner Dashboard.
 
 **Hoãn Sprint 4:** deploy VPS thật + GitHub Secrets + HTTPS production (workflow `deploy.yml` + `deploy/README.md` đã có template, chưa chạy trên VPS).
 
@@ -62,7 +62,10 @@ paypilot-ai/
 │   │   │   ├── queue/queue.module.ts     # BullMQ root + webhook-processing queue placeholder
 │   │   │   └── modules/
 │   │   │       ├── auth/                 # register, login, refresh, logout, me
-│   │   │       ├── banking/              # POST /webhook/cas — signature, idempotency, quota, save transaction
+│   │   │       ├── banking/              # POST /webhook/cas — signature, idempotency, quota, save transaction, enqueue AI matching
+│   │   │       ├── ai/                   # OpenAI embedding, pgvector search, matching pipeline, BullMQ processor
+│   │   │       ├── invoice/              # CRUD hóa đơn, QR VietQR, import Excel/CSV
+│   │   │       ├── customer/             # create/list/detail khách hàng + embedding (CRUD đầy đủ tuần 4)
 │   │   │       ├── cas/                  # CasClientService (+ exchangeGrant, getIdentity) + health/ping
 │   │   │       ├── health/               # GET /api/v1/health
 │   │   │       ├── onboarding/           # grant-token, banking/callback, status
@@ -115,6 +118,17 @@ paypilot-ai/
 | POST | `/webhook/cas` | Public (signature) | Cas Balance Hook — **không JWT** |
 | GET | `/transactions` | Bearer JWT | Danh sách giao dịch (filter + pagination) |
 | GET | `/transactions/:id` | Bearer JWT | Chi tiết giao dịch (tenant-scoped) |
+| GET | `/transactions/:id/matches` | Bearer JWT | Top 3 hóa đơn AI gợi ý + confidence |
+| GET | `/customers` | Bearer JWT | Danh sách khách hàng |
+| GET | `/customers/:id` | Bearer JWT | Chi tiết khách hàng |
+| POST | `/customers` | Admin, Accountant | Tạo khách hàng (tự động embedding) |
+| GET | `/invoices` | Bearer JWT | Danh sách hóa đơn |
+| GET | `/invoices/:id` | Bearer JWT | Chi tiết hóa đơn |
+| GET | `/invoices/:id/qr` | Bearer JWT | QR VietQR cho hóa đơn |
+| POST | `/invoices` | Admin, Accountant | Tạo hóa đơn (tự động embedding) |
+| PUT | `/invoices/:id` | Admin, Accountant | Cập nhật hóa đơn |
+| DELETE | `/invoices/:id` | Admin, Accountant | Xóa hóa đơn (soft delete) |
+| POST | `/invoices/import` | Admin, Accountant | Import Excel/CSV |
 
 Swagger UI: `http://localhost:3000/api/docs`
 
@@ -141,7 +155,7 @@ prisma:migrate   → prisma migrate deploy
 postinstall      → prisma generate
 ```
 
-**Dependencies mới chính:** `@nestjs/config`, `@nestjs/swagger`, `@nestjs/jwt`, `@nestjs/passport`, `@nestjs/bullmq`, `@prisma/client` ^6.8, `bcryptjs`, `bullmq`, `class-validator`, `class-transformer`, `cookie-parser`, `ioredis`, `passport`, `passport-jwt`, `@paypilot/shared-types`.
+**Dependencies mới chính:** `@nestjs/config`, `@nestjs/swagger`, `@nestjs/jwt`, `@nestjs/passport`, `@nestjs/bullmq`, `@prisma/client` ^6.8, `bcryptjs`, `bullmq`, `class-validator`, `class-transformer`, `cookie-parser`, `ioredis`, `openai`, `passport`, `passport-jwt`, `xlsx`, `@paypilot/shared-types`.
 
 **DevDependencies mới:** `prisma` ^6.8, `@types/bcryptjs`, `@types/cookie-parser`, `@types/passport-jwt`, `@swc/core`, `@swc/cli`.
 
@@ -149,8 +163,10 @@ postinstall      → prisma generate
 
 ## Danh sách việc CHƯA làm
 
-- [ ] AI matching pipeline (Sprint 2 tuần 3)
-- [ ] Invoice / Customer CRUD (Sprint 2)
+- [ ] Human Review module (Sprint 2 tuần 4)
+- [ ] Customer CRUD đầy đủ — update/delete/import (Sprint 2 tuần 4)
+- [ ] AI Explain endpoint (Sprint 2 tuần 4)
+- [ ] FE Dashboard/Transactions nâng cấp — confidence badge, detail sheet (Sprint 2 tuần 3 Vinh)
 - [ ] Deploy VPS thật + HTTPS production (**hoãn Sprint 4** — xem `deploy/README.md`)
 
 ## Việc Sprint 1 đã đóng (07/2026)
@@ -191,6 +207,12 @@ postinstall      → prisma generate
 - [x] Dependencies FE mới: `react-router-dom`, `sonner` (toast)
 - [x] Dashboard `GET /transactions?limit=100` (max BE); fix lỗi `limit=200` → 400
 - [x] `RecentTransactionsCard` — nút "Xem tất cả" luôn ở đáy card (`mt-auto`)
+- [x] **Sprint 2 tuần 3 (Anh):** `ai` module — OpenAI embedding (`text-embedding-3-small`), pgvector similarity search, rule-based confidence scoring, auto match ≥ threshold / queue review, BullMQ processor `ai-matching`
+- [x] **Sprint 2 tuần 3 (Anh):** `invoice` module — CRUD, soft delete, VietQR (`GET /invoices/:id/qr`), import Excel/CSV, auto embedding khi tạo/sửa
+- [x] **Sprint 2 tuần 3 (Anh):** `customer` module — create/list/detail + embedding khi tạo (phục vụ invoice + AI customer matching)
+- [x] Banking webhook enqueue BullMQ job `ai-matching` sau khi lưu transaction
+- [x] `GET /transactions/:id/matches` — top 3 AI suggestions
+- [x] Dependencies BE mới: `openai`, `xlsx`
 
 ## Quy tắc giữ file này luôn đúng
 

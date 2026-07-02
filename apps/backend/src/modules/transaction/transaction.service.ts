@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MatchingService } from '../ai/matching.service';
 import type { ListTransactionsQueryDto } from './dto/list-transactions.dto';
 
 @Injectable()
 export class TransactionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly matchingService: MatchingService,
+  ) {}
 
   async findAll(tenantId: string, query: ListTransactionsQueryDto) {
     const page = query.page ?? 1;
@@ -53,5 +57,11 @@ export class TransactionService {
     }
 
     return transaction;
+  }
+
+  async getMatches(tenantId: string, id: string) {
+    await this.findOne(tenantId, id);
+    const candidates = await this.matchingService.getMatchSuggestions(tenantId, id);
+    return { candidates };
   }
 }
