@@ -65,6 +65,14 @@ export function buildDailyTransactionTrend(
   return buckets.map(({ label, count, amount }) => ({ label, count, amount }));
 }
 
+export function buildDailyRevenueTrend(
+  items: TransactionSummary[],
+  days = 7,
+): DailyTransactionTrendPoint[] {
+  const matchedItems = items.filter((item) => item.status === TransactionStatus.MATCHED);
+  return buildDailyTransactionTrend(matchedItems, days);
+}
+
 export function buildTransactionStatusBreakdown(
   items: TransactionSummary[],
 ): TransactionStatusSlice[] {
@@ -93,4 +101,89 @@ export function buildTransactionStatusBreakdown(
 
 export function formatCurrency(amount: number) {
   return `${amount.toLocaleString('vi-VN')}đ`;
+}
+
+export interface DashboardOverviewStats {
+  todayRevenue: number;
+  yesterdayRevenue: number;
+  revenueChangePercent: number | null;
+  pendingCount: number;
+  reviewCount: number;
+  aiAccuracyPercent: number | null;
+}
+
+export function buildDashboardOverviewStats(items: TransactionSummary[]): DashboardOverviewStats {
+  const today = startOfDay(new Date());
+  const yesterday = startOfDay(new Date());
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  let todayRevenue = 0;
+  let yesterdayRevenue = 0;
+  let pendingCount = 0;
+  let reviewCount = 0;
+  let scoredCount = 0;
+  let highConfidenceCount = 0;
+
+  for (const item of items) {
+    const amount = Number(item.amount) || 0;
+    const itemDay = startOfDay(new Date(item.transactionDate)).getTime();
+
+    if (item.status === TransactionStatus.PENDING) {
+      pendingCount += 1;
+    }
+    if (item.status === TransactionStatus.REVIEW) {
+      reviewCount += 1;
+    }
+
+    if (item.status === TransactionStatus.MATCHED) {
+      if (itemDay === today.getTime()) {
+        todayRevenue += amount;
+      }
+      if (itemDay === yesterday.getTime()) {
+        yesterdayRevenue += amount;
+      }
+    }
+
+    if (item.confidenceScore != null && item.status !== TransactionStatus.PENDING) {
+      scoredCount += 1;
+      if (item.confidenceScore >= 95) {
+        highConfidenceCount += 1;
+      }
+    }
+  }
+
+  const revenueChangePercent =
+    yesterdayRevenue > 0 ? ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100 : null;
+
+  const aiAccuracyPercent = scoredCount > 0 ? (highConfidenceCount / scoredCount) * 100 : null;
+
+  return {
+    todayRevenue,
+    yesterdayRevenue,
+    revenueChangePercent,
+    pendingCount,
+    reviewCount,
+    aiAccuracyPercent,
+  };
+}
+
+export function formatTransactionDateTime(iso: string) {
+  const date = new Date(iso);
+  return date.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+export function formatTransactionTime(iso: string) {
+  const date = new Date(iso);
+  return date.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  });
 }

@@ -17,6 +17,10 @@ const badgeVariants = cva(
           'border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
         ghost: '[a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 [a&]:hover:underline',
+        success:
+          'border-primary/20 bg-primary/10 text-primary [a&]:hover:bg-primary/15 dark:border-primary/30',
+        warning:
+          'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 [a&]:hover:bg-amber-500/15',
       },
     },
     defaultVariants: {
