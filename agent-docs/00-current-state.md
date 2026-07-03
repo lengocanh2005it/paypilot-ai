@@ -93,7 +93,8 @@ paypilot-ai/                                   ← tên folder local có thể k
 │       ├── database-schema.md                 ← X-Cash AI ✅
 │       ├── user-journey.md                    ← X-Cash AI ✅
 │       ├── ui-design.md                       ← X-Cash AI ✅
-│       └── sprint-plan.md                     ← X-Cash AI ✅
+│       ├── sprint-plan.md                     ← X-Cash AI ✅
+│       └── tt133-accounting.md                ← giải thích TT133 theo góc nhìn dev ✅
 ├── apps/
 │   ├── backend/
 │   │   ├── .env.example
@@ -265,7 +266,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 | GET | `/partner/tenants` | Cas Partner | Danh sách toàn bộ tenant + plan/status/GD tháng/doanh thu |
 | GET | `/partner/stats` | Cas Partner | Tổng DN/active/suspended/GD tháng/doanh thu/AI accuracy toàn hệ thống |
 | GET | `/partner/revenue-trend` | Cas Partner | Doanh thu 6 tháng gần nhất (từ `payment_orders` status=paid) — kèm breakdown theo gói (`free/starter/pro/enterprise`) |
-| GET | `/partner/payments` | Cas Partner | Lịch sử thanh toán toàn hệ thống (mọi `payment_orders` + tên DN), mọi trạng thái |
+| GET | `/partner/payments` | Cas Partner | Lịch sử thanh toán toàn hệ thống (`payment_orders` + tên DN) — phân trang server-side (`?page=&limit=&status=&plan=&search=`), trả `{ items, page, limit, total, totalPages, summary }` |
 | PATCH | `/partner/tenants/:id/suspend` | Cas Partner | Khóa tài khoản doanh nghiệp |
 | PATCH | `/partner/tenants/:id/activate` | Cas Partner | Mở khóa tài khoản doanh nghiệp |
 | GET | `/partner/tenants/:id` | Cas Partner | Chi tiết 1 tenant (plan + GD tháng + AI accuracy + members) |
