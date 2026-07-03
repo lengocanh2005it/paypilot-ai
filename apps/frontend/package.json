@@ -12,14 +12,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@xcash/shared-types": "workspace:*",
     "@radix-ui/react-slot": "^1.3.0",
     "@tailwindcss/vite": "^4.3.2",
     "@tanstack/react-query": "^5.101.2",
+    "@xcash/shared-types": "workspace:*",
     "axios": "^1.18.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.23.0",
+    "qrcode.react": "^4.2.0",
     "radix-ui": "^1.6.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

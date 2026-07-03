@@ -9,6 +9,7 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -409,28 +410,32 @@ const PLAN_LABEL: Record<string, string> = {
   enterprise: 'Enterprise',
 };
 
-const PLAN_PRICE: Record<string, number> = {
-  free: 0,
-  starter: 299_000,
-  pro: 799_000,
-  enterprise: 2_990_000,
-};
-
-const PLAN_QUOTA: Record<string, string> = {
-  free: '50 GD/tháng',
-  starter: '500 GD/tháng',
-  pro: '2.000 GD/tháng',
-  enterprise: 'Không giới hạn',
-};
-
 const PLAN_FEATURES: Record<string, string[]> = {
   free: ['50 giao dịch/tháng', 'AI định khoản tự động', 'Export Excel'],
   starter: ['500 giao dịch/tháng', 'AI Copilot', 'Analytics', 'Email thông báo'],
-  pro: ['2.000 giao dịch/tháng', 'RAG Knowledge Base', 'Slack/Discord', 'Phí vượt 600đ/GD'],
+  pro: ['2.000 giao dịch/tháng', 'RAG Knowledge Base', 'Slack/Discord', 'Phí vượt theo gói'],
   enterprise: ['Không giới hạn GD', 'SLA cam kết', 'Partner support riêng', 'Custom Integration'],
 };
 
-const ALL_PLANS = ['free', 'starter', 'pro', 'enterprise'];
+interface BillingPlan {
+  plan: string;
+  pricePerMonth: number;
+  transactionQuota: number;
+  overagePricePerTransaction: number | null;
+}
+
+function formatPlanQuota(quota: number): string {
+  if (quota >= 999_999) return 'Không giới hạn';
+  return `${quota.toLocaleString('vi-VN')} GD/tháng`;
+}
+
+function formatPlanQuotaSubtitle(plan: BillingPlan): string {
+  const quota = formatPlanQuota(plan.transactionQuota);
+  if (plan.overagePricePerTransaction != null) {
+    return `${quota} · Phí vượt ${formatVND(plan.overagePricePerTransaction)}/GD`;
+  }
+  return quota;
+}
 
 function BillingTab() {
   const qc = useQueryClient();
@@ -444,6 +449,12 @@ function BillingTab() {
     queryFn: () => api.get<{ data: PlanData }>('/billing/current-plan').then((r) => r.data.data),
     // poll mỗi 5s khi dialog thanh toán đang mở để tự động detect khi payment xong
     refetchInterval: paymentOpen ? 5_000 : false,
+  });
+
+  const { data: availablePlans, isLoading: loadingPlans } = useQuery({
+    queryKey: ['billing', 'plans'],
+    queryFn: () => api.get<{ data: BillingPlan[] }>('/billing/plans').then((r) => r.data.data),
+    enabled: upgradeOpen,
   });
 
   // Tự đóng dialog khi plan đã đổi thành targetPlan
@@ -562,51 +573,59 @@ function BillingTab() {
             <DialogTitle>Chọn gói dịch vụ</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {ALL_PLANS.map((plan) => {
-              const isCurrent = data?.plan === plan;
-              const isSelected = selectedPlan === plan;
-              return (
-                <button
-                  key={plan}
-                  type="button"
-                  disabled={isCurrent}
-                  onClick={() => setSelectedPlan(plan)}
-                  className={cn(
-                    'rounded-xl border p-4 text-left transition-all',
-                    isCurrent
-                      ? 'cursor-not-allowed border-primary/40 bg-primary/5 opacity-60'
-                      : isSelected
-                        ? 'border-primary ring-1 ring-primary'
-                        : 'hover:border-primary/50',
-                  )}
-                >
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="font-semibold">{PLAN_LABEL[plan]}</span>
-                    {isCurrent && (
-                      <Badge variant="secondary" className="text-[10px]">
-                        Hiện tại
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="mb-2 text-lg font-bold text-primary">
-                    {PLAN_PRICE[plan] === 0
-                      ? 'Miễn phí'
-                      : `${formatVND(PLAN_PRICE[plan] ?? 0)}/tháng`}
-                  </p>
-                  <p className="mb-2 text-xs text-muted-foreground">{PLAN_QUOTA[plan]}</p>
-                  <ul className="space-y-1">
-                    {(PLAN_FEATURES[plan] ?? []).map((f) => (
-                      <li
-                        key={f}
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground"
-                      >
-                        <span className="text-primary">✓</span> {f}
-                      </li>
-                    ))}
-                  </ul>
-                </button>
-              );
-            })}
+            {loadingPlans
+              ? Array.from({ length: 4 }).map((_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholder
+                  <Skeleton key={i} className="h-40 w-full rounded-xl" />
+                ))
+              : (availablePlans ?? []).map((planItem) => {
+                  const plan = planItem.plan;
+                  const isCurrent = data?.plan === plan;
+                  const isSelected = selectedPlan === plan;
+                  return (
+                    <button
+                      key={plan}
+                      type="button"
+                      disabled={isCurrent}
+                      onClick={() => setSelectedPlan(plan)}
+                      className={cn(
+                        'rounded-xl border p-4 text-left transition-all',
+                        isCurrent
+                          ? 'cursor-not-allowed border-primary/40 bg-primary/5 opacity-60'
+                          : isSelected
+                            ? 'border-primary ring-1 ring-primary'
+                            : 'hover:border-primary/50',
+                      )}
+                    >
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="font-semibold">{PLAN_LABEL[plan] ?? plan}</span>
+                        {isCurrent && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            Hiện tại
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="mb-2 text-lg font-bold text-primary">
+                        {planItem.pricePerMonth === 0
+                          ? 'Miễn phí'
+                          : `${formatVND(planItem.pricePerMonth)}/tháng`}
+                      </p>
+                      <p className="mb-2 text-xs text-muted-foreground">
+                        {formatPlanQuotaSubtitle(planItem)}
+                      </p>
+                      <ul className="space-y-1">
+                        {(PLAN_FEATURES[plan] ?? []).map((f) => (
+                          <li
+                            key={f}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                          >
+                            <span className="text-primary">✓</span> {f}
+                          </li>
+                        ))}
+                      </ul>
+                    </button>
+                  );
+                })}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setUpgradeOpen(false)}>
@@ -647,11 +666,9 @@ function BillingTab() {
               </p>
 
               {upgradeResult.qrCode ? (
-                <img
-                  src={upgradeResult.qrCode}
-                  alt="QR thanh toán"
-                  className="mx-auto size-48 rounded-lg border"
-                />
+                <div className="mx-auto w-fit rounded-lg border p-3">
+                  <QRCodeSVG value={upgradeResult.qrCode} size={176} />
+                </div>
               ) : (
                 <div className="flex h-48 items-center justify-center rounded-lg border bg-muted text-xs text-muted-foreground">
                   {upgradeResult.isMock ? 'QR mock — chưa có PayOS key thật' : 'Đang tải QR...'}
