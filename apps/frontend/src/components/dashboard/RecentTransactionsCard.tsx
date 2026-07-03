@@ -1,6 +1,7 @@
 import { TransactionStatus } from '@xcash/shared-types';
 import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { SignedTransactionAmount } from '@/components/shared/SignedTransactionAmount';
 import { TransactionStatusBadge } from '@/components/shared/TransactionStatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,7 +48,7 @@ export function RecentTransactionsCard({ items, isLoading }: RecentTransactionsC
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <span className="text-sm font-semibold">
-                    {Number(txn.amount).toLocaleString('vi-VN')}đ
+                    <SignedTransactionAmount amount={Number(txn.amount)} />
                   </span>
                   <TransactionStatusBadge
                     status={txn.status}

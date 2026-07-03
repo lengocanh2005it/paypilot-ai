@@ -39,11 +39,8 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
+import { formatVND } from '@/lib/format-vnd';
 import { cn } from '@/lib/utils';
-
-function formatVND(amount: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
-}
 
 // ─── Tab Threshold ────────────────────────────────────────────────
 function ThresholdTab() {

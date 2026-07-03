@@ -39,6 +39,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
+import { formatVND, formatVNDAxis } from '@/lib/format-vnd';
 
 interface PartnerStats {
   totalTenants: number;
@@ -70,13 +71,6 @@ interface PartnerTenant {
   status: string;
   transactionsThisMonth: number;
   revenuePerMonth: number;
-}
-
-function formatVND(amount: number) {
-  if (Math.abs(amount) >= 1_000_000) {
-    return `${(amount / 1_000_000).toFixed(1)}M đ`;
-  }
-  return `${new Intl.NumberFormat('vi-VN').format(amount)}đ`;
 }
 
 const PLAN_LABELS: Record<string, string> = {
@@ -319,7 +313,7 @@ export default function PartnerPage() {
                     tickLine={false}
                     axisLine={false}
                     width={48}
-                    tickFormatter={(value: number) => formatVND(value)}
+                    tickFormatter={(value: number) => formatVNDAxis(value)}
                     tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
                   />
                   <Tooltip

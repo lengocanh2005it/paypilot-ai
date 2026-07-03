@@ -10,6 +10,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { type DailyTransactionTrendPoint, formatCurrency } from '@/lib/dashboard-transactions';
+import { formatVNDAxis } from '@/lib/format-vnd';
 
 interface RevenueLineChartProps {
   data: DailyTransactionTrendPoint[];
@@ -35,16 +36,6 @@ function RevenueTooltip({
       <p className="text-primary">{formatCurrency(payload[0]?.value ?? 0)}</p>
     </div>
   );
-}
-
-function formatAxisAmount(value: number) {
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1)}M`;
-  }
-  if (value >= 1_000) {
-    return `${(value / 1_000).toFixed(0)}K`;
-  }
-  return String(value);
 }
 
 export function RevenueLineChart({ data, isLoading }: RevenueLineChartProps) {
@@ -77,7 +68,7 @@ export function RevenueLineChart({ data, isLoading }: RevenueLineChartProps) {
                 tickLine={false}
                 axisLine={false}
                 width={48}
-                tickFormatter={formatAxisAmount}
+                tickFormatter={formatVNDAxis}
                 tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
               />
               <Tooltip content={<RevenueTooltip />} />

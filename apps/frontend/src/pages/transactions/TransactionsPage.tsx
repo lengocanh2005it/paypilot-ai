@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { ConfidenceBadge } from '@/components/shared/ConfidenceBadge';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { SignedTransactionAmount } from '@/components/shared/SignedTransactionAmount';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { TransactionStatusBadge } from '@/components/shared/TransactionStatusBadge';
 import { Badge } from '@/components/ui/badge';
@@ -248,8 +249,8 @@ export default function TransactionsPage() {
                       </p>
                       <TransactionStatusBadge status={txn.status} />
                     </div>
-                    <p className="mt-2 font-semibold text-primary">
-                      {Number(txn.amount).toLocaleString('vi-VN')}đ
+                    <p className="mt-2 font-semibold">
+                      <SignedTransactionAmount amount={Number(txn.amount)} />
                     </p>
                     <p className="mt-1 text-muted-foreground">{txn.content ?? '—'}</p>
                     <div className="mt-2 flex items-center justify-between">
@@ -286,8 +287,8 @@ export default function TransactionsPage() {
                       <TableCell className="text-sm text-muted-foreground">
                         {formatTransactionTime(txn.transactionDate)}
                       </TableCell>
-                      <TableCell className="text-right font-semibold text-primary">
-                        {Number(txn.amount).toLocaleString('vi-VN')}đ
+                      <TableCell className="text-right font-semibold">
+                        <SignedTransactionAmount amount={Number(txn.amount)} />
                       </TableCell>
                       <TableCell className="max-w-[260px] truncate text-sm">
                         {txn.content ?? '—'}

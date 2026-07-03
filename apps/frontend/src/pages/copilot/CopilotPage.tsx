@@ -1,6 +1,7 @@
 import { Bot, Send, User } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Header } from '@/components/layout/Header';
+import { HighlightedText } from '@/components/shared/HighlightedText';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
@@ -25,7 +26,7 @@ export default function CopilotPage() {
       id: 'init',
       role: 'assistant',
       content:
-        'Xin chào! Tôi là AI Copilot của X-Cash AI. Bạn có thể hỏi tôi về doanh thu, chi phí, giao dịch hoặc định khoản của doanh nghiệp.',
+        'Xin chào! Tôi là **AI Copilot** của **X-Cash AI**. Bạn có thể hỏi tôi về **doanh thu**, **chi phí**, **giao dịch** hoặc **định khoản** theo chuẩn **TT133** của doanh nghiệp.',
     },
   ]);
   const [input, setInput] = useState('');
@@ -103,7 +104,7 @@ export default function CopilotPage() {
                   : 'bg-primary text-primary-foreground rounded-tr-none',
               )}
             >
-              {msg.content}
+              {msg.role === 'assistant' ? <HighlightedText text={msg.content} /> : msg.content}
             </div>
           </div>
         ))}

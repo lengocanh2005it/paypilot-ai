@@ -14,13 +14,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
-
-function formatVND(amount: number) {
-  if (Math.abs(amount) >= 1_000_000) {
-    return `${(amount / 1_000_000).toFixed(1)}M đ`;
-  }
-  return `${new Intl.NumberFormat('vi-VN').format(amount)}đ`;
-}
+import { formatVND, formatVNDAxis } from '@/lib/format-vnd';
 
 interface ComparisonData {
   current: { totalRevenue: number; totalExpense: number; net: number };
@@ -225,7 +219,7 @@ export default function AnalyticsPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis
-                    tickFormatter={(v: number) => formatVND(v)}
+                    tickFormatter={(v: number) => formatVNDAxis(v)}
                     tick={{ fontSize: 11 }}
                     width={80}
                   />

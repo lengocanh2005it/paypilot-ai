@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
+import { formatVND } from '@/lib/format-vnd';
 
 interface SummaryData {
   period: { year: number; month: number };
@@ -28,10 +29,6 @@ interface SummaryData {
 async function fetchSummary(year: number, month: number): Promise<SummaryData> {
   const res = await api.get(`/reports/summary?year=${year}&month=${month}`);
   return res.data.data;
-}
-
-function formatVND(amount: number) {
-  return amount.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
 }
 
 const MONTHS = [
