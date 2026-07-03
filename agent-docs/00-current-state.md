@@ -2,13 +2,13 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Sprint 4 — phần code (Partner Dashboard, rate limiting, onboarding tour) đã xong. Deploy VPS thật/SSL/nginx production CHƯA làm (hoãn, cần môi trường thật ngoài phạm vi code).**
+Cập nhật lần cuối: **Sprint 4 — PayOS billing upgrade (chọn gói → thanh toán → webhook xác nhận) + Partner sidebar layout đã xong. Deploy VPS thật/SSL/nginx production CHƯA làm (hoãn, cần môi trường thật ngoài phạm vi code).**
 
 ---
 
 ## Repo đang ở giai đoạn nào
 
-**Trạng thái: Sprint 3 HOÀN THÀNH toàn bộ. Sprint 4 — Partner Dashboard (API + UI), rate limiting per-tenant/per-phút, onboarding welcome tour đã xong. Còn lại: Docker build pipeline production, SSL/nginx, deploy VPS thật, final E2E QA thủ công.**
+**Trạng thái: Sprint 3 HOÀN THÀNH toàn bộ. Sprint 4 — Partner Dashboard (API + UI), rate limiting per-tenant/per-phút, onboarding welcome tour, Partner sidebar layout, PayOS billing upgrade đã xong. Còn lại: Docker build pipeline production, SSL/nginx, deploy VPS thật, final E2E QA thủ công.**
 
 **Đã xong (Sprint 1–2):**
 - Auth, Onboarding (Cas Link), Banking webhook, Transaction module ✅
@@ -41,7 +41,13 @@ Cập nhật lần cuối: **Sprint 4 — phần code (Partner Dashboard, rate l
 - Backend: rate limiting per-tenant/per-phút bằng `@nestjs/throttler` — `TenantThrottlerGuard` (tracker = `tenantId`, fallback `userId`/IP), áp dụng global qua `APP_GUARD`, giới hạn cấu hình qua env `RATE_LIMIT_PER_MINUTE` (default 120) ✅
 - Frontend: `PartnerPage` hoàn chỉnh — stat cards (tổng DN/active-suspended/doanh thu/AI accuracy), biểu đồ doanh thu 6 tháng (LineChart), tìm kiếm/lọc theo tên-trạng thái-gói, bảng tenant có nút Khóa/Mở khóa, section "Cài đặt giá gói dịch vụ" (sửa giá/quota/phí vượt Starter trở lên qua Dialog) ✅
 - Frontend: `WelcomeTour` — dialog 4 bước giới thiệu luồng (Liên kết NH → AI định khoản → Human Review → Báo cáo/Copilot), hiện 1 lần cho mỗi user (`localStorage` key `xcash_welcome_tour_seen_{userId}`), gắn ở `DashboardPage` ✅
-- **Kế hoạch chưa triển khai:** nâng cấp gói qua PayOS thật (chọn gói → thanh toán → webhook xác nhận) — xem [`reference/payos-billing-plan.md`](./reference/payos-billing-plan.md) mô tả đầy đủ 5 phase cần làm
+- Backend: `GET /partner/tenants/:id` — chi tiết 1 tenant (thông tin + plan + GD tháng + AI accuracy + members) ✅
+- Backend: `POST /billing/upgrade` — tạo PaymentOrder + gọi PayOS tạo link thanh toán (mock fallback khi chưa có keys) ✅
+- Backend: `POST /billing/upgrade/:orderCode/mock-confirm` — dev-only, giả lập webhook confirm thanh toán ✅
+- Backend: `POST /webhook/payos-billing` — Public, verify chữ ký PayOS, gọi `confirmPayment()` khi `code === '00'` ✅
+- Backend: `PayosService` — wrapper PayOS v2 SDK (`@payos/node`), mock mode khi keys không có ✅
+- Frontend: Partner refactor sang sidebar layout (logo, collapse/expand, mobile) — 2 route: `/partner/dashboard`, `/partner/plans` ✅
+- Frontend: `SettingsPage` BillingTab — luồng nâng cấp đầy đủ: chọn gói → QR thanh toán + polling → auto-close khi plan đổi; dev-only mock button ✅
 
 **Chưa làm (Sprint 4 — còn lại):**
 - Production env vars + Docker build pipeline, SSL/HTTPS + nginx config production
@@ -140,10 +146,13 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   ├── team.service.ts
 │   │           │   ├── team.module.ts
 │   │           │   └── dto/team.dto.ts
-│   │           ├── billing/                   # Current plan + usage history ✅
-│   │           │   ├── billing.controller.ts
-│   │           │   ├── billing.service.ts
-│   │           │   └── billing.module.ts
+│   │           ├── billing/                   # Current plan + usage history + PayOS upgrade ✅
+│   │           │   ├── billing.controller.ts  # + POST /billing/upgrade, /upgrade/:orderCode/mock-confirm
+│   │           │   ├── billing.service.ts      # + upgrade(), confirmPayment()
+│   │           │   ├── billing.module.ts
+│   │           │   ├── payos.service.ts        # PayOS v2 SDK wrapper, mock fallback
+│   │           │   ├── payos-webhook.controller.ts  # POST /webhook/payos-billing
+│   │           │   └── dto/upgrade-billing.dto.ts
 │   │           ├── partner/                   # /partner/* — chỉ Cas Partner ✅
 │   │           │   ├── partner.controller.ts
 │   │           │   ├── partner.service.ts
@@ -182,7 +191,10 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat, gợi ý câu hỏi ✅
 │           │   ├── settings/SettingsPage.tsx  # Tabs: Banking/Threshold/Notifications/Team/Billing ✅
 │           │   ├── accounts/AccountsPage.tsx  # Danh mục TK TT133 ✅
-│           │   └── partner/PartnerPage.tsx    # Stat cards, revenue chart, filter, bảng tenant, cài đặt giá gói ✅
+│           │   └── partner/
+│   │   ├── PartnerLayout.tsx          # Sidebar layout (logo, collapse/expand, mobile) ✅
+│   │   ├── PartnerDashboardPage.tsx   # Stat cards, revenue chart, filter, bảng tenant, dialog chi tiết ✅
+│   │   └── PartnerPlansPage.tsx       # 4 plan cards, bảng giá, dialog chỉnh giá ✅
 │           ├── components/shared/WelcomeTour.tsx  # Dialog 4 bước, 1 lần/user (localStorage) ✅
 │           ├── hooks/                          # + useReviewCount.ts (poll 20s /review/count)
 │           └── types/transaction.ts           # thêm TransactionClassificationSummary, bỏ MatchCandidate ✅
@@ -237,11 +249,15 @@ paypilot-ai/                                   ← tên folder local có thể k
 | DELETE | `/team/members/:id` | Admin | Xóa thành viên (chặn tự xóa / xóa admin cuối) |
 | GET | `/billing/current-plan` | Admin, Accountant | Gói hiện tại |
 | GET | `/billing/usage-history` | Admin | Lịch sử sử dụng quota |
+| POST | `/billing/upgrade` | Admin | Tạo PaymentOrder + link PayOS (mock fallback khi chưa có keys) |
+| POST | `/billing/upgrade/:orderCode/mock-confirm` | Admin | Dev-only — giả lập xác nhận thanh toán |
+| POST | `/webhook/payos-billing` | Public (PayOS signature) | Callback thanh toán PayOS → `confirmPayment()` |
 | GET | `/partner/tenants` | Cas Partner | Danh sách toàn bộ tenant + plan/status/GD tháng/doanh thu |
 | GET | `/partner/stats` | Cas Partner | Tổng DN/active/suspended/GD tháng/doanh thu/AI accuracy toàn hệ thống |
 | GET | `/partner/revenue-trend` | Cas Partner | Doanh thu 6 tháng gần nhất (từ `payment_orders` status=paid) |
 | PATCH | `/partner/tenants/:id/suspend` | Cas Partner | Khóa tài khoản doanh nghiệp |
 | PATCH | `/partner/tenants/:id/activate` | Cas Partner | Mở khóa tài khoản doanh nghiệp |
+| GET | `/partner/tenants/:id` | Cas Partner | Chi tiết 1 tenant (plan + GD tháng + AI accuracy + members) |
 | GET | `/partner/plan-pricing` | Cas Partner | Xem giá/quota từng gói |
 | PATCH | `/partner/plan-pricing/:plan` | Cas Partner | Sửa giá/quota/phí vượt (chặn sửa `free`) |
 
