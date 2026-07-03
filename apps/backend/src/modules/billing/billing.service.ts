@@ -4,20 +4,6 @@ import type { SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PayosService } from './payos.service';
 
-const PLAN_AMOUNT: Record<string, number> = {
-  free: 0,
-  starter: 299_000,
-  pro: 799_000,
-  enterprise: 2_990_000,
-};
-
-const PLAN_QUOTA: Record<string, number> = {
-  free: 50,
-  starter: 500,
-  pro: 2_000,
-  enterprise: 999_999,
-};
-
 @Injectable()
 export class BillingService {
   constructor(
@@ -25,6 +11,25 @@ export class BillingService {
     private readonly payosService: PayosService,
     private readonly config: ConfigService,
   ) {}
+
+  async listPlans() {
+    const plans = await this.prisma.planPricing.findMany({ orderBy: { pricePerMonth: 'asc' } });
+    return plans.map((p) => ({
+      plan: p.plan,
+      pricePerMonth: Number(p.pricePerMonth),
+      transactionQuota: p.transactionQuota,
+      overagePricePerTransaction:
+        p.overagePricePerTransaction !== null ? Number(p.overagePricePerTransaction) : null,
+    }));
+  }
+
+  private async getPlanPricingOrThrow(plan: SubscriptionPlan) {
+    const pricing = await this.prisma.planPricing.findUnique({ where: { plan } });
+    if (!pricing) {
+      throw new NotFoundException(`Không tìm thấy cấu hình gói ${plan}`);
+    }
+    return pricing;
+  }
 
   async getCurrentPlan(tenantId: string) {
     const sub = await this.prisma.subscription.findFirst({
@@ -67,8 +72,18 @@ export class BillingService {
       throw new BadRequestException('Doanh nghiệp đang sử dụng gói này');
     }
 
-    const amount = PLAN_AMOUNT[targetPlan];
-    if (amount === undefined) {
+    if (currentSub) {
+      const currentPricing = await this.getPlanPricingOrThrow(currentSub.plan);
+      const targetPricing = await this.getPlanPricingOrThrow(targetPlan);
+      if (Number(targetPricing.pricePerMonth) < Number(currentPricing.pricePerMonth)) {
+        throw new BadRequestException('Không thể hạ xuống gói thấp hơn gói hiện tại');
+      }
+    }
+
+    const pricing = await this.getPlanPricingOrThrow(targetPlan);
+    const amount = Number(pricing.pricePerMonth);
+
+    if (amount <= 0 && targetPlan !== 'free') {
       throw new BadRequestException('Gói dịch vụ không hợp lệ');
     }
 
@@ -111,8 +126,9 @@ export class BillingService {
     if (order.status === 'paid') return { success: true, alreadyPaid: true };
 
     const { tenantId, targetPlan } = order;
-    const amount = PLAN_AMOUNT[targetPlan] ?? 0;
-    const quota = PLAN_QUOTA[targetPlan] ?? 50;
+    const pricing = await this.getPlanPricingOrThrow(targetPlan);
+    const amount = Number(order.amount);
+    const quota = pricing.transactionQuota;
     const now = new Date();
     const cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
 

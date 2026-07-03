@@ -581,16 +581,22 @@ function BillingTab() {
               : (availablePlans ?? []).map((planItem) => {
                   const plan = planItem.plan;
                   const isCurrent = data?.plan === plan;
+                  const currentPlanItem = availablePlans?.find((p) => p.plan === data?.plan);
+                  const isLower =
+                    !isCurrent &&
+                    currentPlanItem != null &&
+                    planItem.pricePerMonth < currentPlanItem.pricePerMonth;
+                  const isDisabled = isCurrent || isLower;
                   const isSelected = selectedPlan === plan;
                   return (
                     <button
                       key={plan}
                       type="button"
-                      disabled={isCurrent}
+                      disabled={isDisabled}
                       onClick={() => setSelectedPlan(plan)}
                       className={cn(
                         'rounded-xl border p-4 text-left transition-all',
-                        isCurrent
+                        isDisabled
                           ? 'cursor-not-allowed border-primary/40 bg-primary/5 opacity-60'
                           : isSelected
                             ? 'border-primary ring-1 ring-primary'
@@ -602,6 +608,11 @@ function BillingTab() {
                         {isCurrent && (
                           <Badge variant="secondary" className="text-[10px]">
                             Hiện tại
+                          </Badge>
+                        )}
+                        {isLower && (
+                          <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                            Không khả dụng
                           </Badge>
                         )}
                       </div>
