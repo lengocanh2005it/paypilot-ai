@@ -27,16 +27,19 @@ src/modules/
 ├── onboarding/           # Cas Link Grant/Exchange flow
 ├── banking/              # webhook Cas Balance Hook, cas_grants
 ├── transaction/          # CRUD giao dịch
-├── classification/       # Human Review queue + định khoản
+├── classification/       # Human Review queue + định khoản + review count
 ├── chart-of-accounts/    # danh mục TT133
-├── report/               # báo cáo thu/chi, export Excel
-├── ai/                   # AI Classification pipeline (BullMQ ai-classify)
+├── report/               # báo cáo thu/chi, export Excel, comparison, top-accounts
+├── ai/                   # AI Classification pipeline (BullMQ ai-classify) + copilot.controller
+├── settings/             # threshold (Prisma) + notifications (Redis)
+├── team/                 # invite/list/remove member
+├── billing/              # current-plan + usage-history
+├── partner/              # route /partner/*, chỉ Cas Partner — tenants list, stats, suspend/activate
 ├── cas/                  # CasClientService
-├── health/               # health check
-└── partner/              # route /partner/*, chỉ Cas Partner (Sprint 4+)
+└── health/               # health check
 ```
 
-Các module dự kiến Sprint 3+: `settings`, `team`, `billing`, `notification`, `audit-log`, `analytics`.
+Module chưa có (chưa cần thiết trong scope hiện tại): `notification` (email/Slack/Discord thật), `audit-log` (endpoint xem riêng — hiện audit log chỉ ghi vào bảng, chưa có API đọc).
 
 `src/common/` chứa cross-cutting concerns dùng chung mọi module:
 

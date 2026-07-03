@@ -1,7 +1,9 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { TenantThrottlerGuard } from './common/guards/tenant-throttler.guard';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import configuration from './config/configuration';
@@ -14,6 +16,7 @@ import { ChartOfAccountsModule } from './modules/chart-of-accounts/chart-of-acco
 import { ClassificationModule } from './modules/classification/classification.module';
 import { HealthModule } from './modules/health/health.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { PartnerModule } from './modules/partner/partner.module';
 import { ReportModule } from './modules/report/report.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { TeamModule } from './modules/team/team.module';
@@ -28,6 +31,17 @@ import { RedisModule } from './redis/redis.module';
       isGlobal: true,
       load: [configuration],
       envFilePath: '.env',
+    }),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        throttlers: [
+          {
+            ttl: 60_000,
+            limit: configService.get<number>('RATE_LIMIT_PER_MINUTE', 120),
+          },
+        ],
+      }),
     }),
     PrismaModule,
     RedisModule,
@@ -45,6 +59,7 @@ import { RedisModule } from './redis/redis.module';
     SettingsModule,
     TeamModule,
     BillingModule,
+    PartnerModule,
   ],
   providers: [
     {
@@ -54,6 +69,10 @@ import { RedisModule } from './redis/redis.module';
     {
       provide: APP_INTERCEPTOR,
       useClass: ResponseInterceptor,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantThrottlerGuard,
     },
   ],
 })

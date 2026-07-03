@@ -108,6 +108,18 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
 
+    if (user.tenantId) {
+      const subscription = await this.prisma.subscription.findFirst({
+        where: { tenantId: user.tenantId },
+        orderBy: { startedAt: 'desc' },
+      });
+      if (subscription?.status === 'suspended') {
+        throw new UnauthorizedException(
+          'Tài khoản doanh nghiệp đã bị tạm khóa. Vui lòng liên hệ hỗ trợ.',
+        );
+      }
+    }
+
     return this.issueTokens(this.toAuthenticatedUser(user));
   }
 
