@@ -2,13 +2,13 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Sprint 3 (Analytics + AI Copilot + Settings) HOÀN THÀNH đầy đủ, bao gồm cả notification realtime (polling) và mobile swipe trên Review card.**
+Cập nhật lần cuối: **Sprint 4 — phần code (Partner Dashboard, rate limiting, onboarding tour) đã xong. Deploy VPS thật/SSL/nginx production CHƯA làm (hoãn, cần môi trường thật ngoài phạm vi code).**
 
 ---
 
 ## Repo đang ở giai đoạn nào
 
-**Trạng thái: Sprint 3 HOÀN THÀNH toàn bộ — AI Copilot, Analytics, Settings, Team, Billing, notification badge + swipe mobile trên Review. Sẵn sàng cho Sprint 4 (Partner Dashboard + Deploy).**
+**Trạng thái: Sprint 3 HOÀN THÀNH toàn bộ. Sprint 4 — Partner Dashboard (API + UI), rate limiting per-tenant/per-phút, onboarding welcome tour đã xong. Còn lại: Docker build pipeline production, SSL/nginx, deploy VPS thật, final E2E QA thủ công.**
 
 **Đã xong (Sprint 1–2):**
 - Auth, Onboarding (Cas Link), Banking webhook, Transaction module ✅
@@ -34,11 +34,19 @@ Cập nhật lần cuối: **Sprint 3 (Analytics + AI Copilot + Settings) HOÀN 
 - Frontend: ShadCN components mới — `progress.tsx`, `separator.tsx`, `switch.tsx`, `tabs.tsx` (dùng `radix-ui` umbrella package, pattern giống `select.tsx` — KHÔNG dùng `@radix-ui/react-*` riêng lẻ) ✅
 - Sidebar: bật đủ 8 nav items (`/analytics`, `/copilot`, `/settings`), bỏ block "Sắp ra mắt" ✅
 
-**Chưa làm (Sprint 4):**
-- Partner Dashboard (`/partner/*`) — xem toàn bộ tenant, usage stats, AI accuracy global
-- Rate limiting nâng cao (per-tenant, per-minute)
+**Đã xong (Sprint 4 — phần code):**
+- Backend: `partner` module — `GET /partner/tenants` (danh sách + plan/status/GD tháng/doanh thu), `GET /partner/stats` (tổng DN/active/suspended/GD tháng/doanh thu/AI accuracy toàn hệ thống), `GET /partner/revenue-trend` (doanh thu 6 tháng, đọc từ `payment_orders` status=paid), `PATCH /partner/tenants/:id/suspend`, `PATCH /partner/tenants/:id/activate` — dùng `PartnerGuard` có sẵn ✅
+- Backend: bảng `plan_pricing` (mới) + `GET /partner/plan-pricing`, `PATCH /partner/plan-pricing/:plan` — Cas Partner chỉnh giá/quota Starter trở lên, Free luôn cố định 0đ/50GD. Đây là giá áp dụng cho lần nâng cấp tiếp theo, không hồi tố `subscriptions` đang active (snapshot giá riêng) ✅
+- Backend: chặn login nếu subscription của tenant đang `suspended` (`auth.service.ts`) — hoàn thiện edge case đã ghi trong `rbac.md` ✅
+- Backend: rate limiting per-tenant/per-phút bằng `@nestjs/throttler` — `TenantThrottlerGuard` (tracker = `tenantId`, fallback `userId`/IP), áp dụng global qua `APP_GUARD`, giới hạn cấu hình qua env `RATE_LIMIT_PER_MINUTE` (default 120) ✅
+- Frontend: `PartnerPage` hoàn chỉnh — stat cards (tổng DN/active-suspended/doanh thu/AI accuracy), biểu đồ doanh thu 6 tháng (LineChart), tìm kiếm/lọc theo tên-trạng thái-gói, bảng tenant có nút Khóa/Mở khóa, section "Cài đặt giá gói dịch vụ" (sửa giá/quota/phí vượt Starter trở lên qua Dialog) ✅
+- Frontend: `WelcomeTour` — dialog 4 bước giới thiệu luồng (Liên kết NH → AI định khoản → Human Review → Báo cáo/Copilot), hiện 1 lần cho mỗi user (`localStorage` key `xcash_welcome_tour_seen_{userId}`), gắn ở `DashboardPage` ✅
+- **Kế hoạch chưa triển khai:** nâng cấp gói qua PayOS thật (chọn gói → thanh toán → webhook xác nhận) — xem [`reference/payos-billing-plan.md`](./reference/payos-billing-plan.md) mô tả đầy đủ 5 phase cần làm
+
+**Chưa làm (Sprint 4 — còn lại):**
 - Production env vars + Docker build pipeline, SSL/HTTPS + nginx config production
-- Onboarding welcome tour, Final E2E QA, Deploy VPS thật
+- Deploy VPS thật (GitHub Actions `deploy.yml`)
+- Final E2E QA thủ công toàn luồng (register → Cas Link → nhận GD → AI classify → review → export)
 
 ---
 
@@ -82,17 +90,19 @@ paypilot-ai/                                   ← tên folder trên disk (packa
 │   │   │       ├── 20260301120000_init_sprint1_week1/
 │   │   │       ├── 20260702032642_add_cas_grant_account_holder_name/
 │   │   │       ├── 20260702080000_add_cas_grant_bank_logo/
-│   │   │       └── 20260703041453_klassi_ai_pivot/   ← migration đã apply (tên lịch sử) ✅
+│   │   │       ├── 20260703041453_klassi_ai_pivot/   ← migration đã apply (tên lịch sử) ✅
+│   │   │       └── 20260703091815_add_plan_pricing/  ← thêm bảng plan_pricing + seed giá mặc định ✅
 │   │   ├── package.json
 │   │   ├── nest-cli.json
 │   │   ├── .swcrc
 │   │   └── src/
 │   │       ├── main.ts
-│   │       ├── app.module.ts                  # imports: Auth, Cas, Health, Onboarding, Banking, Ai, ChartOfAccounts, Classification, Report, Transaction, Settings, Team, Billing
-│   │       ├── config/configuration.ts        # thêm AI_CLASSIFICATION_THRESHOLD (default 85)
+│   │       ├── app.module.ts                  # imports: Auth, Cas, Health, Onboarding, Banking, Ai, ChartOfAccounts, Classification, Report, Transaction, Settings, Team, Billing, Partner; + ThrottlerModule + APP_GUARD (TenantThrottlerGuard)
+│   │       ├── config/configuration.ts        # + RATE_LIMIT_PER_MINUTE (default 120)
 │   │       ├── common/
 │   │       │   ├── decorators/                # @Roles() dùng Role từ @xcash/shared-types
-│   │       │   ├── guards/auth.guards.ts
+│   │       │   ├── guards/auth.guards.ts       # JwtAuthGuard, RolesGuard, PartnerGuard
+│   │       │   ├── guards/tenant-throttler.guard.ts  # TenantThrottlerGuard (tracker = tenantId)
 │   │       │   ├── filters/all-exceptions.filter.ts
 │   │       │   ├── interceptors/response.interceptor.ts
 │   │       │   ├── middleware/request-id.middleware.ts
@@ -134,6 +144,11 @@ paypilot-ai/                                   ← tên folder trên disk (packa
 │   │           │   ├── billing.controller.ts
 │   │           │   ├── billing.service.ts
 │   │           │   └── billing.module.ts
+│   │           ├── partner/                   # /partner/* — chỉ Cas Partner ✅
+│   │           │   ├── partner.controller.ts
+│   │           │   ├── partner.service.ts
+│   │           │   ├── partner.module.ts
+│   │           │   └── dto/plan-pricing.dto.ts
 │   │           ├── cas/
 │   │           ├── health/
 │   │           ├── onboarding/
@@ -167,7 +182,8 @@ paypilot-ai/                                   ← tên folder trên disk (packa
 │           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat, gợi ý câu hỏi ✅
 │           │   ├── settings/SettingsPage.tsx  # Tabs: Banking/Threshold/Notifications/Team/Billing ✅
 │           │   ├── accounts/AccountsPage.tsx  # Danh mục TK TT133 ✅
-│           │   └── partner/PartnerPage.tsx
+│           │   └── partner/PartnerPage.tsx    # Stat cards, revenue chart, filter, bảng tenant, cài đặt giá gói ✅
+│           ├── components/shared/WelcomeTour.tsx  # Dialog 4 bước, 1 lần/user (localStorage) ✅
 │           ├── hooks/                          # + useReviewCount.ts (poll 20s /review/count)
 │           └── types/transaction.ts           # thêm TransactionClassificationSummary, bỏ MatchCandidate ✅
 ├── packages/shared-types/src/index.ts        # TransactionStatus.CLASSIFIED (bỏ MATCHED), ClassificationType, AccountType ✅
@@ -221,6 +237,13 @@ paypilot-ai/                                   ← tên folder trên disk (packa
 | DELETE | `/team/members/:id` | Admin | Xóa thành viên (chặn tự xóa / xóa admin cuối) |
 | GET | `/billing/current-plan` | Admin, Accountant | Gói hiện tại |
 | GET | `/billing/usage-history` | Admin | Lịch sử sử dụng quota |
+| GET | `/partner/tenants` | Cas Partner | Danh sách toàn bộ tenant + plan/status/GD tháng/doanh thu |
+| GET | `/partner/stats` | Cas Partner | Tổng DN/active/suspended/GD tháng/doanh thu/AI accuracy toàn hệ thống |
+| GET | `/partner/revenue-trend` | Cas Partner | Doanh thu 6 tháng gần nhất (từ `payment_orders` status=paid) |
+| PATCH | `/partner/tenants/:id/suspend` | Cas Partner | Khóa tài khoản doanh nghiệp |
+| PATCH | `/partner/tenants/:id/activate` | Cas Partner | Mở khóa tài khoản doanh nghiệp |
+| GET | `/partner/plan-pricing` | Cas Partner | Xem giá/quota từng gói |
+| PATCH | `/partner/plan-pricing/:plan` | Cas Partner | Sửa giá/quota/phí vượt (chặn sửa `free`) |
 
 Swagger UI: `http://localhost:3000/api/docs`
 
@@ -306,7 +329,7 @@ prisma:migrate   → prisma migrate deploy
 postinstall      → prisma generate
 ```
 
-**Dependencies đáng chú ý:** `xlsx` (export Excel), `openai`, `bullmq`, `@nestjs/bullmq`, `@prisma/client ^6`, `@xcash/shared-types`.
+**Dependencies đáng chú ý:** `xlsx` (export Excel), `openai`, `bullmq`, `@nestjs/bullmq`, `@nestjs/throttler` (rate limiting per-tenant), `@prisma/client ^6`, `@xcash/shared-types`.
 
 **Build:** NestJS SWC builder. `@Roles()` decorator nhận `Role` từ `@xcash/shared-types` (không phải `@prisma/client`) — quan trọng, dùng sai sẽ lỗi type.
 
@@ -325,6 +348,8 @@ postinstall      → prisma generate
 - **ShadCN mới (Progress/Separator/Switch/Tabs) dùng `radix-ui` umbrella package**, KHÔNG dùng `@radix-ui/react-progress` v.v. riêng lẻ — dự án chỉ có `radix-ui` (^1.6.1) trong `package.json`, import theo pattern `import { Progress as ProgressPrimitive } from 'radix-ui'` giống `select.tsx` đã có sẵn. Chạy `pnpm dlx shadcn@latest add <name>` có thể ghi nhầm vào thư mục `@/` sai chỗ (alias resolve lỗi) — nếu gặp, viết file thủ công theo pattern của component ShadCN có sẵn trong repo (`select.tsx`) thay vì tin theo output CLI.
 - **Team invite đơn giản hoá:** tạo user trực tiếp với password do Admin nhập, không gửi email thật (chỉ demo).
 - **`dto.role as unknown as import('@prisma/client').Role`** — cast cần thiết trong `team.service.ts` vì `Role` từ `@xcash/shared-types` (dùng cho DTO/RBAC) không trùng type với `Role` enum của Prisma Client dù cùng giá trị string.
+- **Rate limiting per-tenant:** `TenantThrottlerGuard` override `getTracker()` để dùng `tenantId` (fallback `userId` rồi IP) làm key thay vì mặc định theo IP — vì nhiều user cùng tenant có thể gọi API từ IP khác nhau, và Cas Partner (không có `tenantId`) vẫn cần giới hạn theo user. Áp dụng global qua `APP_GUARD`, bỏ qua `/health`. Giới hạn: `RATE_LIMIT_PER_MINUTE` (default 120 request/phút/tenant).
+- **Tenant suspend chặn login:** `auth.service.ts` → `login()` tra `subscription` mới nhất theo `tenantId`, nếu `status === 'suspended'` thì từ chối đăng nhập luôn (không cho vào hệ thống dù JWT hợp lệ) — khớp edge case đã ghi trong `rbac.md`.
 
 ---
 

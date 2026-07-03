@@ -7,6 +7,7 @@ import { RecentTransactionsCard } from '@/components/dashboard/RecentTransaction
 import { RevenueLineChart } from '@/components/dashboard/RevenueLineChart';
 import { TransactionStatusChart } from '@/components/dashboard/TransactionStatusChart';
 import { Header } from '@/components/layout/Header';
+import { WelcomeTour } from '@/components/shared/WelcomeTour';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
 import { getApiData } from '@/lib/api';
@@ -58,6 +59,7 @@ export default function DashboardPage() {
 
   return (
     <>
+      {user ? <WelcomeTour userId={user.id} /> : null}
       <Header title="Dashboard" description={`Xin chào, ${user?.name ?? 'bạn'}`} />
 
       <div className="space-y-6 p-4 sm:p-6">

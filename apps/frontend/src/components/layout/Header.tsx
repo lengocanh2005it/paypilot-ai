@@ -5,11 +5,12 @@ import { cn } from '@/lib/utils';
 interface HeaderProps {
   title: string;
   description?: string;
+  logo?: ReactNode;
   actions?: ReactNode;
   className?: string;
 }
 
-export function Header({ title, description, actions, className }: HeaderProps) {
+export function Header({ title, description, logo, actions, className }: HeaderProps) {
   return (
     <header
       className={cn(
@@ -18,9 +19,14 @@ export function Header({ title, description, actions, className }: HeaderProps) 
       )}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold text-foreground sm:text-xl">{title}</h1>
-          {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+        <div className="flex min-w-0 items-center gap-3">
+          {logo}
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold text-foreground sm:text-xl">{title}</h1>
+            {description ? (
+              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            ) : null}
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
           {actions}

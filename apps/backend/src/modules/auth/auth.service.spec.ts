@@ -21,6 +21,9 @@ describe('AuthService', () => {
     user: {
       findUnique: jest.fn(),
     },
+    subscription: {
+      findFirst: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
 
@@ -107,6 +110,7 @@ describe('AuthService', () => {
     });
 
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+    prisma.subscription.findFirst.mockResolvedValue({ status: 'active' });
 
     const session = await service.login({
       email: 'admin@abc.edu.vn',
@@ -116,5 +120,23 @@ describe('AuthService', () => {
     expect(session.accessToken).toBe('signed-token');
     expect(session.user.role).toBe(Role.ADMIN);
     expect(redisClient.set).toHaveBeenCalled();
+  });
+
+  it('rejects login when tenant subscription is suspended', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@abc.edu.vn',
+      name: 'ABC',
+      role: Role.ADMIN,
+      tenantId: 'tenant-1',
+      passwordHash: 'hashed-password',
+    });
+
+    (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+    prisma.subscription.findFirst.mockResolvedValue({ status: 'suspended' });
+
+    await expect(
+      service.login({ email: 'admin@abc.edu.vn', password: 'password123' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

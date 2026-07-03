@@ -135,15 +135,15 @@ Tất cả đã hoàn thành:
 
 ### Anh:
 
-- [ ] Partner Dashboard API (`/partner/*`) — xem toàn bộ tenant, usage stats, AI accuracy global
-- [ ] Rate limiting nâng cao (per-tenant, per-minute)
+- [x] Partner Dashboard API (`/partner/*`) — `GET /partner/tenants`, `GET /partner/stats`, `PATCH /partner/tenants/:id/suspend`, `PATCH /partner/tenants/:id/activate` (chưa làm `/partner/tenants/:id` chi tiết, `/partner/revenue`, `/partner/audit-logs`, `/partner/system-health` — xem `rbac.md`)
+- [x] Rate limiting nâng cao (per-tenant, per-minute) — `@nestjs/throttler`, `TenantThrottlerGuard`
 - [ ] Production env vars + Docker build pipeline
 - [ ] SSL/HTTPS + nginx config production
 
 ### Vinh:
 
-- [ ] PartnerPage hoàn chỉnh — table tenant, stats, usage
-- [ ] Onboarding welcome tour (intro steps cho kế toán mới)
+- [x] PartnerPage hoàn chỉnh — table tenant, stats, usage
+- [x] Onboarding welcome tour (intro steps cho kế toán mới)
 - [ ] Final QA: E2E test toàn bộ luồng (register → Cas Link → nhận GD → AI classify → review → export)
 - [ ] Deploy VPS thật (GitHub Actions `deploy.yml`)
 

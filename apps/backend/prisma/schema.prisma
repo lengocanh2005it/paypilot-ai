@@ -200,6 +200,17 @@ model Subscription {
   @@map("subscriptions")
 }
 
+model PlanPricing {
+  id                         String           @id @default(uuid())
+  plan                       SubscriptionPlan @unique
+  pricePerMonth              Decimal          @default(0) @map("price_per_month") @db.Decimal(18, 2)
+  transactionQuota           Int              @map("transaction_quota")
+  overagePricePerTransaction Decimal?         @map("overage_price_per_transaction") @db.Decimal(18, 2)
+  updatedAt                  DateTime         @updatedAt @map("updated_at")
+
+  @@map("plan_pricing")
+}
+
 model PaymentOrder {
   id         String             @id @default(uuid())
   tenantId   String             @map("tenant_id")

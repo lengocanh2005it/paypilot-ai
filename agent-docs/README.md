@@ -19,6 +19,7 @@ Tài liệu này dành cho AI coding agent (Claude Code) và developer làm vi�
 | Cần hiểu 1 luồng nghiệp vụ cụ thể (onboarding, webhook, billing...) | [`reference/user-journey.md`](./reference/user-journey.md) |
 | Build UI 1 màn hình cụ thể | [`reference/ui-design.md`](./reference/ui-design.md) — mục **Brand palette (Casso/payOS)** |
 | Biết task nào thuộc sprint nào, ai phụ trách | [`reference/sprint-plan.md`](./reference/sprint-plan.md) |
+| Triển khai nâng cấp gói qua PayOS (chưa làm) | [`reference/payos-billing-plan.md`](./reference/payos-billing-plan.md) |
 
 ## Cấu trúc `agent-docs/`
 

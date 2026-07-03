@@ -48,7 +48,7 @@ export default function CopilotPage() {
     try {
       const res = await api.post<{ data: { reply: string } }>('/ai/copilot', {
         message: text,
-        history: history.slice(-10),
+        history: history.slice(-10).map(({ role, content }) => ({ role, content })),
       });
       setMessages((prev) => [
         ...prev,
@@ -99,7 +99,7 @@ export default function CopilotPage() {
               className={cn(
                 'rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap',
                 msg.role === 'assistant'
-                  ? 'bg-muted rounded-tl-none'
+                  ? 'rounded-tl-none border border-border bg-background'
                   : 'bg-primary text-primary-foreground rounded-tr-none',
               )}
             >
@@ -113,7 +113,7 @@ export default function CopilotPage() {
             <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
               <Bot className="size-4" />
             </div>
-            <div className="bg-muted rounded-2xl rounded-tl-none px-4 py-3">
+            <div className="rounded-2xl rounded-tl-none border border-border bg-background px-4 py-3">
               <div className="flex gap-1 items-center h-4">
                 <span className="size-2 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:0ms]" />
                 <span className="size-2 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:150ms]" />
