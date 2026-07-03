@@ -12,6 +12,7 @@ import {
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -219,6 +220,7 @@ function TeamTab() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<Member | null>(null);
   const [form, setForm] = useState({ name: '', email: '', role: 'accountant', password: '' });
 
   const { data: members, isLoading } = useQuery({
@@ -237,10 +239,11 @@ function TeamTab() {
     onError: () => toast.error('Không thể thêm thành viên'),
   });
 
-  const { mutate: remove } = useMutation({
+  const { mutate: remove, isPending: removing } = useMutation({
     mutationFn: (id: string) => api.delete(`/team/members/${id}`),
     onSuccess: () => {
       toast.success('Đã xóa thành viên');
+      setMemberToRemove(null);
       qc.invalidateQueries({ queryKey: ['team', 'members'] });
     },
     onError: () => toast.error('Không thể xóa thành viên'),
@@ -291,7 +294,7 @@ function TeamTab() {
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        onClick={() => remove(m.id)}
+                        onClick={() => setMemberToRemove(m)}
                         className="text-destructive hover:text-destructive"
                       >
                         <Trash2 className="size-4" />
@@ -362,6 +365,23 @@ function TeamTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={memberToRemove !== null}
+        onOpenChange={(open) => !open && setMemberToRemove(null)}
+        title="Xóa thành viên?"
+        description={
+          memberToRemove
+            ? `Bạn sắp xóa "${memberToRemove.name}" (${memberToRemove.email}) khỏi doanh nghiệp. Hành động này không thể hoàn tác.`
+            : ''
+        }
+        confirmLabel="Xóa thành viên"
+        variant="destructive"
+        loading={removing}
+        onConfirm={() => {
+          if (memberToRemove) remove(memberToRemove.id);
+        }}
+      />
     </>
   );
 }

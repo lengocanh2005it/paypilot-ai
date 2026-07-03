@@ -43,21 +43,21 @@ export function TransactionStatusChart({ data, isLoading }: TransactionStatusCha
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <Skeleton className="mx-auto h-[240px] w-[240px] rounded-full" />
+          <Skeleton className="mx-auto h-[320px] w-[320px] rounded-full" />
         ) : total === 0 ? (
-          <div className="flex h-[240px] items-center justify-center rounded-lg border border-dashed bg-muted/30 px-4 text-center text-sm text-muted-foreground">
+          <div className="flex h-[320px] items-center justify-center rounded-lg border border-dashed bg-muted/30 px-4 text-center text-sm text-muted-foreground">
             Chưa có dữ liệu trạng thái giao dịch.
           </div>
         ) : (
           <div className="space-y-4">
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={320}>
               <PieChart>
                 <Pie
                   data={data}
                   dataKey="value"
                   nameKey="label"
-                  innerRadius={58}
-                  outerRadius={88}
+                  innerRadius={78}
+                  outerRadius={128}
                   paddingAngle={3}
                   stroke="var(--background)"
                   strokeWidth={2}
@@ -69,7 +69,7 @@ export function TransactionStatusChart({ data, isLoading }: TransactionStatusCha
                 <Tooltip content={<StatusTooltip />} />
               </PieChart>
             </ResponsiveContainer>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-2">
               {data.map((slice) => (
                 <div key={slice.status} className="flex items-center gap-2 text-sm">
                   <span

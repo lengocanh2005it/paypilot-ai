@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { UpdatePlanPricingDto } from './dto/plan-pricing.dto';
 
 @Injectable()
 export class PartnerService {
@@ -139,6 +141,74 @@ export class PartnerService {
         .reduce((sum, o) => sum + Number(o.amount), 0);
       return { month: label, revenue };
     });
+  }
+
+  async listPlanPricing() {
+    const plans = await this.prisma.planPricing.findMany({ orderBy: { pricePerMonth: 'asc' } });
+    return plans.map((p) => ({
+      plan: p.plan,
+      pricePerMonth: Number(p.pricePerMonth),
+      transactionQuota: p.transactionQuota,
+      overagePricePerTransaction:
+        p.overagePricePerTransaction !== null ? Number(p.overagePricePerTransaction) : null,
+      editable: p.plan !== 'free',
+      updatedAt: p.updatedAt,
+    }));
+  }
+
+  async updatePlanPricing(plan: SubscriptionPlan, dto: UpdatePlanPricingDto) {
+    if (plan === 'free') {
+      throw new BadRequestException('Không thể chỉnh giá gói Free');
+    }
+
+    const existing = await this.prisma.planPricing.findUnique({ where: { plan } });
+    if (!existing) throw new NotFoundException('Không tìm thấy gói dịch vụ');
+
+    const updated = await this.prisma.planPricing.update({
+      where: { plan },
+      data: {
+        pricePerMonth: dto.pricePerMonth,
+        transactionQuota: dto.transactionQuota,
+        overagePricePerTransaction: dto.overagePricePerTransaction ?? null,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        entityType: 'plan_pricing',
+        entityId: plan,
+        action: 'plan_pricing_updated',
+        actor: 'cas_partner',
+        beforeState: {
+          pricePerMonth: Number(existing.pricePerMonth),
+          transactionQuota: existing.transactionQuota,
+          overagePricePerTransaction:
+            existing.overagePricePerTransaction !== null
+              ? Number(existing.overagePricePerTransaction)
+              : null,
+        },
+        afterState: {
+          pricePerMonth: Number(updated.pricePerMonth),
+          transactionQuota: updated.transactionQuota,
+          overagePricePerTransaction:
+            updated.overagePricePerTransaction !== null
+              ? Number(updated.overagePricePerTransaction)
+              : null,
+        },
+      },
+    });
+
+    return {
+      plan: updated.plan,
+      pricePerMonth: Number(updated.pricePerMonth),
+      transactionQuota: updated.transactionQuota,
+      overagePricePerTransaction:
+        updated.overagePricePerTransaction !== null
+          ? Number(updated.overagePricePerTransaction)
+          : null,
+      editable: true,
+      updatedAt: updated.updatedAt,
+    };
   }
 
   private async getLatestSubscription(tenantId: string) {

@@ -52,6 +52,7 @@ tenants ──N── audit_logs    (mọi thao tác trong tenant)
 | 8 | `payment_orders` | Lịch sử thanh toán nâng cấp gói qua PayOS |
 | 9 | `usage_logs` | Log usage để Cas Partner xem thống kê |
 | 10 | `audit_logs` | Lịch sử thao tác toàn hệ thống |
+| 11 | `plan_pricing` | **MỚI** — Giá/quota từng gói dịch vụ, Cas Partner chỉnh được (trừ Free) |
 
 ---
 
@@ -242,6 +243,28 @@ subscriptions
 | Starter | 299.000đ | 500 GD | 800đ/GD |
 | Pro | 799.000đ | 2.000 GD | 600đ/GD |
 | Enterprise | Liên hệ | Không giới hạn | — |
+
+**Bảng giá này giờ là dữ liệu động (bảng `plan_pricing`), không còn hardcode** — xem mục 7.1 dưới đây.
+
+---
+
+## 7.1 `plan_pricing`
+
+Giá/quota từng gói dịch vụ, Cas Partner chỉnh được từ Partner Dashboard (Starter trở lên — Free luôn cố định 0đ/50 GD, không cho sửa).
+
+```
+plan_pricing
+├── id                          PK
+├── plan (unique)                enum: free / starter / pro / enterprise
+├── price_per_month
+├── transaction_quota            số GD tối đa/tháng
+├── overage_price_per_transaction  nullable — NULL nghĩa là không tính phí vượt (Enterprise)
+└── updated_at
+```
+
+**Lưu ý quan trọng:**
+- Đây là **giá áp dụng cho lần nâng cấp/đăng ký tiếp theo**, không hồi tố các `subscriptions` đang active (mỗi `subscription` lưu snapshot giá riêng tại thời điểm tạo/nâng cấp) — sửa giá ở đây không tự đổi giá tenant đang dùng.
+- Khi nâng cấp gói qua PayOS (xem [`payos-billing-plan.md`](./payos-billing-plan.md)), luồng backend phải đọc giá từ bảng này (không hardcode).
 
 ---
 

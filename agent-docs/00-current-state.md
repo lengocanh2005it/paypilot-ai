@@ -35,11 +35,13 @@ Cập nhật lần cuối: **Sprint 4 — phần code (Partner Dashboard, rate l
 - Sidebar: bật đủ 8 nav items (`/analytics`, `/copilot`, `/settings`), bỏ block "Sắp ra mắt" ✅
 
 **Đã xong (Sprint 4 — phần code):**
-- Backend: `partner` module — `GET /partner/tenants` (danh sách + plan/status/GD tháng/doanh thu), `GET /partner/stats` (tổng DN/active/suspended/GD tháng/doanh thu/AI accuracy toàn hệ thống), `PATCH /partner/tenants/:id/suspend`, `PATCH /partner/tenants/:id/activate` — dùng `PartnerGuard` có sẵn ✅
+- Backend: `partner` module — `GET /partner/tenants` (danh sách + plan/status/GD tháng/doanh thu), `GET /partner/stats` (tổng DN/active/suspended/GD tháng/doanh thu/AI accuracy toàn hệ thống), `GET /partner/revenue-trend` (doanh thu 6 tháng, đọc từ `payment_orders` status=paid), `PATCH /partner/tenants/:id/suspend`, `PATCH /partner/tenants/:id/activate` — dùng `PartnerGuard` có sẵn ✅
+- Backend: bảng `plan_pricing` (mới) + `GET /partner/plan-pricing`, `PATCH /partner/plan-pricing/:plan` — Cas Partner chỉnh giá/quota Starter trở lên, Free luôn cố định 0đ/50GD. Đây là giá áp dụng cho lần nâng cấp tiếp theo, không hồi tố `subscriptions` đang active (snapshot giá riêng) ✅
 - Backend: chặn login nếu subscription của tenant đang `suspended` (`auth.service.ts`) — hoàn thiện edge case đã ghi trong `rbac.md` ✅
 - Backend: rate limiting per-tenant/per-phút bằng `@nestjs/throttler` — `TenantThrottlerGuard` (tracker = `tenantId`, fallback `userId`/IP), áp dụng global qua `APP_GUARD`, giới hạn cấu hình qua env `RATE_LIMIT_PER_MINUTE` (default 120) ✅
-- Frontend: `PartnerPage` hoàn chỉnh — stat cards (tổng DN/active-suspended/doanh thu/AI accuracy) + bảng tenant có nút Khóa/Mở khóa ✅
+- Frontend: `PartnerPage` hoàn chỉnh — stat cards (tổng DN/active-suspended/doanh thu/AI accuracy), biểu đồ doanh thu 6 tháng (LineChart), tìm kiếm/lọc theo tên-trạng thái-gói, bảng tenant có nút Khóa/Mở khóa, section "Cài đặt giá gói dịch vụ" (sửa giá/quota/phí vượt Starter trở lên qua Dialog) ✅
 - Frontend: `WelcomeTour` — dialog 4 bước giới thiệu luồng (Liên kết NH → AI định khoản → Human Review → Báo cáo/Copilot), hiện 1 lần cho mỗi user (`localStorage` key `xcash_welcome_tour_seen_{userId}`), gắn ở `DashboardPage` ✅
+- **Kế hoạch chưa triển khai:** nâng cấp gói qua PayOS thật (chọn gói → thanh toán → webhook xác nhận) — xem [`reference/payos-billing-plan.md`](./reference/payos-billing-plan.md) mô tả đầy đủ 5 phase cần làm
 
 **Chưa làm (Sprint 4 — còn lại):**
 - Production env vars + Docker build pipeline, SSL/HTTPS + nginx config production
@@ -88,7 +90,8 @@ paypilot-ai/                                   ← tên folder trên disk (packa
 │   │   │       ├── 20260301120000_init_sprint1_week1/
 │   │   │       ├── 20260702032642_add_cas_grant_account_holder_name/
 │   │   │       ├── 20260702080000_add_cas_grant_bank_logo/
-│   │   │       └── 20260703041453_klassi_ai_pivot/   ← migration đã apply (tên lịch sử) ✅
+│   │   │       ├── 20260703041453_klassi_ai_pivot/   ← migration đã apply (tên lịch sử) ✅
+│   │   │       └── 20260703091815_add_plan_pricing/  ← thêm bảng plan_pricing + seed giá mặc định ✅
 │   │   ├── package.json
 │   │   ├── nest-cli.json
 │   │   ├── .swcrc
@@ -144,7 +147,8 @@ paypilot-ai/                                   ← tên folder trên disk (packa
 │   │           ├── partner/                   # /partner/* — chỉ Cas Partner ✅
 │   │           │   ├── partner.controller.ts
 │   │           │   ├── partner.service.ts
-│   │           │   └── partner.module.ts
+│   │           │   ├── partner.module.ts
+│   │           │   └── dto/plan-pricing.dto.ts
 │   │           ├── cas/
 │   │           ├── health/
 │   │           ├── onboarding/
@@ -178,7 +182,7 @@ paypilot-ai/                                   ← tên folder trên disk (packa
 │           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat, gợi ý câu hỏi ✅
 │           │   ├── settings/SettingsPage.tsx  # Tabs: Banking/Threshold/Notifications/Team/Billing ✅
 │           │   ├── accounts/AccountsPage.tsx  # Danh mục TK TT133 ✅
-│           │   └── partner/PartnerPage.tsx    # Stat cards + bảng tenant (Khóa/Mở khóa) ✅
+│           │   └── partner/PartnerPage.tsx    # Stat cards, revenue chart, filter, bảng tenant, cài đặt giá gói ✅
 │           ├── components/shared/WelcomeTour.tsx  # Dialog 4 bước, 1 lần/user (localStorage) ✅
 │           ├── hooks/                          # + useReviewCount.ts (poll 20s /review/count)
 │           └── types/transaction.ts           # thêm TransactionClassificationSummary, bỏ MatchCandidate ✅
@@ -235,8 +239,11 @@ paypilot-ai/                                   ← tên folder trên disk (packa
 | GET | `/billing/usage-history` | Admin | Lịch sử sử dụng quota |
 | GET | `/partner/tenants` | Cas Partner | Danh sách toàn bộ tenant + plan/status/GD tháng/doanh thu |
 | GET | `/partner/stats` | Cas Partner | Tổng DN/active/suspended/GD tháng/doanh thu/AI accuracy toàn hệ thống |
+| GET | `/partner/revenue-trend` | Cas Partner | Doanh thu 6 tháng gần nhất (từ `payment_orders` status=paid) |
 | PATCH | `/partner/tenants/:id/suspend` | Cas Partner | Khóa tài khoản doanh nghiệp |
 | PATCH | `/partner/tenants/:id/activate` | Cas Partner | Mở khóa tài khoản doanh nghiệp |
+| GET | `/partner/plan-pricing` | Cas Partner | Xem giá/quota từng gói |
+| PATCH | `/partner/plan-pricing/:plan` | Cas Partner | Sửa giá/quota/phí vượt (chặn sửa `free`) |
 
 Swagger UI: `http://localhost:3000/api/docs`
 

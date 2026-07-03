@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, LogOut, Percent, Search, ShieldCheck, Wallet } from 'lucide-react';
+import { Building2, LogOut, Pencil, Percent, Search, ShieldCheck, Wallet } from 'lucide-react';
 import { type ElementType, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -14,12 +14,21 @@ import {
 import { toast } from 'sonner';
 import { LogoMark } from '@/components/brand/Logo';
 import { Header } from '@/components/layout/Header';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -43,6 +52,14 @@ interface PartnerStats {
 interface RevenueTrendPoint {
   month: string;
   revenue: number;
+}
+
+interface PlanPricing {
+  plan: string;
+  pricePerMonth: number;
+  transactionQuota: number;
+  overagePricePerTransaction: number | null;
+  editable: boolean;
 }
 
 interface PartnerTenant {
@@ -100,6 +117,15 @@ export default function PartnerPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
   const [planFilter, setPlanFilter] = useState<'all' | string>('all');
+  const [editingPlan, setEditingPlan] = useState<PlanPricing | null>(null);
+  const [priceInput, setPriceInput] = useState('');
+  const [quotaInput, setQuotaInput] = useState('');
+  const [overageInput, setOverageInput] = useState('');
+  const [tenantAction, setTenantAction] = useState<{
+    type: 'suspend' | 'activate';
+    tenant: PartnerTenant;
+  } | null>(null);
+  const [pricingConfirmOpen, setPricingConfirmOpen] = useState(false);
 
   const { data: stats, isLoading: loadingStats } = useQuery({
     queryKey: ['partner', 'stats'],
@@ -117,6 +143,12 @@ export default function PartnerPage() {
       api.get<{ data: RevenueTrendPoint[] }>('/partner/revenue-trend').then((r) => r.data.data),
   });
 
+  const { data: planPricing, isLoading: loadingPricing } = useQuery({
+    queryKey: ['partner', 'plan-pricing'],
+    queryFn: () =>
+      api.get<{ data: PlanPricing[] }>('/partner/plan-pricing').then((r) => r.data.data),
+  });
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['partner', 'stats'] });
     queryClient.invalidateQueries({ queryKey: ['partner', 'tenants'] });
@@ -126,6 +158,7 @@ export default function PartnerPage() {
     mutationFn: (id: string) => api.patch(`/partner/tenants/${id}/suspend`),
     onSuccess: () => {
       toast.success('Đã khóa tài khoản doanh nghiệp');
+      setTenantAction(null);
       invalidate();
     },
     onError: () => toast.error('Không thể khóa tài khoản'),
@@ -135,10 +168,64 @@ export default function PartnerPage() {
     mutationFn: (id: string) => api.patch(`/partner/tenants/${id}/activate`),
     onSuccess: () => {
       toast.success('Đã mở khóa tài khoản doanh nghiệp');
+      setTenantAction(null);
       invalidate();
     },
     onError: () => toast.error('Không thể mở khóa tài khoản'),
   });
+
+  const updatePricingMutation = useMutation({
+    mutationFn: (payload: {
+      plan: string;
+      pricePerMonth: number;
+      transactionQuota: number;
+      overagePricePerTransaction: number | null;
+    }) =>
+      api.patch(`/partner/plan-pricing/${payload.plan}`, {
+        pricePerMonth: payload.pricePerMonth,
+        transactionQuota: payload.transactionQuota,
+        overagePricePerTransaction: payload.overagePricePerTransaction ?? undefined,
+      }),
+    onSuccess: () => {
+      toast.success('Đã cập nhật giá gói');
+      setEditingPlan(null);
+      setPricingConfirmOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['partner', 'plan-pricing'] });
+    },
+    onError: () => toast.error('Không thể cập nhật giá gói'),
+  });
+
+  const openEditPricing = (plan: PlanPricing) => {
+    setEditingPlan(plan);
+    setPriceInput(String(plan.pricePerMonth));
+    setQuotaInput(String(plan.transactionQuota));
+    setOverageInput(
+      plan.overagePricePerTransaction != null ? String(plan.overagePricePerTransaction) : '',
+    );
+  };
+
+  const submitPricing = () => {
+    if (!editingPlan) return;
+    const pricePerMonth = Number(priceInput);
+    const transactionQuota = Number(quotaInput);
+    if (Number.isNaN(pricePerMonth) || Number.isNaN(transactionQuota)) {
+      toast.error('Giá trị không hợp lệ');
+      return;
+    }
+    setPricingConfirmOpen(true);
+  };
+
+  const confirmPricingUpdate = () => {
+    if (!editingPlan) return;
+    const pricePerMonth = Number(priceInput);
+    const transactionQuota = Number(quotaInput);
+    updatePricingMutation.mutate({
+      plan: editingPlan.plan,
+      pricePerMonth,
+      transactionQuota,
+      overagePricePerTransaction: overageInput.trim() ? Number(overageInput) : null,
+    });
+  };
 
   const filteredTenants = useMemo(() => {
     if (!tenants) return [];
@@ -254,6 +341,61 @@ export default function PartnerPage() {
         </Card>
 
         <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Cài đặt giá gói dịch vụ</CardTitle>
+            <CardDescription>
+              Chỉnh giá/quota gói Starter trở lên áp dụng cho lần nâng cấp tiếp theo — không ảnh
+              hưởng gói doanh nghiệp đang dùng
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingPricing ? (
+              <TableSkeleton rows={4} columns={4} />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 pr-4 font-medium">Gói</th>
+                      <th className="pb-2 pr-4 font-medium">Giá/tháng</th>
+                      <th className="pb-2 pr-4 font-medium">Quota GD/tháng</th>
+                      <th className="pb-2 pr-4 font-medium">Phí vượt/GD</th>
+                      <th className="pb-2 font-medium">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {(planPricing ?? []).map((p) => (
+                      <tr key={p.plan}>
+                        <td className="py-2 pr-4 font-medium">{PLAN_LABELS[p.plan] ?? p.plan}</td>
+                        <td className="py-2 pr-4">{formatVND(p.pricePerMonth)}</td>
+                        <td className="py-2 pr-4">
+                          {p.plan === 'enterprise' ? 'Không giới hạn' : p.transactionQuota}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {p.overagePricePerTransaction != null
+                            ? formatVND(p.overagePricePerTransaction)
+                            : '—'}
+                        </td>
+                        <td className="py-2">
+                          {p.editable ? (
+                            <Button size="sm" variant="outline" onClick={() => openEditPricing(p)}>
+                              <Pencil className="size-4" />
+                              Sửa
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Cố định</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader>
             <CardTitle>Danh sách doanh nghiệp</CardTitle>
             <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center">
@@ -348,7 +490,7 @@ export default function PartnerPage() {
                               size="sm"
                               variant="outline"
                               disabled={activateMutation.isPending}
-                              onClick={() => activateMutation.mutate(t.id)}
+                              onClick={() => setTenantAction({ type: 'activate', tenant: t })}
                             >
                               Mở khóa
                             </Button>
@@ -357,7 +499,7 @@ export default function PartnerPage() {
                               size="sm"
                               variant="destructive"
                               disabled={suspendMutation.isPending}
-                              onClick={() => suspendMutation.mutate(t.id)}
+                              onClick={() => setTenantAction({ type: 'suspend', tenant: t })}
                             >
                               Khóa
                             </Button>
@@ -377,6 +519,105 @@ export default function PartnerPage() {
           nghiệp.
         </p>
       </div>
+
+      <Dialog open={editingPlan !== null} onOpenChange={(open) => !open && setEditingPlan(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Chỉnh giá gói {editingPlan ? (PLAN_LABELS[editingPlan.plan] ?? editingPlan.plan) : ''}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="price">Giá/tháng (đ)</Label>
+              <Input
+                id="price"
+                type="number"
+                min={0}
+                value={priceInput}
+                onChange={(e) => setPriceInput(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="quota">Số giao dịch/tháng</Label>
+              <Input
+                id="quota"
+                type="number"
+                min={1}
+                value={quotaInput}
+                onChange={(e) => setQuotaInput(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="overage">
+                Phí vượt/giao dịch (đ) — để trống nếu không tính phí vượt
+              </Label>
+              <Input
+                id="overage"
+                type="number"
+                min={0}
+                value={overageInput}
+                onChange={(e) => setOverageInput(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditingPlan(null)}>
+              Hủy
+            </Button>
+            <Button onClick={submitPricing} disabled={updatePricingMutation.isPending}>
+              Lưu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={tenantAction?.type === 'suspend'}
+        onOpenChange={(open) => !open && setTenantAction(null)}
+        title="Khóa tài khoản doanh nghiệp?"
+        description={
+          tenantAction?.tenant
+            ? `Bạn sắp khóa "${tenantAction.tenant.businessName}". Người dùng của doanh nghiệp này sẽ không thể đăng nhập cho đến khi được mở khóa.`
+            : ''
+        }
+        confirmLabel="Khóa tài khoản"
+        variant="destructive"
+        loading={suspendMutation.isPending}
+        onConfirm={() => {
+          if (tenantAction?.tenant) suspendMutation.mutate(tenantAction.tenant.id);
+        }}
+      />
+
+      <ConfirmDialog
+        open={tenantAction?.type === 'activate'}
+        onOpenChange={(open) => !open && setTenantAction(null)}
+        title="Mở khóa tài khoản doanh nghiệp?"
+        description={
+          tenantAction?.tenant
+            ? `Bạn sắp mở khóa "${tenantAction.tenant.businessName}". Người dùng sẽ có thể đăng nhập và sử dụng hệ thống trở lại.`
+            : ''
+        }
+        confirmLabel="Mở khóa"
+        loading={activateMutation.isPending}
+        onConfirm={() => {
+          if (tenantAction?.tenant) activateMutation.mutate(tenantAction.tenant.id);
+        }}
+      />
+
+      <ConfirmDialog
+        open={pricingConfirmOpen}
+        onOpenChange={setPricingConfirmOpen}
+        title="Cập nhật giá gói dịch vụ?"
+        description={
+          editingPlan
+            ? `Thay đổi giá/quota gói ${PLAN_LABELS[editingPlan.plan] ?? editingPlan.plan} sẽ áp dụng cho các lần nâng cấp tiếp theo, không ảnh hưởng gói doanh nghiệp đang dùng.`
+            : ''
+        }
+        confirmLabel="Cập nhật"
+        loading={updatePricingMutation.isPending}
+        onConfirm={confirmPricingUpdate}
+      />
     </div>
   );
 }

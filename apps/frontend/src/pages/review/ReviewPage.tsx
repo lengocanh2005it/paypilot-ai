@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { ConfidenceBadge } from '@/components/shared/ConfidenceBadge';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Button } from '@/components/ui/button';
@@ -163,6 +164,7 @@ export default function ReviewPage() {
   const queryClient = useQueryClient();
   const [page] = useState(1);
   const [correctDialog, setCorrectDialog] = useState<ClassificationItem | null>(null);
+  const [skipTarget, setSkipTarget] = useState<ClassificationItem | null>(null);
   const [debitAccount, setDebitAccount] = useState('');
   const [creditAccount, setCreditAccount] = useState('');
 
@@ -196,6 +198,7 @@ export default function ReviewPage() {
     mutationFn: skipReview,
     onSuccess: () => {
       toast.success('Đã bỏ qua');
+      setSkipTarget(null);
       invalidate();
     },
     onError: () => toast.error('Không thể bỏ qua'),
@@ -241,7 +244,7 @@ export default function ReviewPage() {
                       key={item.id}
                       item={item}
                       onConfirm={() => confirmMutation.mutate(item.id)}
-                      onSkip={() => skipMutation.mutate(item.id)}
+                      onSkip={() => setSkipTarget(item)}
                       onCorrect={() => openCorrect(item)}
                       disabled={confirmMutation.isPending || skipMutation.isPending}
                     />
@@ -303,7 +306,7 @@ export default function ReviewPage() {
                                 size="icon-sm"
                                 variant="ghost"
                                 title="Bỏ qua"
-                                onClick={() => skipMutation.mutate(item.id)}
+                                onClick={() => setSkipTarget(item)}
                                 disabled={skipMutation.isPending}
                               >
                                 <SkipForward className="size-4 text-muted-foreground" />
@@ -373,6 +376,23 @@ export default function ReviewPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <ConfirmDialog
+          open={skipTarget !== null}
+          onOpenChange={(open) => !open && setSkipTarget(null)}
+          title="Bỏ qua giao dịch này?"
+          description={
+            skipTarget
+              ? `Giao dịch "${skipTarget.transaction.content ?? 'Không có nội dung'}" sẽ được đánh dấu bỏ qua và không định khoản.`
+              : ''
+          }
+          confirmLabel="Bỏ qua"
+          variant="destructive"
+          loading={skipMutation.isPending}
+          onConfirm={() => {
+            if (skipTarget) skipMutation.mutate(skipTarget.id);
+          }}
+        />
       </div>
     </>
   );

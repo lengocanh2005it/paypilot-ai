@@ -185,7 +185,9 @@ export class ReportService {
 
     const pctChange = (curr: number, prev: number) => {
       if (prev === 0) return curr > 0 ? 100 : 0;
-      return Math.round(((curr - prev) / prev) * 100);
+      // Chia cho |prev| thay vì prev để tránh lật dấu khi baseline âm (vd lãi/lỗ
+      // chuyển từ lỗ sang lãi) — dùng prev trực tiếp cho ra % ngược hướng cải thiện thực tế.
+      return Math.round(((curr - prev) / Math.abs(prev)) * 100);
     };
 
     return {
