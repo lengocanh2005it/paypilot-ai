@@ -424,7 +424,7 @@ async function ensureCasGrant(tenantId: string): Promise<string> {
       grantId: `demo-grant-${tenantId.slice(0, 8)}`,
       accessToken: 'demo-access-token',
       accountNumber: '1903658888',
-      accountHolderName: 'CONG TY TNHH DEMO KLASSI',
+      accountHolderName: 'CONG TY TNHH DEMO X-CASH',
       bankName: 'Vietcombank',
       bankLogo: null,
       status: 'active',
