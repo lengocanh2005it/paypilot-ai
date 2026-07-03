@@ -19,6 +19,11 @@ export class PartnerController {
     return this.service.getStats();
   }
 
+  @Get('revenue-trend')
+  getRevenueTrend() {
+    return this.service.getRevenueTrend();
+  }
+
   @Patch('tenants/:id/suspend')
   suspend(@Param('id') id: string) {
     return this.service.suspendTenant(id);

@@ -1,13 +1,34 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Percent, ShieldCheck, Wallet } from 'lucide-react';
-import type { ElementType } from 'react';
+import { Building2, LogOut, Percent, Search, ShieldCheck, Wallet } from 'lucide-react';
+import { type ElementType, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { toast } from 'sonner';
+import { LogoMark } from '@/components/brand/Logo';
 import { Header } from '@/components/layout/Header';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 
 interface PartnerStats {
@@ -17,6 +38,11 @@ interface PartnerStats {
   transactionsThisMonth: number;
   revenueThisMonth: number;
   aiAccuracy: number;
+}
+
+interface RevenueTrendPoint {
+  month: string;
+  revenue: number;
 }
 
 interface PartnerTenant {
@@ -69,6 +95,11 @@ function StatCard({
 
 export default function PartnerPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
+  const [planFilter, setPlanFilter] = useState<'all' | string>('all');
 
   const { data: stats, isLoading: loadingStats } = useQuery({
     queryKey: ['partner', 'stats'],
@@ -78,6 +109,12 @@ export default function PartnerPage() {
   const { data: tenants, isLoading: loadingTenants } = useQuery({
     queryKey: ['partner', 'tenants'],
     queryFn: () => api.get<{ data: PartnerTenant[] }>('/partner/tenants').then((r) => r.data.data),
+  });
+
+  const { data: revenueTrend, isLoading: loadingTrend } = useQuery({
+    queryKey: ['partner', 'revenue-trend'],
+    queryFn: () =>
+      api.get<{ data: RevenueTrendPoint[] }>('/partner/revenue-trend').then((r) => r.data.data),
   });
 
   const invalidate = () => {
@@ -103,11 +140,44 @@ export default function PartnerPage() {
     onError: () => toast.error('Không thể mở khóa tài khoản'),
   });
 
+  const filteredTenants = useMemo(() => {
+    if (!tenants) return [];
+    const term = search.trim().toLowerCase();
+    return tenants.filter((t) => {
+      if (term && !t.businessName.toLowerCase().includes(term)) return false;
+      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+      if (planFilter !== 'all' && t.plan !== planFilter) return false;
+      return true;
+    });
+  }, [tenants, search, statusFilter, planFilter]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast.success('Đã đăng xuất');
+      navigate('/login');
+    } catch {
+      toast.error('Không thể đăng xuất, vui lòng thử lại');
+    }
+  };
+
   return (
     <div className="min-h-svh bg-muted">
       <Header
         title="Partner Dashboard"
         description="Tổng quan toàn hệ thống X-Cash AI — dành cho Cas Partner"
+        logo={<LogoMark size={32} />}
+        actions={
+          <div className="flex items-center gap-3">
+            {user ? (
+              <span className="hidden text-sm text-muted-foreground sm:inline">{user.name}</span>
+            ) : null}
+            <Button size="sm" variant="outline" onClick={handleLogout}>
+              <LogOut className="size-4" />
+              Đăng xuất
+            </Button>
+          </div>
+        }
       />
       <div className="space-y-6 p-4 sm:p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -138,8 +208,91 @@ export default function PartnerPage() {
         </div>
 
         <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Doanh thu 6 tháng qua</CardTitle>
+            <CardDescription>Tổng doanh thu nâng cấp gói toàn hệ thống theo tháng</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingTrend ? (
+              <Skeleton className="h-[240px] w-full" />
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart
+                  data={revenueTrend ?? []}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    width={48}
+                    tickFormatter={(value: number) => formatVND(value)}
+                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+                  />
+                  <Tooltip
+                    formatter={(value) => formatVND(Number(value))}
+                    labelFormatter={(label) => `Tháng ${label}`}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="var(--chart-1)"
+                    strokeWidth={2}
+                    dot={{ fill: 'var(--chart-1)', r: 3 }}
+                    activeDot={{ r: 5 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader>
             <CardTitle>Danh sách doanh nghiệp</CardTitle>
+            <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center">
+              <div className="relative flex-1 sm:max-w-xs">
+                <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Tìm theo tên doanh nghiệp..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+              <Select
+                value={statusFilter}
+                onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}
+              >
+                <SelectTrigger className="sm:w-40">
+                  <SelectValue placeholder="Trạng thái" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                  <SelectItem value="active">Hoạt động</SelectItem>
+                  <SelectItem value="suspended">Đã khóa</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={planFilter} onValueChange={setPlanFilter}>
+                <SelectTrigger className="sm:w-40">
+                  <SelectValue placeholder="Gói" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả gói</SelectItem>
+                  {Object.entries(PLAN_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent>
             {loadingTenants ? (
@@ -148,6 +301,11 @@ export default function PartnerPage() {
               <EmptyState
                 title="Chưa có doanh nghiệp nào"
                 description="Danh sách sẽ hiện ra khi có tenant đăng ký"
+              />
+            ) : !filteredTenants.length ? (
+              <EmptyState
+                title="Không tìm thấy doanh nghiệp phù hợp"
+                description="Thử đổi từ khóa hoặc bộ lọc khác"
               />
             ) : (
               <div className="overflow-x-auto">
@@ -163,7 +321,7 @@ export default function PartnerPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {tenants.map((t) => (
+                    {filteredTenants.map((t) => (
                       <tr key={t.id} className="hover:bg-muted/30">
                         <td className="py-2 pr-4 font-medium">{t.businessName}</td>
                         <td className="py-2 pr-4">
@@ -213,6 +371,11 @@ export default function PartnerPage() {
             )}
           </CardContent>
         </Card>
+
+        <p className="text-center text-xs text-muted-foreground">
+          Số liệu được tính theo thời gian thực từ dữ liệu giao dịch và gói dịch vụ của từng doanh
+          nghiệp.
+        </p>
       </div>
     </div>
   );

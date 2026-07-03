@@ -120,6 +120,27 @@ export class PartnerService {
     };
   }
 
+  async getRevenueTrend() {
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() - (5 - i) + 1, 1);
+      return { start, end, label: `${start.getMonth() + 1}/${start.getFullYear()}` };
+    });
+
+    const paidOrders = await this.prisma.paymentOrder.findMany({
+      where: { status: 'paid', paidAt: { gte: months[0].start } },
+      select: { amount: true, paidAt: true },
+    });
+
+    return months.map(({ start, end, label }) => {
+      const revenue = paidOrders
+        .filter((o) => o.paidAt && o.paidAt >= start && o.paidAt < end)
+        .reduce((sum, o) => sum + Number(o.amount), 0);
+      return { month: label, revenue };
+    });
+  }
+
   private async getLatestSubscription(tenantId: string) {
     const subscription = await this.prisma.subscription.findFirst({
       where: { tenantId },
