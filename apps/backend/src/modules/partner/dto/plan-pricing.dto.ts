@@ -1,4 +1,9 @@
-import { IsNumber, IsOptional, Min } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, Min } from 'class-validator';
+
+export class SetTenantPlanDto {
+  @IsEnum(['free', 'starter', 'pro', 'enterprise'])
+  targetPlan: string;
+}
 
 export class UpdatePlanPricingDto {
   @IsNumber()

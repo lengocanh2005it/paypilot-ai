@@ -71,6 +71,7 @@ export class PartnerService {
     return {
       id: tenant.id,
       businessName: tenant.businessName,
+      ownerName: tenant.ownerName,
       createdAt: tenant.createdAt,
       classificationThreshold: tenant.classificationThreshold,
       plan: subscription?.plan ?? null,
@@ -265,6 +266,64 @@ export class PartnerService {
       editable: true,
       updatedAt: updated.updatedAt,
     };
+  }
+
+  async setTenantPlan(tenantId: string, targetPlan: SubscriptionPlan) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Không tìm thấy doanh nghiệp');
+
+    const pricing = await this.prisma.planPricing.findUnique({ where: { plan: targetPlan } });
+    if (!pricing) throw new NotFoundException('Gói dịch vụ không tồn tại');
+
+    const currentSub = await this.prisma.subscription.findFirst({
+      where: { tenantId, status: { in: ['active', 'suspended'] } },
+      orderBy: { startedAt: 'desc' },
+    });
+
+    if (currentSub?.plan === targetPlan && currentSub?.status === 'active') {
+      throw new BadRequestException('Doanh nghiệp đang sử dụng gói này');
+    }
+
+    const now = new Date();
+    const cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    const prevPlan = currentSub?.plan ?? null;
+
+    await this.prisma.$transaction([
+      ...(currentSub
+        ? [
+            this.prisma.subscription.update({
+              where: { id: currentSub.id },
+              data: { status: 'cancelled' },
+            }),
+          ]
+        : []),
+      this.prisma.subscription.create({
+        data: {
+          tenantId,
+          plan: targetPlan,
+          pricePerMonth: pricing.pricePerMonth,
+          transactionQuota: pricing.transactionQuota,
+          transactionUsedThisCycle: 0,
+          status: 'active',
+          startedAt: now,
+          currentCycleStart: now,
+          currentCycleEnd: cycleEnd,
+        },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          tenantId,
+          entityType: 'subscription',
+          entityId: tenantId,
+          action: 'partner_set_plan',
+          actor: 'cas_partner',
+          beforeState: { plan: prevPlan },
+          afterState: { plan: targetPlan },
+        },
+      }),
+    ]);
+
+    return { success: true, plan: targetPlan };
   }
 
   private async getLatestSubscription(tenantId: string) {

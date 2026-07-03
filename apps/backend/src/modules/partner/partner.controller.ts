@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { SubscriptionPlan } from '@prisma/client';
 import { JwtAuthGuard, PartnerGuard } from '../../common/guards/auth.guards';
-import { UpdatePlanPricingDto } from './dto/plan-pricing.dto';
+import { SetTenantPlanDto, UpdatePlanPricingDto } from './dto/plan-pricing.dto';
 import { PartnerService } from './partner.service';
 
 @ApiTags('partner')
@@ -29,6 +29,11 @@ export class PartnerController {
   @Get('revenue-trend')
   getRevenueTrend() {
     return this.service.getRevenueTrend();
+  }
+
+  @Patch('tenants/:id/plan')
+  setTenantPlan(@Param('id') id: string, @Body() dto: SetTenantPlanDto) {
+    return this.service.setTenantPlan(id, dto.targetPlan as SubscriptionPlan);
   }
 
   @Patch('tenants/:id/suspend')
