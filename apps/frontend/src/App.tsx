@@ -13,6 +13,7 @@ import ResetPasswordPage from '@/pages/auth/ResetPasswordPage';
 import VerifyEmailPage from '@/pages/auth/VerifyEmailPage';
 import CopilotPage from '@/pages/copilot/CopilotPage';
 import DashboardPage from '@/pages/dashboard/DashboardPage';
+import LandingPage from '@/pages/landing/LandingPage';
 import OnboardingCallbackPage from '@/pages/onboarding/OnboardingCallbackPage';
 import OnboardingPage from '@/pages/onboarding/OnboardingPage';
 import PartnerDashboardPage from '@/pages/partner/PartnerDashboardPage';
@@ -23,7 +24,7 @@ import ReportsPage from '@/pages/reports/ReportsPage';
 import ReviewPage from '@/pages/review/ReviewPage';
 import SettingsPage from '@/pages/settings/SettingsPage';
 import TransactionsPage from '@/pages/transactions/TransactionsPage';
-import { GuestRoute, ProtectedRoute } from '@/routes/ProtectedRoute';
+import { GuestRoute, LandingRoute, ProtectedRoute } from '@/routes/ProtectedRoute';
 
 function App() {
   return (
@@ -31,7 +32,14 @@ function App() {
       <ThemeProvider>
         <AuthProvider>
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route
+              path="/"
+              element={
+                <LandingRoute>
+                  <LandingPage />
+                </LandingRoute>
+              }
+            />
 
             <Route
               path="/login"
@@ -115,7 +123,7 @@ function App() {
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
 
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster richColors position="top-right" />
         </AuthProvider>

@@ -226,22 +226,27 @@ export default function TransactionsPage() {
             </CardContent>
           </Card>
         ) : !items.length ? (
-          <EmptyState
-            icon={Receipt}
-            title="Không tìm thấy giao dịch nào"
-            description={
-              hasActiveFilters
-                ? 'Thử đổi bộ lọc hoặc xóa điều kiện tìm kiếm.'
-                : 'Giao dịch sẽ xuất hiện khi Cas gửi webhook sau khi liên kết ngân hàng.'
-            }
-            action={
-              hasActiveFilters ? (
-                <Button variant="outline" size="sm" onClick={clearFilters}>
-                  Xóa bộ lọc
-                </Button>
-              ) : undefined
-            }
-          />
+          <Card className="py-4">
+            <CardContent>
+              <EmptyState
+                className="border-0 bg-transparent py-6"
+                icon={Receipt}
+                title="Không tìm thấy giao dịch nào"
+                description={
+                  hasActiveFilters
+                    ? 'Thử đổi bộ lọc hoặc xóa điều kiện tìm kiếm.'
+                    : 'Giao dịch sẽ xuất hiện khi Cas gửi webhook sau khi liên kết ngân hàng.'
+                }
+                action={
+                  hasActiveFilters ? (
+                    <Button variant="outline" size="sm" onClick={clearFilters}>
+                      Xóa bộ lọc
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </CardContent>
+          </Card>
         ) : (
           <>
             <div className="space-y-3 md:hidden">

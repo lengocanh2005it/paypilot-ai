@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { LogoMark } from '@/components/brand/Logo';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,7 +24,13 @@ export function AuthLayout({
         <Card className="w-full border-border/80 shadow-lg shadow-primary/5">
           <CardHeader className="sm:px-8">
             <div className="flex items-center gap-3">
-              <LogoMark size={40} className="rounded-xl shadow-sm" />
+              <Link
+                to="/"
+                aria-label="Về trang chủ X-Cash AI"
+                className="rounded-xl transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <LogoMark size={40} className="rounded-xl shadow-sm" />
+              </Link>
               <div className="space-y-0.5">
                 <CardTitle className="text-xl text-foreground">{title}</CardTitle>
                 <CardDescription>{description}</CardDescription>

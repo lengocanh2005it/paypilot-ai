@@ -49,8 +49,30 @@ export function ProtectedRoute({ children, requireOnboarding = false }: Protecte
   return children;
 }
 
-export function GuestRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, user, onboardingStatus, isOnboardingLoading } = useAuth();
+function AuthenticatedHomeRedirect() {
+  const { user, onboardingStatus, isOnboardingLoading } = useAuth();
+
+  if (user?.role === Role.CAS_PARTNER) {
+    return <Navigate to="/partner" replace />;
+  }
+
+  if (isOnboardingLoading) {
+    return (
+      <div className="flex min-h-svh items-center justify-center p-6">
+        <Skeleton className="h-10 w-64" />
+      </div>
+    );
+  }
+
+  if (!onboardingStatus?.bankingLinked) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  return <Navigate to="/dashboard" replace />;
+}
+
+export function LandingRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -60,24 +82,26 @@ export function GuestRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (isAuthenticated && user) {
-    if (user.role === Role.CAS_PARTNER) {
-      return <Navigate to="/partner" replace />;
-    }
+  if (isAuthenticated) {
+    return <AuthenticatedHomeRedirect />;
+  }
 
-    if (isOnboardingLoading) {
-      return (
-        <div className="flex min-h-svh items-center justify-center p-6">
-          <Skeleton className="h-10 w-64" />
-        </div>
-      );
-    }
+  return children;
+}
 
-    if (!onboardingStatus?.bankingLinked) {
-      return <Navigate to="/onboarding" replace />;
-    }
+export function GuestRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
 
-    return <Navigate to="/dashboard" replace />;
+  if (isLoading) {
+    return (
+      <div className="flex min-h-svh items-center justify-center p-6">
+        <Skeleton className="h-10 w-64" />
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <AuthenticatedHomeRedirect />;
   }
 
   return children;
