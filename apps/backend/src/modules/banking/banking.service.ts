@@ -152,6 +152,8 @@ export class BankingService {
       throw new ForbiddenException('Đã hết quota tháng này. Vui lòng nâng cấp gói.');
     }
 
+    const casDirection = txn.amount >= 0 ? 'in' : 'out';
+
     const existingTransaction = await this.prisma.transaction.findUnique({
       where: { transactionId },
     });
@@ -177,6 +179,8 @@ export class BankingService {
           receiverAccount: null,
           transactionDate: new Date(txn.transactionDateTime),
           status: 'pending',
+          source: 'cas',
+          direction: casDirection,
         },
       });
 
