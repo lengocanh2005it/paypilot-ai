@@ -23,7 +23,7 @@ src/modules/<domain>/
 
 ```
 src/modules/
-├── auth/                 # register, login, refresh, logout — JWT
+├── auth/                 # register (+ confirmPassword), OTP verify, login (rememberMe), forgot/reset password, refresh, logout — JWT
 ├── onboarding/           # Cas Link Grant/Exchange flow
 ├── banking/              # webhook Cas Balance Hook, cas_grants
 ├── transaction/          # CRUD giao dịch
@@ -33,24 +33,31 @@ src/modules/
 ├── ai/                   # AI Classification pipeline (BullMQ ai-classify) + copilot.controller
 ├── settings/             # threshold (Prisma) + notifications (Redis)
 ├── team/                 # invite/list/remove member
-├── billing/              # current-plan + usage-history
-├── partner/              # route /partner/*, chỉ Cas Partner — tenants list, stats, suspend/activate
+├── billing/              # plans, current-plan, usage-history, PayOS upgrade + overage, webhook
+├── partner/              # /partner/* — tenants, stats, payments, plan-pricing, suspend/activate/plan
+├── notification/         # in-app (SSE stream), email Resend (BullMQ), Slack webhook per-tenant
 ├── cas/                  # CasClientService
 └── health/               # health check
 ```
 
-Module chưa có (chưa cần thiết trong scope hiện tại): `notification` (email/Slack/Discord thật), `audit-log` (endpoint xem riêng — hiện audit log chỉ ghi vào bảng, chưa có API đọc).
+Module chưa có (không chặn go-live): `audit-log` API đọc riêng (bảng `audit_logs` đã ghi khi upgrade/suspend/overage). Partner endpoints phụ: `/partner/revenue`, `/partner/audit-logs`, `/partner/system-health` — xem `reference/rbac.md`.
+
+**Plan gating:** `PlanGuard` + `@RequiresPlan` — Copilot/comparison/top-accounts cần Starter+; export Excel cần Pro+; Email/Slack notification validate trong `settings.service` (Starter+/Pro+).
+
+**Guards bổ sung:** `TenantThrottlerGuard` (global APP_GUARD), `PlanGuard` (kết hợp `@RequiresPlan`). Decorator `@Public()` cho route SSE notification stream (`EventSource` không gửi Bearer header).
 
 `src/common/` chứa cross-cutting concerns dùng chung mọi module:
 
 ```
 src/common/
 ├── decorators/
-│   └── roles.decorator.ts        # @Roles(Role.ADMIN, ...)
+│   ├── roles.decorator.ts        # @Roles(Role.ADMIN, ...)
+│   ├── requires-plan.decorator.ts # @RequiresPlan('starter' | 'pro' | ...)
+│   └── public.decorator.ts       # @Public() — bỏ qua JwtAuthGuard (SSE stream)
 ├── guards/
-│   ├── jwt-auth.guard.ts
-│   ├── roles.guard.ts             # cho route nghiệp vụ thường
-│   └── partner.guard.ts           # RIÊNG cho /partner/*, check tenant_id === null
+│   ├── auth.guards.ts             # JwtAuthGuard, RolesGuard, PartnerGuard
+│   ├── plan.guard.ts              # kiểm tra gói subscription từ DB
+│   └── tenant-throttler.guard.ts  # rate limit theo tenantId
 ├── filters/
 │   └── all-exceptions.filter.ts   # Global Exception Filter
 ├── interceptors/

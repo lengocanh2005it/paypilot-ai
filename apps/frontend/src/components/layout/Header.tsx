@@ -8,9 +8,17 @@ interface HeaderProps {
   logo?: ReactNode;
   actions?: ReactNode;
   className?: string;
+  hideThemeToggle?: boolean;
 }
 
-export function Header({ title, description, logo, actions, className }: HeaderProps) {
+export function Header({
+  title,
+  description,
+  logo,
+  actions,
+  className,
+  hideThemeToggle = false,
+}: HeaderProps) {
   return (
     <header
       className={cn(
@@ -28,9 +36,9 @@ export function Header({ title, description, logo, actions, className }: HeaderP
             ) : null}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+        <div className="flex w-full flex-wrap items-center gap-2 self-stretch sm:w-auto sm:shrink-0 sm:self-auto sm:justify-end">
           {actions}
-          <ThemeToggle className="hidden lg:inline-flex" />
+          {!hideThemeToggle ? <ThemeToggle className="hidden lg:inline-flex" /> : null}
         </div>
       </div>
     </header>

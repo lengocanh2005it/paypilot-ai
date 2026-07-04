@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { Crown, Gift, Pencil, Rocket, Star } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { Header } from '@/components/layout/Header';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Button } from '@/components/ui/button';
@@ -38,6 +40,13 @@ const PLAN_DESCRIPTIONS: Record<string, string> = {
   starter: 'SME nhỏ — thêm Copilot, Phân tích, thông báo Email',
   pro: 'Tăng trưởng — Báo cáo Excel, Slack, vượt quota có phí',
   enterprise: 'Quy mô lớn — hỗ trợ ưu tiên, triển khai riêng',
+};
+
+const PLAN_ICONS: Record<string, LucideIcon> = {
+  free: Gift,
+  starter: Rocket,
+  pro: Star,
+  enterprise: Crown,
 };
 
 export default function PartnerPlansPage() {
@@ -105,13 +114,11 @@ export default function PartnerPlansPage() {
 
   return (
     <>
-      <header className="sticky top-0 z-10 border-b border-border bg-background px-4 py-4 sm:px-6">
-        <h1 className="text-lg font-semibold sm:text-xl">Gói dịch vụ</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Chỉnh giá/quota gói Starter trở lên — áp dụng cho lần nâng cấp tiếp theo, không ảnh hưởng
-          gói đang dùng
-        </p>
-      </header>
+      <Header
+        title="Gói dịch vụ"
+        description="Chỉnh giá/quota gói Starter trở lên — áp dụng cho lần nâng cấp tiếp theo, không ảnh hưởng gói đang dùng"
+        hideThemeToggle
+      />
 
       <div className="space-y-6 p-4 sm:p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -129,62 +136,68 @@ export default function PartnerPlansPage() {
                   </CardContent>
                 </Card>
               ))
-            : (planPricing ?? []).map((p) => (
-                <Card key={p.plan} className="flex flex-col">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
+            : (planPricing ?? []).map((p) => {
+                const PlanIcon = PLAN_ICONS[p.plan] ?? Gift;
+                return (
+                  <Card key={p.plan} className="flex flex-col">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <PlanIcon className="size-5" />
+                        </div>
+                        {!p.editable ? (
+                          <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
+                            Cố định
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 min-w-0">
                         <CardTitle className="text-base">{PLAN_LABELS[p.plan] ?? p.plan}</CardTitle>
                         <CardDescription className="mt-1 text-xs">
                           {PLAN_DESCRIPTIONS[p.plan] ?? ''}
                         </CardDescription>
                       </div>
-                      {!p.editable ? (
-                        <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
-                          Cố định
-                        </span>
+                    </CardHeader>
+                    <CardContent className="flex flex-1 flex-col gap-3">
+                      <div>
+                        <p className="text-2xl font-bold text-primary">
+                          {formatVND(p.pricePerMonth)}
+                          <span className="text-sm font-normal text-muted-foreground">/tháng</span>
+                        </p>
+                      </div>
+                      <div className="space-y-1 text-sm text-muted-foreground">
+                        <p>
+                          Quota:{' '}
+                          <span className="font-medium text-foreground">
+                            {p.plan === 'enterprise'
+                              ? 'Không giới hạn'
+                              : `${p.transactionQuota} GD/tháng`}
+                          </span>
+                        </p>
+                        <p>
+                          Phí vượt:{' '}
+                          <span className="font-medium text-foreground">
+                            {p.overagePricePerTransaction != null
+                              ? `${formatVND(p.overagePricePerTransaction)}/GD`
+                              : '—'}
+                          </span>
+                        </p>
+                      </div>
+                      {p.editable ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-auto"
+                          onClick={() => openEdit(p)}
+                        >
+                          <Pencil className="size-4" />
+                          Chỉnh sửa
+                        </Button>
                       ) : null}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="flex flex-1 flex-col gap-3">
-                    <div>
-                      <p className="text-2xl font-bold text-primary">
-                        {formatVND(p.pricePerMonth)}
-                        <span className="text-sm font-normal text-muted-foreground">/tháng</span>
-                      </p>
-                    </div>
-                    <div className="space-y-1 text-sm text-muted-foreground">
-                      <p>
-                        Quota:{' '}
-                        <span className="font-medium text-foreground">
-                          {p.plan === 'enterprise'
-                            ? 'Không giới hạn'
-                            : `${p.transactionQuota} GD/tháng`}
-                        </span>
-                      </p>
-                      <p>
-                        Phí vượt:{' '}
-                        <span className="font-medium text-foreground">
-                          {p.overagePricePerTransaction != null
-                            ? `${formatVND(p.overagePricePerTransaction)}/GD`
-                            : '—'}
-                        </span>
-                      </p>
-                    </div>
-                    {p.editable ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-auto"
-                        onClick={() => openEdit(p)}
-                      >
-                        <Pencil className="size-4" />
-                        Chỉnh sửa
-                      </Button>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
         </div>
 
         <Card>

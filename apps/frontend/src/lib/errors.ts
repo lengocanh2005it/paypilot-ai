@@ -18,3 +18,11 @@ export function getErrorMessage(
 
   return fallback;
 }
+
+export function isEmailNotVerifiedError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+  const data = error.response?.data as ApiResponse<unknown> | undefined;
+  return data?.error?.code === 'EMAIL_NOT_VERIFIED';
+}

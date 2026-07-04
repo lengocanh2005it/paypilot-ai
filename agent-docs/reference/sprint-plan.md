@@ -3,16 +3,18 @@
 **Tổng thời gian:** ~4 sprints (mỗi sprint 2 tuần) còn lại sau pivot
 **Mục tiêu cuối:** Demo được hệ thống X-Cash AI với kế toán SME: nhận GD → AI định khoản → kế toán confirm → export Excel
 
+> **Cập nhật trạng thái (đồng bộ code):** Sprint 1–3 hoàn thành. Sprint 4 — **toàn bộ feature code đã xong**; còn lại DevOps (deploy production) + E2E QA thủ công. Chi tiết thực tế xem [`agent-docs/00-current-state.md`](../00-current-state.md).
+
 ---
 
 ## 📊 Tổng quan
 
-| Sprint | Tuần | Mục tiêu | Demo được |
+| Sprint | Tuần | Mục tiêu | Trạng thái |
 |---|---|---|---|
-| Sprint 1 | 1–2 | Foundation (đã xong ✅) | Auth, Cas Link, Webhook, Transactions |
-| Sprint 2 | 3–6 | **X-Cash AI Pivot** — refactor backend + UI mới | AI định khoản hoạt động, Review queue, Export Excel |
-| Sprint 3 | 7–8 | Analytics, AI Copilot, Settings | Báo cáo đầy đủ, hỏi đáp AI |
-| Sprint 4 | 9–10 | Partner Dashboard + Polish + Deploy | System production-ready |
+| Sprint 1 | 1–2 | Foundation | ✅ Xong |
+| Sprint 2 | 3–6 | X-Cash AI Pivot — refactor backend + UI mới | ✅ Xong |
+| Sprint 3 | 7–8 | Analytics, AI Copilot, Settings | ✅ Xong |
+| Sprint 4 | 9–10 | Partner Dashboard + Polish + Deploy | 🔄 Code xong — còn deploy + QA |
 
 ---
 
@@ -28,124 +30,89 @@ Tất cả đã hoàn thành:
 
 ---
 
-## 🔄 Sprint 2 — X-Cash AI Pivot
+## ✅ Sprint 2 — X-Cash AI Pivot (ĐÃ XONG)
 
-**Tuần 3–4 (Anh — Backend)**
+**Tuần 3–4 (Backend):**
 
-### Anh: Backend Refactor
-
-**Tuần 3 — Schema + Classification Core:**
-
-- [ ] Prisma: xóa Invoice, Customer, InvoiceMatch tables; thêm ChartOfAccount, TransactionClassification
-- [ ] Migration mới (`klassi_pivot_schema`)
-- [ ] Xóa `invoice` module, `customer` module
-- [ ] `chart-of-accounts` module:
-  - `GET /accounts` — list (tenant-scoped)
-  - `POST /accounts` — thêm tài khoản con
-  - `PUT /accounts/:id` — sửa
-  - `DELETE /accounts/:id` — soft delete
-  - Seed TT133 (~60 tài khoản) khi tenant đăng ký (hook vào auth/register flow)
-- [ ] Refactor `ai` module:
-  - Đổi BullMQ job từ `ai-matching` → `ai-classify`
-  - Đầu vào: `transaction` (content, amount, direction)
-  - Text preprocessing (chuẩn hóa nội dung GD tiếng Việt)
-  - pgvector: tìm 5 phân loại cũ tương tự của tenant (few-shot)
-  - OpenAI `gpt-4o-mini` — prompt TT133, trả `{debit, credit, confidence, reason}`
-  - Confidence ≥ 85% → auto classify; < 85% → status=review
-  - Lưu vào `transaction_classifications`
-  - Embedding content → lưu vector (để future few-shot tốt hơn)
-- [ ] Update `banking` module: enqueue `ai-classify` thay vì `ai-matching`
-- [ ] `GET /transactions/:id/classification` — kết quả phân loại
+- [x] Prisma: xóa Invoice, Customer, InvoiceMatch; thêm ChartOfAccount, TransactionClassification
+- [x] Migration `klassi_ai_pivot` (tên lịch sử)
+- [x] Xóa `invoice` module, `customer` module
+- [x] `chart-of-accounts` module — CRUD + seed TT133 khi đăng ký
+- [x] Refactor `ai` module — job `ai-classify`, pgvector few-shot, OpenAI TT133 prompt
+- [x] Update `banking` module — enqueue `ai-classify`
+- [x] `GET /transactions/:id/classification`
 
 **Tuần 4 — Review + Report:**
 
-- [ ] `classification` module / review sub-resource:
-  - `GET /review/queue` — list GD status=review (tenant-scoped, pagination)
-  - `POST /review/:id/confirm` — xác nhận, status → classified
-  - `POST /review/:id/correct` — sửa debit/credit, status → classified, lưu correction vector
-  - `POST /review/:id/skip` — bỏ qua, status → skipped
-- [ ] `report` module:
-  - `GET /reports/summary?year=&month=` — tổng thu/chi theo tháng group by account
-  - `GET /reports/by-account?from_date=&to_date=` — chi tiết từng tài khoản
-  - `GET /reports/export?from_date=&to_date=` — export Excel `.xlsx` (StreamableFile)
-- [ ] Update `shared-types`: types cho Classification, ChartOfAccount, Report
-- [ ] Tests: `ai.service.spec.ts` (mocked OpenAI), `classification.service.spec.ts`
+- [x] `classification` module — review queue (confirm/correct/skip)
+- [x] `report` module — summary, by-account, export Excel
+- [x] Update `shared-types`
+- [x] Tests: classification service
+
+**Tuần 5–6 (Frontend):**
+
+- [x] Sidebar — Review Queue, Báo cáo, Tài khoản
+- [x] Dashboard stat cards + charts mới
+- [x] Transactions — TK Nợ/Có, confidence, reason
+- [x] TransactionDetailSheet — định khoản AI
+- [x] `ReviewPage`, `ReportsPage`, `AccountsPage`
+- [x] Routes mới trong `App.tsx`
 
 ---
 
-**Tuần 5–6 (Vinh — Frontend)**
+## ✅ Sprint 3 — Analytics + AI Copilot + Settings (ĐÃ XONG)
 
-### Vinh: Frontend Refactor
+**Backend:**
 
-**Tuần 5 — Dashboard + Transactions mới:**
+- [x] `POST /ai/copilot` — natural language query tài chính
+- [x] Advanced reports — `GET /reports/comparison`, `GET /reports/top-accounts`
+- [x] Notification — in-app + SSE stream + email Resend (BullMQ); review badge qua `GET /review/count` (polling)
 
-- [ ] Sidebar: xóa nav Hóa đơn/Khách hàng; thêm Review Queue, Báo cáo, Tài khoản
-- [ ] Dashboard stat cards mới:
-  - GD đã định khoản hôm nay
-  - GD chờ review
-  - Độ chính xác AI (%)
-  - Tổng thu-chi tháng này
-- [ ] Dashboard chart: biểu đồ thu-chi theo tuần (Recharts AreaChart, groupBy account_type revenue/expense)
-- [ ] Transactions page: hiển thị nhãn định khoản (TK Nợ / TK Có badge), confidence, reason
-- [ ] TransactionDetailSheet: thay "AI match hóa đơn" bằng "Định khoản: Nợ xxx / Có xxx", lý do AI, nút sửa nhanh
+**Frontend:**
 
-**Tuần 6 — Review + Report + Chart of Accounts:**
-
-- [ ] `ReviewPage` (`/review`):
-  - Feed card từng GD cần review
-  - Card hiển thị: nội dung GD, số tiền, AI gợi ý Nợ/Có, confidence, lý do
-  - 3 nút action: Xác nhận / Sửa / Bỏ qua
-  - Dialog sửa: dropdown chọn TK Nợ + TK Có từ chart_of_accounts
-  - Sau action → remove card khỏi queue (optimistic update)
-- [ ] `ReportsPage` (`/reports`):
-  - Bộ lọc tháng/năm
-  - Bảng tổng hợp thu/chi theo tài khoản
-  - Nút Export Excel
-- [ ] `AccountsPage` (`/accounts`):
-  - Cây tài khoản TT133 đã seed
-  - Thêm/sửa tài khoản con (Dialog)
-- [ ] App.tsx: thêm routes mới, xóa routes cũ (invoices, customers)
+- [x] Settings page — Threshold, Notifications, Team, Banking, Billing
+- [x] AI Copilot chat (`CopilotPage`)
+- [x] Analytics dashboard (`AnalyticsPage`)
+- [x] Mobile polish — `SwipeableReviewCard` trên Review
 
 ---
 
-## 🔮 Sprint 3 — Analytics + AI Copilot + Settings
+## 🔄 Sprint 4 — Partner Dashboard + Deploy
 
-**Tuần 7–8**
+### Đã xong (code feature)
 
-### Anh:
+**Anh — Backend:**
 
-- [ ] AI Copilot endpoint — `POST /chat` — natural language query về tài chính
-  - Input: câu hỏi tiếng Việt ("Tháng này tôi chi nhiều nhất vào đâu?")
-  - AI tổng hợp từ `transaction_classifications` → trả lời có số liệu
-- [ ] Advanced reports: so sánh tháng này vs tháng trước, top 5 danh mục chi nhiều nhất
-- [ ] Notification: push khi có GD mới cần review (webhook → realtime qua SSE/polling)
+- [x] Partner Dashboard API — `GET /partner/tenants`, `GET /partner/stats`, `GET /partner/tenants/:id`, `GET /partner/revenue-trend`, `GET /partner/payments`, `PATCH /partner/tenants/:id/suspend|activate|plan`, `GET|PATCH /partner/plan-pricing`
+- [x] Rate limiting per-tenant (`TenantThrottlerGuard`, `RATE_LIMIT_PER_MINUTE`)
+- [x] Billing PayOS — upgrade, webhook, overage billing, mock-confirm dev-only
+- [x] Plan gating (`PlanGuard`, `@RequiresPlan`)
+- [x] Notification module — in-app, email, Slack webhook (per-tenant URL trong Settings)
+- [x] Auth security — OTP verify email, forgot/reset password, rememberMe
 
-### Vinh:
+**Vinh — Frontend:**
 
-- [ ] Settings page: Threshold confidence (slider 50–99%), invite team member, liên kết ngân hàng
-- [ ] AI Copilot chat bubble (floating, gợi ý query mẫu)
-- [ ] Analytics dashboard: so sánh tháng, top categories chart
-- [ ] Mobile polish: touch actions trên Review card (swipe confirm/skip)
+- [x] Partner layout + pages — Dashboard, Tenants, Payments, Plans
+- [x] Onboarding welcome tour (`WelcomeTour`)
+- [x] Settings BillingTab — nâng cấp gói + QR + overage
+- [x] `NotificationBell`, `PlanGate`, auth pages mới
 
----
+### Chưa xong (DevOps + QA)
 
-## 🚀 Sprint 4 — Partner Dashboard + Deploy
+**Anh:**
 
-**Tuần 9–10**
+- [ ] Production env vars đầy đủ trong `docker-compose.yml` (OpenAI, Resend, PayOS, v.v.)
+- [ ] SSL/HTTPS + nginx config production (domain thật, certbot)
+- [ ] Deploy VPS thật qua GitHub Actions `deploy.yml` + secrets
 
-### Anh:
+**Vinh:**
 
-- [x] Partner Dashboard API (`/partner/*`) — `GET /partner/tenants`, `GET /partner/stats`, `PATCH /partner/tenants/:id/suspend`, `PATCH /partner/tenants/:id/activate` (chưa làm `/partner/tenants/:id` chi tiết, `/partner/revenue`, `/partner/audit-logs`, `/partner/system-health` — xem `rbac.md`)
-- [x] Rate limiting nâng cao (per-tenant, per-minute) — `@nestjs/throttler`, `TenantThrottlerGuard`
-- [ ] Production env vars + Docker build pipeline
-- [ ] SSL/HTTPS + nginx config production
+- [ ] Final E2E QA thủ công toàn luồng (register → verify email → Cas Link → webhook → AI → review → export → billing)
+- [ ] Test Slack + Resend email trên môi trường có key thật (Pro+ tenant)
 
-### Vinh:
+### Tùy chọn (không chặn go-live)
 
-- [x] PartnerPage hoàn chỉnh — table tenant, stats, usage
-- [x] Onboarding welcome tour (intro steps cho kế toán mới)
-- [ ] Final QA: E2E test toàn bộ luồng (register → Cas Link → nhận GD → AI classify → review → export)
-- [ ] Deploy VPS thật (GitHub Actions `deploy.yml`)
+- [ ] Partner API phụ theo spec gốc: `GET /partner/revenue`, `GET /partner/audit-logs`, `GET /partner/system-health` (một phần đã gộp vào `/partner/stats` và `/partner/payments`)
 
 ---
 

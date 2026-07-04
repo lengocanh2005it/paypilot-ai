@@ -160,6 +160,14 @@ export function TransactionDetailSheet({
                     </div>
                     <ConfidenceBadge score={classification.confidenceScore} />
                   </div>
+                  {classification.reason && (
+                    <div className="border-t pt-3">
+                      <p className="text-xs text-muted-foreground mb-1">Lý do AI</p>
+                      <p className="text-sm text-muted-foreground italic">
+                        {classification.reason}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -9,8 +9,8 @@ import {
   LineChart,
   Lock,
   LogOut,
-  PanelLeft,
   PanelLeftClose,
+  PanelLeftOpen,
   Receipt,
   Settings,
   X,
@@ -19,6 +19,7 @@ import { useEffect, useRef } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Logo } from '@/components/brand/Logo';
+import { NotificationBell } from '@/components/shared/NotificationBell';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useReviewCount } from '@/hooks/useReviewCount';
@@ -176,7 +177,8 @@ export function SidebarContent({
             <Logo collapsed={collapsed} markSize={36} />
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
+          <div className={cn('flex shrink-0 items-center gap-1', collapsed && 'flex-col gap-2')}>
+            <NotificationBell align="left" />
             {showCollapseToggle ? (
               <Button
                 type="button"
@@ -188,7 +190,7 @@ export function SidebarContent({
                 title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
               >
                 {collapsed ? (
-                  <PanelLeft className="size-4" />
+                  <PanelLeftOpen className="size-4" />
                 ) : (
                   <PanelLeftClose className="size-4" />
                 )}

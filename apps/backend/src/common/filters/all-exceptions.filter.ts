@@ -21,10 +21,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const status =
       exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const message =
+    const { message, code } =
       exception instanceof HttpException
-        ? this.extractMessage(exception)
-        : 'Đã xảy ra lỗi hệ thống';
+        ? this.extractError(exception)
+        : { message: 'Đã xảy ra lỗi hệ thống', code: undefined };
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
@@ -41,7 +41,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         request_id: request.requestId ?? 'unknown',
       },
       error: {
-        code: HttpStatus[status] ?? 'INTERNAL_SERVER_ERROR',
+        code: code ?? HttpStatus[status] ?? 'INTERNAL_SERVER_ERROR',
         message,
       },
     };
@@ -49,15 +49,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json(body);
   }
 
-  private extractMessage(exception: HttpException): string {
+  private extractError(exception: HttpException): { message: string; code?: string } {
     const response = exception.getResponse();
     if (typeof response === 'string') {
-      return response;
+      return { message: response };
     }
-    if (typeof response === 'object' && response !== null && 'message' in response) {
-      const message = (response as { message?: string | string[] }).message;
-      return Array.isArray(message) ? message.join(', ') : (message ?? exception.message);
+    if (typeof response === 'object' && response !== null) {
+      const obj = response as { message?: string | string[]; code?: string };
+      const message = Array.isArray(obj.message)
+        ? obj.message.join(', ')
+        : (obj.message ?? exception.message);
+      return { message, code: obj.code };
     }
-    return exception.message;
+    return { message: exception.message };
   }
 }

@@ -19,6 +19,8 @@ export class TransactionService {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
+    const search = query.search?.trim();
+
     const where: Prisma.TransactionWhereInput = {
       tenantId,
       ...(query.status ? { status: query.status as TransactionStatus } : {}),
@@ -28,6 +30,15 @@ export class TransactionService {
               ...(query.from_date ? { gte: new Date(query.from_date) } : {}),
               ...(query.to_date ? { lte: new Date(query.to_date) } : {}),
             },
+          }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              { content: { contains: search, mode: 'insensitive' } },
+              { transactionId: { contains: search, mode: 'insensitive' } },
+              { senderAccount: { contains: search, mode: 'insensitive' } },
+            ],
           }
         : {}),
     };

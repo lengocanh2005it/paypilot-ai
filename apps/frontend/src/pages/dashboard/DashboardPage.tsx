@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Brain, CheckCircle2, Clock } from 'lucide-react';
 import { useMemo } from 'react';
-import { BankStatusCard } from '@/components/dashboard/BankStatusCard';
 import { DashboardStatCard } from '@/components/dashboard/DashboardStatCard';
 import { RecentTransactionsCard } from '@/components/dashboard/RecentTransactionsCard';
 import { RevenueLineChart } from '@/components/dashboard/RevenueLineChart';
 import { TransactionStatusChart } from '@/components/dashboard/TransactionStatusChart';
 import { Header } from '@/components/layout/Header';
 import { WelcomeTour } from '@/components/shared/WelcomeTour';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
 import { getApiData } from '@/lib/api';
@@ -20,6 +20,19 @@ import {
 import type { TransactionListResponse } from '@/types/transaction';
 
 const DASHBOARD_TRANSACTION_LIMIT = 100;
+
+function getInitials(name?: string | null) {
+  if (!name?.trim()) {
+    return 'U';
+  }
+
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+}
 
 export default function DashboardPage() {
   const { user, onboardingStatus } = useAuth();
@@ -66,23 +79,28 @@ export default function DashboardPage() {
       />
 
       <div className="space-y-6 p-4 sm:p-6">
-        <div>
-          <h2 className="text-xl font-medium text-foreground sm:text-2xl">
-            Xin chào, <span className="font-bold text-primary">{user?.name ?? 'bạn'}</span>!
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {user?.businessName ? (
-              <>
-                Doanh nghiệp{' '}
-                <span className="font-medium text-foreground">{user.businessName}</span>
-                {' · '}
-              </>
-            ) : null}
-            Chúc bạn một ngày làm việc hiệu quả với X-Cash AI.
-          </p>
-        </div>
-
-        <BankStatusCard bankingLinked={bankingLinked} grants={onboardingStatus?.grants ?? []} />
+        <Card className="overflow-hidden border-primary/15 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent py-0 shadow-sm">
+          <CardContent className="flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center sm:gap-5 sm:p-6">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground shadow-sm sm:size-14 sm:text-lg">
+              {getInitials(user?.name)}
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-xl font-medium text-foreground sm:text-2xl">
+                Xin chào, <span className="font-bold text-primary">{user?.name ?? 'bạn'}</span>!
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {user?.businessName ? (
+                  <>
+                    Doanh nghiệp{' '}
+                    <span className="font-medium text-foreground">{user.businessName}</span>
+                    {' · '}
+                  </>
+                ) : null}
+                Chúc bạn một ngày làm việc hiệu quả với X-Cash AI.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {bankingLinked && isLoading ? (
@@ -132,10 +150,12 @@ export default function DashboardPage() {
         <RevenueLineChart data={revenueTrend} isLoading={bankingLinked && isLoading} />
 
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-2">
+          <div className="min-w-0 lg:col-span-2">
             <RecentTransactionsCard items={recentItems} isLoading={bankingLinked && isLoading} />
           </div>
-          <TransactionStatusChart data={statusData} isLoading={bankingLinked && isLoading} />
+          <div className="min-w-0">
+            <TransactionStatusChart data={statusData} isLoading={bankingLinked && isLoading} />
+          </div>
         </div>
       </div>
     </>

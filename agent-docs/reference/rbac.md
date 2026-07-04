@@ -87,21 +87,28 @@ KHÔNG thao tác nghiệp vụ             Thao tác đầy đủ trong tenant m
 ### API riêng cho Cas Partner
 
 ```
-# Tất cả endpoint dưới /api/v1/partner/* chỉ Cas Partner gọi được
-GET    /api/v1/partner/tenants              # Danh sách toàn bộ doanh nghiệp
-GET    /api/v1/partner/tenants/:id          # Chi tiết 1 doanh nghiệp (usage, không xem data nghiệp vụ)
+# Tất cả endpoint dưới /api/v1/partner/* chỉ Cas Partner gọi được (PartnerGuard)
+# ─── ĐÃ TRIỂN KHAI ───
+GET    /api/v1/partner/tenants              # Danh sách DN — filter search/status/plan
+GET    /api/v1/partner/tenants/:id          # Chi tiết 1 DN (plan, GD tháng, AI accuracy, members)
+GET    /api/v1/partner/stats                # Tổng quan hệ thống (gộp usage-stats; ?fromDate=&toDate=)
+GET    /api/v1/partner/revenue-trend        # Doanh thu theo tháng + breakdown theo gói (mặc định 6 tháng)
+GET    /api/v1/partner/payments             # Lịch sử payment_orders toàn hệ thống (phân trang + summary)
 PATCH  /api/v1/partner/tenants/:id/suspend  # Khóa tài khoản doanh nghiệp
 PATCH  /api/v1/partner/tenants/:id/activate # Mở khóa tài khoản doanh nghiệp
-GET    /api/v1/partner/revenue              # Tổng quan doanh thu toàn hệ thống
-GET    /api/v1/partner/revenue/:tenantId    # Doanh thu của 1 tenant cụ thể
-GET    /api/v1/partner/usage-stats          # Thống kê usage (giao dịch, AI calls...)
-GET    /api/v1/partner/audit-logs           # Audit log toàn hệ thống (mọi tenant)
-GET    /api/v1/partner/system-health        # Health check, webhook delivery status
-GET    /api/v1/partner/plan-pricing         # Xem giá/quota từng gói dịch vụ (đã triển khai)
-PATCH  /api/v1/partner/plan-pricing/:plan   # Sửa giá/quota gói Starter trở lên — Free luôn cố định (đã triển khai)
+PATCH  /api/v1/partner/tenants/:id/plan     # Đặt gói bất kỳ cho tenant (Partner, không chặn downgrade)
+GET    /api/v1/partner/plan-pricing         # Xem giá/quota/phí vượt từng gói
+PATCH  /api/v1/partner/plan-pricing/:plan   # Sửa giá/quota Starter+ (Free cố định)
+
+# ─── CHƯA LÀM (spec gốc, không chặn go-live) ───
+GET    /api/v1/partner/revenue              # Tổng quan doanh thu (một phần đã có trong /stats và /revenue-trend)
+GET    /api/v1/partner/revenue/:tenantId    # Doanh thu 1 tenant tách riêng
+GET    /api/v1/partner/usage-stats          # Tách riêng (đã gộp vào GET /partner/stats)
+GET    /api/v1/partner/audit-logs           # Audit log toàn hệ thống (bảng audit_logs đã ghi, chưa có API đọc)
+GET    /api/v1/partner/system-health        # Health + webhook delivery status
 ```
 
-> Ghi chú trạng thái: `tenants`, `stats` (gộp usage-stats vào 1 endpoint), `revenue-trend`, `plan-pricing`, `suspend`/`activate` đã triển khai thật — xem `agent-docs/00-current-state.md` để biết đường dẫn thực tế (có khác chút so với danh sách lý tưởng ở trên, ví dụ `GET /partner/stats` gộp usage-stats thay vì tách riêng). Các endpoint `tenants/:id` chi tiết, `revenue`/`revenue/:tenantId` tách riêng, `audit-logs`, `system-health` **chưa làm**.
+> Ghi chú trạng thái: danh sách **đã triển khai** khớp `partner.controller.ts` — xem bảng API đầy đủ trong `agent-docs/00-current-state.md`. FE Partner: `/partner/dashboard`, `/partner/tenants`, `/partner/payments`, `/partner/plans` (layout sidebar riêng).
 
 ### Database Schema bổ sung
 
@@ -366,24 +373,24 @@ reset current_cycle_start/end
 Admin thấy gói đã đổi ngay trên UI (TanStack Query invalidate)
 ```
 
-**Vì sao `orderCode` chứa `tenant_id`:** Tương tự cách `grantId` định tuyến đúng tenant ở Cas Balance Hook, `orderCode` ở đây đóng vai trò định tuyến — vì PayOS callback chỉ trả về `orderCode` đã gửi đi, X-Cash AI cần tự encode `tenant_id` vào đó để biết doanh nghiệp nào vừa thanh toán xong.
+**Lưu ý triển khai thực tế:** SDK `@payos/node` yêu cầu `orderCode` là **số nguyên** — không dùng chuỗi `UPG-{tenant_id}-...`. `tenantId` được tra qua bảng `PaymentOrder` khi webhook callback, không parse từ `orderCode`.
 
 ### API liên quan đến Pricing & Billing
 
 ```
-GET    /api/v1/billing/plans              # Danh sách gói + giá/quota hiện tại (đọc từ plan_pricing)
-GET    /api/v1/billing/current-plan       # Gói hiện tại, đã dùng bao nhiêu/quota
-GET    /api/v1/billing/usage-history      # Lịch sử dùng theo tháng (cho Admin xem)
-POST   /api/v1/billing/upgrade            # Tạo PayOS Payment Link để nâng cấp gói
-                                          # → gọi PayOS API, trả về QR + payment URL cho FE hiển thị
-GET    /api/v1/billing/invoices           # Lịch sử hóa đơn X-Cash AI xuất cho tenant này
-POST   /api/v1/webhook/payos-billing      # Nhận callback PayOS khi thanh toán nâng cấp thành công
-                                          # (route riêng, KHÔNG dùng chung với webhook nghiệp vụ
-                                          # vì đã bỏ PayOS cho nghiệp vụ — đây chỉ phục vụ billing)
+# ─── ĐÃ TRIỂN KHAI ───
+GET    /api/v1/billing/plans                        # Danh sách gói + giá/quota (plan_pricing)
+GET    /api/v1/billing/current-plan                 # Gói hiện tại + quota đã dùng
+GET    /api/v1/billing/usage-history                # Lịch sử usage theo tháng (Admin)
+POST   /api/v1/billing/upgrade                      # Tạo PaymentOrder + PayOS link (Admin)
+POST   /api/v1/billing/upgrade/:orderCode/mock-confirm  # Dev-only — giả lập thanh toán upgrade
+GET    /api/v1/billing/overage-orders             # Đơn phí vượt quota đang chờ (Admin)
+POST   /api/v1/billing/overage-order                # Tạo đơn overage + PayOS link (Admin)
+POST   /api/v1/billing/overage-order/:orderCode/mock-confirm  # Dev-only — giả lập overage
+POST   /api/v1/webhook/payos-billing               # Public — callback PayOS (upgrade + overage)
 
-# Chỉ Cas Partner gọi được (đã có trong mục Partner ở trên):
-GET    /api/v1/partner/revenue            # Tổng doanh thu toàn hệ thống
-GET    /api/v1/partner/revenue/:tenantId  # Doanh thu của 1 tenant cụ thể
+# ─── CHƯA LÀM ───
+GET    /api/v1/billing/invoices                     # Lịch sử hóa đơn PDF (không có trong scope hiện tại)
 ```
 
 ---
@@ -402,6 +409,9 @@ GET    /api/v1/partner/revenue/:tenantId  # Doanh thu của 1 tenant cụ thể
 | | Xem AI Explanation | ✅ | ✅ | ✅ |
 | **Human Review** | Xem queue cần review | ✅ | ✅ | ✅ |
 | | Xác nhận định khoản AI gợi ý | ✅ | ✅ | ❌ |
+| **Thông báo in-app** | Xem danh sách thông báo | ✅ | ✅ | ✅ |
+| | Đánh dấu đã đọc / đọc tất cả | ✅ | ✅ | ✅ |
+| | Xóa thông báo (1 / nhiều / tất cả) | ✅ | ✅ | ✅ |
 | | Sửa định khoản (chọn TK Nợ/Có khác) | ✅ | ✅ | ❌ |
 | | Skip giao dịch | ✅ | ✅ | ❌ |
 | | Yêu cầu AI định khoản lại (giao dịch pending) | ✅ | ✅ | ❌ |
@@ -627,10 +637,13 @@ users
 ### Quy tắc tạo user
 
 ```
-Doanh nghiệp mới đăng ký (POST /auth/register)
+Doanh nghiệp mới đăng ký (POST /auth/register — confirmPassword bắt buộc)
         │
         ▼
-Tạo tenant + tạo user với role = 'admin' (tự động)
+Tạo tenant + tạo user với role = 'admin' (email_verified_at = null) + gửi OTP email
+        │
+        ▼
+Xác thực email (POST /auth/verify-email) → mới cấp JWT; login trước khi verify → 403 EMAIL_NOT_VERIFIED
         │
         ▼
 Admin vào Team → Mời thành viên (nhập email)
@@ -655,6 +668,9 @@ User mới được tạo với role đã chọn, invited_by = admin's user_id
 |---|---|
 | Admin duy nhất bị xóa khỏi hệ thống | Không cho phép — tenant phải có ít nhất 1 Admin |
 | Accountant cố gọi API chỉ dành cho Admin | Trả về `403 Forbidden`, ghi vào Audit Log |
+| Login khi email chưa xác thực | Trả về `403` với `code: EMAIL_NOT_VERIFIED` — FE redirect `/verify-email?autosend=1` |
+| Quên mật khẩu | `POST /auth/forgot-password` → OTP email → `POST /auth/reset-password`; không tiết lộ email có tồn tại hay không |
+| Ghi nhớ đăng nhập (`rememberMe`) | `true` → refresh cookie Max-Age 7 ngày; `false` → session cookie + Redis TTL `JWT_REFRESH_SESSION_EXPIRES_IN` (mặc định 12h) |
 | Token hết hạn giữa lúc thao tác | Frontend tự refresh token, nếu refresh cũng fail → redirect về login |
 | Viewer cố thao tác qua API trực tiếp (không qua UI) | Backend luôn validate lại role ở mọi endpoint, không tin tưởng FE đã ẩn nút |
 | Admin tự đổi role của chính mình xuống Accountant | Cho phép nhưng cảnh báo, và phải còn ít nhất 1 Admin khác trong tenant |

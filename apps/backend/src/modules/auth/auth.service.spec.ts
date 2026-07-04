@@ -1,13 +1,16 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { Role } from '@xcash/shared-types';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { ChartOfAccountsService } from '../chart-of-accounts/chart-of-accounts.service';
 import { AuthService } from './auth.service';
+import { EmailVerificationService } from './email-verification.service';
+import { PasswordResetService } from './password-reset.service';
 
 jest.mock('bcryptjs', () => ({
   compare: jest.fn(),
@@ -20,6 +23,7 @@ describe('AuthService', () => {
   const prisma = {
     user: {
       findUnique: jest.fn(),
+      update: jest.fn(),
     },
     subscription: {
       findFirst: jest.fn(),
@@ -31,11 +35,29 @@ describe('AuthService', () => {
     set: jest.fn(),
     get: jest.fn(),
     del: jest.fn(),
+    sadd: jest.fn(),
+    srem: jest.fn(),
+    smembers: jest.fn().mockResolvedValue([]),
+    expire: jest.fn(),
+    pipeline: jest.fn(() => ({
+      del: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([]),
+    })),
   };
 
   const jwtService = {
     signAsync: jest.fn().mockResolvedValue('signed-token'),
     verifyAsync: jest.fn(),
+  };
+
+  const emailVerificationService = {
+    sendOtp: jest.fn().mockResolvedValue(600),
+    verifyOtp: jest.fn(),
+  };
+
+  const passwordResetService = {
+    sendOtp: jest.fn().mockResolvedValue(600),
+    verifyOtp: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -55,6 +77,7 @@ describe('AuthService', () => {
                 JWT_REFRESH_SECRET: 'refresh-secret',
                 JWT_ACCESS_EXPIRES_IN: '15m',
                 JWT_REFRESH_EXPIRES_IN: '7d',
+                JWT_REFRESH_SESSION_EXPIRES_IN: '12h',
                 NODE_ENV: 'test',
               };
               return values[key] ?? defaultValue;
@@ -73,10 +96,12 @@ describe('AuthService', () => {
           provide: ChartOfAccountsService,
           useValue: { seedTt133: jest.fn().mockResolvedValue(undefined) },
         },
+        { provide: EmailVerificationService, useValue: emailVerificationService },
+        { provide: PasswordResetService, useValue: passwordResetService },
       ],
     }).compile();
 
-    service = module.get<AuthService>(AuthService);
+    service = module.get(AuthService);
   });
 
   it('rejects login with invalid credentials', async () => {
@@ -87,8 +112,37 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it('rejects register when email already exists', async () => {
-    prisma.user.findUnique.mockResolvedValue({ id: 'existing' });
+  it('registers tenant and sends OTP without issuing tokens', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.$transaction.mockResolvedValue({
+      createdUser: {
+        id: 'user-1',
+        email: 'admin@abc.edu.vn',
+        name: 'Nguyễn Văn A',
+        role: Role.ADMIN,
+        tenantId: 'tenant-1',
+      },
+      tenantId: 'tenant-1',
+    });
+
+    const result = await service.register({
+      businessName: 'ABC',
+      ownerName: 'Nguyễn Văn A',
+      email: 'admin@abc.edu.vn',
+      password: 'password123',
+      confirmPassword: 'password123',
+    });
+
+    expect(result.email).toBe('admin@abc.edu.vn');
+    expect(emailVerificationService.sendOtp).toHaveBeenCalled();
+    expect(jwtService.signAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects register when email already verified', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'existing',
+      emailVerifiedAt: new Date(),
+    });
 
     await expect(
       service.register({
@@ -96,8 +150,74 @@ describe('AuthService', () => {
         ownerName: 'Nguyễn Văn A',
         email: 'admin@abc.edu.vn',
         password: 'password123',
+        confirmPassword: 'password123',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('maps unique-email race condition (P2002) to ConflictException', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.$transaction.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    await expect(
+      service.register({
+        businessName: 'ABC',
+        ownerName: 'Nguyễn Văn A',
+        email: 'admin@abc.edu.vn',
+        password: 'password123',
+        confirmPassword: 'password123',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('sends password reset OTP for verified user on forgot-password', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@abc.edu.vn',
+      name: 'Nguyễn Văn A',
+      emailVerifiedAt: new Date(),
+      role: Role.ADMIN,
+    });
+
+    const result = await service.forgotPassword({ email: 'admin@abc.edu.vn' });
+
+    expect(passwordResetService.sendOtp).toHaveBeenCalled();
+    expect(result.message).toContain('mã OTP');
+  });
+
+  it('returns generic message on forgot-password when email not found', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+
+    const result = await service.forgotPassword({ email: 'missing@example.com' });
+
+    expect(passwordResetService.sendOtp).not.toHaveBeenCalled();
+    expect(result.message).toContain('Nếu email tồn tại');
+  });
+
+  it('resets password after valid OTP and revokes refresh sessions', async () => {
+    passwordResetService.verifyOtp.mockResolvedValue('user-1');
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@abc.edu.vn',
+    });
+    prisma.user.update.mockResolvedValue({});
+    redisClient.smembers.mockResolvedValue(['jti-1']);
+
+    const result = await service.resetPassword({
+      email: 'admin@abc.edu.vn',
+      otp: '123456',
+      password: 'newpassword123',
+      confirmPassword: 'newpassword123',
+    });
+
+    expect(prisma.user.update).toHaveBeenCalled();
+    expect(redisClient.smembers).toHaveBeenCalledWith('user_sessions:user-1');
+    expect(result.message).toContain('thành công');
   });
 
   it('issues tokens on successful login', async () => {
@@ -108,10 +228,12 @@ describe('AuthService', () => {
       role: Role.ADMIN,
       tenantId: 'tenant-1',
       passwordHash: 'hashed-password',
+      emailVerifiedAt: new Date(),
+      tenant: { businessName: 'ABC' },
     });
 
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-    prisma.subscription.findFirst.mockResolvedValue({ status: 'active' });
+    prisma.subscription.findFirst.mockResolvedValue({ status: 'active', plan: 'free' });
 
     const session = await service.login({
       email: 'admin@abc.edu.vn',
@@ -120,7 +242,62 @@ describe('AuthService', () => {
 
     expect(session.accessToken).toBe('signed-token');
     expect(session.user.role).toBe(Role.ADMIN);
+    expect(session.rememberMe).toBe(true);
     expect(redisClient.set).toHaveBeenCalled();
+  });
+
+  it('issues session-scoped tokens when rememberMe is false', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@abc.edu.vn',
+      name: 'ABC',
+      role: Role.ADMIN,
+      tenantId: 'tenant-1',
+      passwordHash: 'hashed-password',
+      emailVerifiedAt: new Date(),
+      tenant: { businessName: 'ABC' },
+    });
+
+    (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+    prisma.subscription.findFirst.mockResolvedValue({ status: 'active', plan: 'free' });
+
+    const session = await service.login({
+      email: 'admin@abc.edu.vn',
+      password: 'password123',
+      rememberMe: false,
+    });
+
+    expect(session.rememberMe).toBe(false);
+    expect(redisClient.set).toHaveBeenCalledWith(
+      expect.stringContaining('refresh_remember:'),
+      '0',
+      'EX',
+      12 * 60 * 60,
+    );
+  });
+
+  it('creates session cookie without Max-Age when rememberMe is false', () => {
+    const cookie = service.createRefreshTokenCookie('token-abc', false);
+    expect(cookie).toContain('refresh_token=token-abc');
+    expect(cookie).not.toContain('Max-Age');
+  });
+
+  it('rejects login when email is not verified', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@abc.edu.vn',
+      name: 'ABC',
+      role: Role.ADMIN,
+      tenantId: 'tenant-1',
+      passwordHash: 'hashed-password',
+      emailVerifiedAt: null,
+    });
+
+    (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+    await expect(
+      service.login({ email: 'admin@abc.edu.vn', password: 'password123' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('rejects login when tenant subscription is suspended', async () => {
@@ -131,6 +308,7 @@ describe('AuthService', () => {
       role: Role.ADMIN,
       tenantId: 'tenant-1',
       passwordHash: 'hashed-password',
+      emailVerifiedAt: new Date(),
     });
 
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
@@ -139,5 +317,33 @@ describe('AuthService', () => {
     await expect(
       service.login({ email: 'admin@abc.edu.vn', password: 'password123' }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects verify-email when tenant subscription is suspended', async () => {
+    emailVerificationService.verifyOtp.mockResolvedValue('user-1');
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@abc.edu.vn',
+      name: 'ABC',
+      role: Role.ADMIN,
+      tenantId: 'tenant-1',
+      emailVerifiedAt: null,
+      tenant: { businessName: 'ABC' },
+    });
+    prisma.user.update.mockResolvedValue({});
+    prisma.subscription.findFirst.mockResolvedValue({ status: 'suspended' });
+
+    await expect(
+      service.verifyEmail({ email: 'admin@abc.edu.vn', otp: '123456' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('returns generic message on resend-password-reset when email not found', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+
+    const result = await service.resendPasswordReset({ email: 'missing@example.com' });
+
+    expect(passwordResetService.sendOtp).not.toHaveBeenCalled();
+    expect(result.message).toContain('Nếu email tồn tại');
   });
 });

@@ -2,7 +2,7 @@
 
 ## Stack
 
-React 19 + Vite + TypeScript + Tailwind CSS + [ShadCN/UI](https://ui.shadcn.com/docs/components) + TanStack Query + React Router + Recharts + Sonner (toast) + Lucide React (icon). Chi tiết component mẫu cho từng màn hình đã có sẵn (JSX gần như copy-paste được) tại [`reference/ui-design.md`](./reference/ui-design.md) — **đọc file đó trước khi tự viết component mới**, đa số màn hình đã có spec + code mẫu.
+React 19 + Vite + TypeScript + Tailwind CSS + [ShadCN/UI](https://ui.shadcn.com/docs/components) + TanStack Query + React Router + Recharts + Sonner (toast) + Lucide React (icon). Font mặc định: **Be Vietnam Pro** (Google Fonts trong `index.html`, `--font-sans` trong `index.css`). Chi tiết component mẫu cho từng màn hình đã có sẵn (JSX gần như copy-paste được) tại [`reference/ui-design.md`](./reference/ui-design.md) — **đọc file đó trước khi tự viết component mới**, đa số màn hình đã có spec + code mẫu.
 
 ## ShadCN/UI — ưu tiên dùng component có sẵn, không tự viết lại
 
@@ -16,6 +16,7 @@ React 19 + Vite + TypeScript + Tailwind CSS + [ShadCN/UI](https://ui.shadcn.com/
 | Bảng | `Table`, `TableRow`, `TableCell`... | `<table>` HTML thuần |
 | Trạng thái | `Badge`, `Skeleton` | span/div tự chế |
 | Toast | `sonner` (`toast.success/error`) | `alert()` hoặc div toast custom |
+| Checkbox | `Checkbox` | `<input type="checkbox">` raw |
 | Dialog / drawer mobile | `Dialog`, `Sheet` (thêm qua CLI khi cần) | overlay + div tự viết |
 
 **Khi thiếu component:** thêm bằng CLI từ `apps/frontend`:
@@ -26,7 +27,7 @@ pnpm dlx shadcn@latest add table label select dialog sheet separator tabs alert
 
 Chỉ compose wrapper mỏng ở `components/layout/` (app shell) hoặc `components/shared/` (vd `ThemeToggle` bọc `Button`) — logic/style lõi vẫn từ ShadCN.
 
-**Đã cài trong repo (`components/ui/`):** `button`, `card`, `badge`, `input`, `skeleton`, `table`, `label`, `dialog`, `sheet`, `tabs`. Các màn Sprint 3+ (settings, copilot...) thêm component qua CLI trước khi code.
+**Đã cài trong repo (`components/ui/`):** `button`, `card`, `badge`, `input`, `skeleton`, `table`, `label`, `dialog`, `sheet`, `tabs`, `checkbox`, `progress`, `separator`, `switch`.
 
 **Dashboard charts (Recharts):** aggregate client-side từ `GET /transactions?limit=100` (max BE cho phép) — `TransactionTrendChart` (AreaChart 7 ngày), `TransactionStatusChart` (Donut trạng thái), helper tại `lib/dashboard-transactions.ts`. Màu chart dùng CSS variables `--chart-1`…`--chart-5` trong `index.css` (hỗ trợ dark mode). Sprint 2+ sẽ chuyển doanh thu / AI stats sang `/analytics/*` khi backend có endpoint.
 
@@ -67,7 +68,7 @@ apps/frontend/src/
 ├── main.tsx
 ├── App.tsx                        # Router setup
 ├── pages/
-│   ├── auth/                      # Register, Login
+│   ├── auth/                      # Register, Login, VerifyEmail, ForgotPassword, ResetPassword
 │   ├── onboarding/                 # 4 bước onboarding
 │   ├── dashboard/
 │   ├── transactions/
@@ -77,20 +78,21 @@ apps/frontend/src/
 │   ├── analytics/                  # Sprint 3+
 │   ├── copilot/                    # AI Copilot chat
 │   ├── settings/                   # tabs: Banking/Billing/Notification/Team/KB/Threshold
-│   └── partner/                    # Partner Dashboard — layout RIÊNG, xem bên dưới
+│   └── partner/                    # Partner — layout sidebar riêng (PartnerLayout)
 ├── components/
 │   ├── ui/                         # ShadCN — button, card, badge, input, skeleton, table, label (+ thêm qua CLI)
 │   ├── layout/                     # Sidebar, Header, TenantLayout, PartnerLayout
-│   └── shared/                     # ConfidenceBadge, StatusBadge, EmptyState, TableSkeleton, ThemeToggle...
+│   └── shared/                     # NotificationBell, PlanGate, WelcomeTour, ThemeToggle, badges...
 ├── contexts/
 │   ├── auth-context.tsx
 │   └── theme-context.tsx           # dark/light mode (localStorage xcash-theme)
 ├── hooks/
 │   ├── useAuth.ts
 │   ├── usePermission.ts             # xem reference/rbac.md mục Frontend — Ẩn/hiện UI theo role
-│   └── use<Domain>.ts               # TanStack Query hook theo domain, vd useTransactions.ts
+│   └── useNotifications.ts          # SSE stream + poll fallback cho NotificationBell
 ├── lib/
-│   ├── api.ts                       # Axios instance — base URL, interceptor refresh token
+│   ├── api.ts                       # Axios + getApiData/postApiData/patchApiData/deleteApiData, interceptor refresh token
+│   ├── remember-me.ts               # localStorage rememberMe + email
 │   ├── formatVND.ts
 │   └── utils.ts                     # cn() cho ShadCN, v.v.
 └── routes/
@@ -103,10 +105,12 @@ apps/frontend/src/
 | | Tenant Layout | Partner Layout |
 |---|---|---|
 | Role | Admin / Accountant / Viewer | Cas Partner |
-| Route | `/dashboard`, `/transactions`, `/review`, `/reports`, `/accounts`... | `/partner` |
-| Sidebar | Có, menu X-Cash AI | Không, chỉ top nav |
+| Route | `/dashboard`, `/transactions`, `/review`, `/reports`, `/accounts`, `/analytics`, `/copilot`, `/settings` | `/partner/dashboard`, `/partner/tenants`, `/partner/payments`, `/partner/plans` |
+| Sidebar | Có — menu X-Cash AI + NotificationBell | Có — `PartnerLayout` (logo, collapse, mobile drawer) |
 
-Chi tiết đầy đủ 2 layout tại [`reference/ui-design.md`](./reference/ui-design.md#-global-layout-tenant--mục-18) mục Global Layout và mục 9 Partner Dashboard. **Không import component/API nghiệp vụ tenant (`/transactions`, `/review`, `/reports`) vào bất kỳ đâu trong `pages/partner/`**.
+Chi tiết đầy đủ 2 layout tại [`reference/ui-design.md`](./reference/ui-design.md#-global-layout-tenant--mục-18). **Không import component/API nghiệp vụ tenant vào `pages/partner/`.**
+
+**Plan gating trên FE:** `PlanGate` + icon khóa trên Sidebar — Copilot/Analytics cần Starter+, export Excel cần Pro+.
 
 ## RBAC trên frontend — không tin FE ẩn nút là đủ
 
@@ -133,7 +137,7 @@ const { data, isLoading, error } = useQuery({
 const { mutate: confirm, isPending } = useMutation({
   mutationFn: (id: string) => api.post(`/review/${id}/confirm`),
   onSuccess: () => {
-    toast.success('Đã xác nhận ghép hóa đơn');
+    toast.success('Đã xác nhận định khoản');
     queryClient.invalidateQueries({ queryKey: ['review'] });
     queryClient.invalidateQueries({ queryKey: ['transactions'] });
   },
@@ -154,7 +158,7 @@ Confidence ≥ 95%   → Badge variant="success" hoặc text-primary
 Confidence 50–95%  → Badge variant="warning" (vàng)
 Confidence < 50%    → Badge variant="destructive" (đỏ)
 
-Status Matched  → primary | Status Review → vàng
+Status Classified → primary | Status Review → vàng
 Status Pending  → muted/xám | Status Skipped → outline
 ```
 

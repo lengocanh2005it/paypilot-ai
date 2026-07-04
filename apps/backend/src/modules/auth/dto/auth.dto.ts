@@ -1,5 +1,14 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsBoolean,
+  IsEmail,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  MinLength,
+} from 'class-validator';
+import { Match } from '../../../common/validators/match.decorator';
 
 export class RegisterDto {
   @ApiProperty({ example: 'Trung tâm Anh ngữ ABC' })
@@ -20,6 +29,12 @@ export class RegisterDto {
   @IsString()
   @MinLength(8)
   password!: string;
+
+  @ApiProperty({ example: 'MatKhauManh123!' })
+  @IsString()
+  @MinLength(8)
+  @Match('password', { message: 'Mật khẩu xác nhận không khớp' })
+  confirmPassword!: string;
 }
 
 export class LoginDto {
@@ -31,4 +46,62 @@ export class LoginDto {
   @IsString()
   @MinLength(8)
   password!: string;
+
+  @ApiPropertyOptional({ example: true, default: true })
+  @IsOptional()
+  @IsBoolean()
+  rememberMe?: boolean;
+}
+
+export class VerifyEmailDto {
+  @ApiProperty({ example: 'admin@abc.edu.vn' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: '123456' })
+  @IsString()
+  @Length(6, 6)
+  @Matches(/^\d{6}$/, { message: 'Mã OTP phải gồm 6 chữ số' })
+  otp!: string;
+}
+
+export class ResendVerificationDto {
+  @ApiProperty({ example: 'admin@abc.edu.vn' })
+  @IsEmail()
+  email!: string;
+}
+
+export class ForgotPasswordDto {
+  @ApiProperty({ example: 'admin@abc.edu.vn' })
+  @IsEmail()
+  email!: string;
+}
+
+export class ResetPasswordDto {
+  @ApiProperty({ example: 'admin@abc.edu.vn' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: '123456' })
+  @IsString()
+  @Length(6, 6)
+  @Matches(/^\d{6}$/, { message: 'Mã OTP phải gồm 6 chữ số' })
+  otp!: string;
+
+  @ApiProperty({ example: 'MatKhauMoi123!' })
+  @IsString()
+  @MinLength(8)
+  password!: string;
+
+  @ApiProperty({ example: 'MatKhauMoi123!' })
+  @IsString()
+  @MinLength(8)
+  @Match('password', { message: 'Mật khẩu xác nhận không khớp' })
+  confirmPassword!: string;
+}
+
+export class ResendPasswordResetDto {
+  @ApiProperty({ example: 'admin@abc.edu.vn' })
+  @IsEmail()
+  email!: string;
 }

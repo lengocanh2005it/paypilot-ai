@@ -1,13 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Pencil, SkipForward, XCircle } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle, Pencil, SkipForward } from 'lucide-react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { ConfidenceBadge } from '@/components/shared/ConfidenceBadge';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -19,6 +20,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { api } from '@/lib/api';
 import { formatDateVN } from '@/lib/dashboard-transactions';
 
@@ -45,8 +54,40 @@ interface ReviewQueueResponse {
   };
 }
 
-async function fetchReviewQueue(page: number): Promise<ReviewQueueResponse['data']> {
-  const res = await api.get(`/review/queue?page=${page}&limit=20`);
+const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 350;
+
+const CONFIDENCE_OPTIONS: Array<{
+  value: string;
+  label: string;
+  min?: number;
+  max?: number;
+}> = [
+  { value: 'all', label: 'Tất cả độ tin cậy' },
+  { value: 'low', label: 'Dưới 50%', max: 50 },
+  { value: 'mid', label: '50% – 85%', min: 50, max: 85 },
+];
+
+function buildReviewQueueUrl(params: { page: number; search: string; confidence: string }): string {
+  const query = new URLSearchParams({
+    page: String(params.page),
+    limit: String(PAGE_SIZE),
+  });
+  if (params.search.trim()) {
+    query.set('search', params.search.trim());
+  }
+  const band = CONFIDENCE_OPTIONS.find((o) => o.value === params.confidence);
+  if (band?.min != null) {
+    query.set('minConfidence', String(band.min));
+  }
+  if (band?.max != null) {
+    query.set('maxConfidence', String(band.max));
+  }
+  return `/review/queue?${query.toString()}`;
+}
+
+async function fetchReviewQueue(url: string): Promise<ReviewQueueResponse['data']> {
+  const res = await api.get(url);
   return res.data.data;
 }
 
@@ -149,7 +190,13 @@ function SwipeableReviewCard({
           <span className="font-mono text-sm font-medium">
             {item.debitAccount} / {item.creditAccount}
           </span>
-          <Button size="icon-sm" variant="ghost" title="Sửa" onClick={onCorrect}>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            title="Sửa"
+            aria-label="Sửa định khoản"
+            onClick={onCorrect}
+          >
             <Pencil className="size-4 text-blue-600" />
           </Button>
         </div>
@@ -163,17 +210,39 @@ function SwipeableReviewCard({
 
 export default function ReviewPage() {
   const queryClient = useQueryClient();
-  const [page] = useState(1);
+  const [page, setPage] = useState(1);
+  const [searchText, setSearchText] = useState('');
+  const [confidence, setConfidence] = useState('all');
+  const debouncedSearch = useDebouncedValue(
+    searchText,
+    SEARCH_DEBOUNCE_MS,
+    useCallback(() => {
+      setPage(1);
+    }, []),
+  );
   const [correctDialog, setCorrectDialog] = useState<ClassificationItem | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<ClassificationItem | null>(null);
   const [skipTarget, setSkipTarget] = useState<ClassificationItem | null>(null);
   const [debitAccount, setDebitAccount] = useState('');
   const [creditAccount, setCreditAccount] = useState('');
 
+  const queryUrl = buildReviewQueueUrl({ page, search: debouncedSearch, confidence });
+  const hasActiveFilters = Boolean(debouncedSearch.trim() || confidence !== 'all');
+  const isSearchPending = searchText !== debouncedSearch;
+
   const { data, isLoading } = useQuery({
-    queryKey: ['review-queue', page],
-    queryFn: () => fetchReviewQueue(page),
+    queryKey: ['review-queue', page, debouncedSearch, confidence],
+    queryFn: () => fetchReviewQueue(queryUrl),
+    placeholderData: keepPreviousData,
   });
+
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+
+  const clearFilters = () => {
+    setSearchText('');
+    setConfidence('all');
+    setPage(1);
+  };
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['review-queue'] });
@@ -224,7 +293,7 @@ export default function ReviewPage() {
       />
       <div className="space-y-6 p-4 sm:p-6">
         <Card>
-          <CardHeader>
+          <CardHeader className="space-y-4">
             <CardTitle>
               Hàng chờ review
               {data ? (
@@ -233,18 +302,84 @@ export default function ReviewPage() {
                 </span>
               ) : null}
             </CardTitle>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-1.5 lg:col-span-2">
+                <Label htmlFor="review-search">Tìm nội dung</Label>
+                <Input
+                  id="review-search"
+                  placeholder="Tìm theo nội dung giao dịch..."
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="review-confidence">Độ tin cậy</Label>
+                <Select
+                  value={confidence}
+                  onValueChange={(v) => {
+                    setConfidence(v);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger id="review-confidence" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONFIDENCE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {hasActiveFilters ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">Đang lọc:</span>
+                {debouncedSearch.trim() ? (
+                  <Badge variant="secondary">"{debouncedSearch.trim()}"</Badge>
+                ) : null}
+                {confidence !== 'all' ? (
+                  <Badge variant="secondary">
+                    {CONFIDENCE_OPTIONS.find((o) => o.value === confidence)?.label}
+                  </Badge>
+                ) : null}
+                {isSearchPending ? (
+                  <span className="text-xs text-muted-foreground">Đang tìm...</span>
+                ) : null}
+                <Button variant="link" size="sm" className="h-auto px-1" onClick={clearFilters}>
+                  Xóa bộ lọc
+                </Button>
+              </div>
+            ) : null}
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <TableSkeleton rows={5} columns={6} />
             ) : !data?.items.length ? (
               <EmptyState
-                title="Không có giao dịch cần review"
-                description="AI đã tự tin phân loại tất cả giao dịch. Làm tốt lắm!"
+                title={
+                  hasActiveFilters
+                    ? 'Không tìm thấy giao dịch phù hợp'
+                    : 'Không có giao dịch cần review'
+                }
+                description={
+                  hasActiveFilters
+                    ? 'Thử đổi từ khóa hoặc bộ lọc độ tin cậy.'
+                    : 'AI đã tự tin phân loại tất cả giao dịch. Làm tốt lắm!'
+                }
+                action={
+                  hasActiveFilters ? (
+                    <Button variant="outline" size="sm" onClick={clearFilters}>
+                      Xóa bộ lọc
+                    </Button>
+                  ) : undefined
+                }
               />
             ) : (
               <>
-                <div className="space-y-3 md:hidden">
+                <div className="space-y-3 lg:hidden">
                   {data.items.map((item) => (
                     <SwipeableReviewCard
                       key={item.id}
@@ -256,7 +391,7 @@ export default function ReviewPage() {
                     />
                   ))}
                 </div>
-                <div className="hidden overflow-x-auto md:block">
+                <div className="hidden overflow-x-auto lg:block">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-muted-foreground">
@@ -295,6 +430,7 @@ export default function ReviewPage() {
                                 size="icon-sm"
                                 variant="ghost"
                                 title="Xác nhận"
+                                aria-label="Xác nhận định khoản"
                                 onClick={() => setConfirmTarget(item)}
                                 disabled={confirmMutation.isPending}
                               >
@@ -304,14 +440,16 @@ export default function ReviewPage() {
                                 size="icon-sm"
                                 variant="ghost"
                                 title="Sửa"
+                                aria-label="Sửa định khoản"
                                 onClick={() => openCorrect(item)}
                               >
-                                <XCircle className="size-4 text-blue-600" />
+                                <Pencil className="size-4 text-blue-600" />
                               </Button>
                               <Button
                                 size="icon-sm"
                                 variant="ghost"
                                 title="Bỏ qua"
+                                aria-label="Bỏ qua giao dịch"
                                 onClick={() => setSkipTarget(item)}
                                 disabled={skipMutation.isPending}
                               >
@@ -324,6 +462,37 @@ export default function ReviewPage() {
                     </tbody>
                   </table>
                 </div>
+
+                {data ? (
+                  <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t pt-4 sm:flex-row">
+                    <p className="text-sm text-muted-foreground">
+                      Hiển thị {data.items.length} / {data.total} mục
+                    </p>
+                    {data.total > PAGE_SIZE ? (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={page <= 1}
+                          onClick={() => setPage((current) => Math.max(1, current - 1))}
+                        >
+                          Trước
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          Trang {page} / {totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={page >= totalPages}
+                          onClick={() => setPage((current) => current + 1)}
+                        >
+                          Sau
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </>
             )}
           </CardContent>

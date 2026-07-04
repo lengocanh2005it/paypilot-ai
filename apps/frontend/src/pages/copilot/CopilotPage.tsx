@@ -35,9 +35,10 @@ export default function CopilotPage() {
   const [isLoading, setIsLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-scroll when messages or loading state changes
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+  }, [messages, isLoading]);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -80,12 +81,18 @@ export default function CopilotPage() {
       />
 
       <PlanGate minPlan={SubscriptionPlan.STARTER} featureName="AI Copilot">
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div
+          className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          aria-label="Lịch sử hội thoại AI Copilot"
+        >
           {messages.map((msg) => (
             <div
               key={msg.id}
               className={cn(
-                'flex gap-3 max-w-[80%]',
+                'flex gap-3 max-w-[calc(100%-3rem)]',
                 msg.role === 'user' && 'ml-auto flex-row-reverse',
               )}
             >
@@ -117,7 +124,7 @@ export default function CopilotPage() {
           ))}
 
           {isLoading && (
-            <div className="flex gap-3 max-w-[80%]">
+            <div className="flex gap-3 max-w-[calc(100%-3rem)]">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                 <Bot className="size-4" />
               </div>

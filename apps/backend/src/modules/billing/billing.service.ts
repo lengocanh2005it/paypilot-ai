@@ -1,17 +1,27 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 import { PayosService } from './payos.service';
 
 const OVERAGE_PLANS = ['starter', 'pro'] as const;
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly payosService: PayosService,
     private readonly config: ConfigService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async listPlans() {
@@ -121,30 +131,22 @@ export class BillingService {
     };
   }
 
-  async confirmPayment(orderCode: string) {
-    // biome-ignore lint/suspicious/noExplicitAny: orderType field added after Prisma client was generated
-    const order = (await (this.prisma.paymentOrder.findUnique as any)({
+  async confirmPayment(orderCode: string, expectedTenantId?: string) {
+    const order = await this.prisma.paymentOrder.findUnique({
       where: { orderCode },
-    })) as {
-      id: string;
-      tenantId: string;
-      orderCode: string;
-      orderType: string;
-      targetPlan: SubscriptionPlan;
-      amount: { toNumber: () => number } | number;
-      status: string;
-      paidAt: Date | null;
-    };
+    });
     if (!order) throw new NotFoundException('Không tìm thấy đơn thanh toán');
+
+    if (expectedTenantId && order.tenantId !== expectedTenantId) {
+      throw new ForbiddenException('Không có quyền xác nhận đơn thanh toán này');
+    }
 
     if (order.status === 'paid') return { success: true, alreadyPaid: true };
 
     const now = new Date();
-    const { tenantId, targetPlan, orderType } = order;
-    const amount =
-      typeof order.amount === 'number'
-        ? order.amount
-        : (order.amount as { toNumber: () => number }).toNumber();
+    const { tenantId, targetPlan } = order;
+    const orderType = order.orderType ?? 'upgrade';
+    const amount = Number(order.amount);
 
     // Đơn thanh toán phí vượt quota — chỉ ghi nhận, không đổi gói
     if (orderType === 'overage') {
@@ -164,13 +166,18 @@ export class BillingService {
           },
         }),
       ]);
+      void this.notificationService
+        .createBillingSuccess(tenantId, 'overage', targetPlan, amount)
+        .catch((err: unknown) =>
+          this.logger.warn(`Billing notification failed for tenant ${tenantId}`, err),
+        );
       return { success: true, alreadyPaid: false };
     }
 
     // Đơn nâng cấp gói — tạo subscription mới
     const pricing = await this.getPlanPricingOrThrow(targetPlan);
     const quota = pricing.transactionQuota;
-    const cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    const cycleEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
     await this.prisma.$transaction([
       this.prisma.paymentOrder.update({
@@ -206,20 +213,25 @@ export class BillingService {
       }),
     ]);
 
+    void this.notificationService
+      .createBillingSuccess(tenantId, 'upgrade', targetPlan, amount)
+      .catch((err: unknown) =>
+        this.logger.warn(`Billing notification failed for tenant ${tenantId}`, err),
+      );
+
     return { success: true, alreadyPaid: false };
   }
 
   async getOverageOrders(tenantId: string) {
-    // biome-ignore lint/suspicious/noExplicitAny: orderType field added after Prisma client was generated
-    const orders = (await (this.prisma.paymentOrder.findMany as any)({
+    const orders = await this.prisma.paymentOrder.findMany({
       where: { tenantId, orderType: 'overage', status: 'pending' },
       orderBy: { createdAt: 'desc' },
       take: 1,
-    })) as Array<{ orderCode: string; amount: { toNumber: () => number }; createdAt: Date }>;
+    });
 
     return orders.map((o) => ({
       orderCode: o.orderCode,
-      amount: o.amount.toNumber(),
+      amount: Number(o.amount),
       createdAt: o.createdAt,
     }));
   }
@@ -252,15 +264,14 @@ export class BillingService {
       throw new BadRequestException('Không có giao dịch vượt quota trong chu kỳ này');
 
     // Idempotency: trả lại đơn đang pending nếu đã có
-    // biome-ignore lint/suspicious/noExplicitAny: orderType field added after Prisma client was generated
-    const existing = (await (this.prisma.paymentOrder.findFirst as any)({
+    const existing = await this.prisma.paymentOrder.findFirst({
       where: { tenantId, orderType: 'overage', status: 'pending' },
-    })) as { orderCode: string; amount: { toNumber: () => number } } | null;
+    });
 
     if (existing) {
       return {
         orderCode: existing.orderCode,
-        amount: existing.amount.toNumber(),
+        amount: Number(existing.amount),
         overageCount,
         isExisting: true,
         checkoutUrl: null,
@@ -273,8 +284,7 @@ export class BillingService {
     const orderCode = Number(String(Date.now()).slice(-9));
     const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? 'http://localhost:5173';
 
-    // biome-ignore lint/suspicious/noExplicitAny: orderType field added after Prisma client was generated
-    await (this.prisma.paymentOrder.create as any)({
+    await this.prisma.paymentOrder.create({
       data: {
         tenantId,
         orderCode: String(orderCode),
@@ -292,6 +302,12 @@ export class BillingService {
       returnUrl: `${frontendUrl}/settings?tab=billing&status=success`,
       cancelUrl: `${frontendUrl}/settings?tab=billing&status=cancel`,
     });
+
+    void this.notificationService
+      .createBillingPaymentDue(tenantId, amount, overageCount)
+      .catch((err: unknown) =>
+        this.logger.warn(`Overage due notification failed for tenant ${tenantId}`, err),
+      );
 
     return {
       orderCode: String(orderCode),

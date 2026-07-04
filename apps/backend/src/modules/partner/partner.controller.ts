@@ -12,8 +12,12 @@ export class PartnerController {
   constructor(private readonly service: PartnerService) {}
 
   @Get('tenants')
-  listTenants() {
-    return this.service.listTenants();
+  listTenants(
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('plan') plan?: string,
+  ) {
+    return this.service.listTenants({ search, status, plan });
   }
 
   @Get('stats')

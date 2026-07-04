@@ -19,18 +19,18 @@ export function AuthLayout({
         <ThemeToggle />
       </div>
 
-      <div className="relative mx-auto flex min-h-[calc(100svh-4rem)] max-w-md items-center">
+      <div className="relative mx-auto flex min-h-[calc(100svh-4rem)] max-w-lg items-center">
         <Card className="w-full border-border/80 shadow-lg shadow-primary/5">
-          <CardHeader>
-            <div className="mb-2 flex items-center gap-3">
+          <CardHeader className="sm:px-8">
+            <div className="flex items-center gap-3">
               <LogoMark size={40} className="rounded-xl shadow-sm" />
-              <div>
+              <div className="space-y-0.5">
                 <CardTitle className="text-xl text-foreground">{title}</CardTitle>
+                <CardDescription>{description}</CardDescription>
               </div>
             </div>
-            <CardDescription>{description}</CardDescription>
           </CardHeader>
-          <CardContent>{children}</CardContent>
+          <CardContent className="sm:px-8">{children}</CardContent>
         </Card>
       </div>
     </div>

@@ -83,7 +83,11 @@ function ThresholdTab() {
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex items-center gap-4">
+          <Label htmlFor="threshold-slider" className="sr-only">
+            Ngưỡng tự động định khoản
+          </Label>
           <input
+            id="threshold-slider"
             type="range"
             min={50}
             max={99}
@@ -91,10 +95,14 @@ function ThresholdTab() {
             value={threshold}
             onChange={(e) => setLocal(Number(e.target.value))}
             className="flex-1 accent-primary"
+            aria-valuemin={50}
+            aria-valuemax={99}
+            aria-valuenow={threshold}
+            aria-describedby="threshold-hint"
           />
           <span className="w-16 text-center text-2xl font-bold text-primary">{threshold}%</span>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p id="threshold-hint" className="text-xs text-muted-foreground">
           Mặc định: 85% — Khuyến nghị giữ trong khoảng 80–95%
         </p>
         <Button onClick={() => save()} disabled={isPending}>
@@ -102,6 +110,38 @@ function ThresholdTab() {
         </Button>
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Slack Webhook Input ──────────────────────────────────────────
+function SlackWebhookInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { mutate: test, isPending } = useMutation({
+    mutationFn: () => api.post('/settings/notifications/test-slack', { webhookUrl: value }),
+    onSuccess: () => toast.success('Kết nối Slack thành công!'),
+    onError: () => toast.error('Webhook URL không hợp lệ hoặc không thể kết nối.'),
+  });
+
+  const isValidUrl = value.startsWith('https://hooks.slack.com/');
+
+  return (
+    <div className="flex gap-2">
+      <Input
+        placeholder="https://hooks.slack.com/..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-1"
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!isValidUrl || isPending}
+        onClick={() => test()}
+        className="shrink-0"
+      >
+        {isPending ? 'Đang kiểm tra...' : 'Kiểm tra'}
+      </Button>
+    </div>
   );
 }
 
@@ -215,10 +255,9 @@ function NotificationsTab() {
             />
           </div>
           {canSlack && form.slackEnabled && (
-            <Input
-              placeholder="https://hooks.slack.com/..."
+            <SlackWebhookInput
               value={form.slackWebhookUrl}
-              onChange={(e) => setForm((f) => ({ ...f, slackWebhookUrl: e.target.value }))}
+              onChange={(v) => setForm((f) => ({ ...f, slackWebhookUrl: v }))}
             />
           )}
         </div>
@@ -514,7 +553,8 @@ function formatPlanQuotaSubtitle(plan: BillingPlan): string {
 
 function BillingTab() {
   const qc = useQueryClient();
-  const { refreshSession } = useAuth();
+  const { refreshSession, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [searchParams, setSearchParams] = useSearchParams();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -647,10 +687,21 @@ function BillingTab() {
                 <Button size="sm" variant="outline" disabled>
                   Đã dùng gói cao nhất
                 </Button>
-              ) : (
+              ) : isAdmin ? (
                 <Button size="sm" onClick={() => setUpgradeOpen(true)}>
                   Nâng cấp gói
                 </Button>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex cursor-not-allowed">
+                      <Button size="sm" disabled className="pointer-events-none">
+                        Nâng cấp gói
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Chỉ chủ doanh nghiệp mới có thể nâng cấp gói</TooltipContent>
+                </Tooltip>
               ))}
           </div>
         </CardHeader>
@@ -708,15 +759,33 @@ function BillingTab() {
               thanh toán để tránh gián đoạn dịch vụ.
             </p>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0 border-orange-300 text-orange-700 hover:bg-orange-100 dark:border-orange-700 dark:text-orange-300"
-            disabled={overageOrderMutation.isPending}
-            onClick={() => overageOrderMutation.mutate()}
-          >
-            Thanh toán ngay
-          </Button>
+          {isAdmin ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-orange-300 text-orange-700 hover:bg-orange-100 dark:border-orange-700 dark:text-orange-300"
+              disabled={overageOrderMutation.isPending}
+              onClick={() => overageOrderMutation.mutate()}
+            >
+              Thanh toán ngay
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex cursor-not-allowed">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="pointer-events-none shrink-0 border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-300"
+                    disabled
+                  >
+                    Thanh toán ngay
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>Chỉ chủ doanh nghiệp mới có thể thanh toán</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       )}
 
@@ -867,6 +936,15 @@ function BillingTab() {
               )}
             </div>
           )}
+          <DialogFooter className="sm:justify-center">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => setPaymentOpen(false)}
+            >
+              Đóng — thanh toán sau
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -933,6 +1011,15 @@ function BillingTab() {
               )}
             </div>
           )}
+          <DialogFooter className="sm:justify-center">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => setOveragePaymentOpen(false)}
+            >
+              Đóng — thanh toán sau
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
@@ -1051,9 +1138,14 @@ export default function SettingsPage() {
               const Icon = tab.icon;
               const locked = tab.adminOnly && !isAdmin;
               return (
-                <TabsTrigger key={tab.value} value={tab.value} disabled={locked} className="gap-2">
-                  <Icon className="size-3.5" />
-                  {tab.label}
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  disabled={locked}
+                  className="gap-1.5"
+                >
+                  <Icon className="size-3.5 shrink-0" />
+                  <span className="hidden sm:inline">{tab.label}</span>
                   {locked && <Lock className="size-3 opacity-50" />}
                 </TabsTrigger>
               );

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, Search, Settings2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
+import { Header } from '@/components/layout/Header';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
@@ -24,8 +25,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { api } from '@/lib/api';
 import { formatVND } from '@/lib/format-vnd';
+
+const SEARCH_DEBOUNCE_MS = 350;
 
 interface PartnerTenant {
   id: string;
@@ -84,7 +88,8 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function PartnerTenantsPage() {
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const debouncedSearch = useDebouncedValue(searchInput, SEARCH_DEBOUNCE_MS);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
   const [planFilter, setPlanFilter] = useState<'all' | string>('all');
   const [viewingTenantId, setViewingTenantId] = useState<string | null>(null);
@@ -96,10 +101,28 @@ export default function PartnerTenantsPage() {
   const [selectedNewPlan, setSelectedNewPlan] = useState<string>('');
   const [confirmSetPlan, setConfirmSetPlan] = useState(false);
 
-  const { data: tenants, isLoading: loadingTenants } = useQuery({
-    queryKey: ['partner', 'tenants'],
-    queryFn: () => api.get<{ data: PartnerTenant[] }>('/partner/tenants').then((r) => r.data.data),
+  const {
+    data: tenants,
+    isLoading: loadingTenants,
+    isError: tenantsError,
+    refetch: refetchTenants,
+  } = useQuery({
+    queryKey: ['partner', 'tenants', debouncedSearch, statusFilter, planFilter],
+    queryFn: () =>
+      api
+        .get<{ data: PartnerTenant[] }>('/partner/tenants', {
+          params: {
+            search: debouncedSearch.trim() || undefined,
+            status: statusFilter,
+            plan: planFilter,
+          },
+        })
+        .then((r) => r.data.data),
   });
+
+  const hasActiveFilters =
+    debouncedSearch.trim() !== '' || statusFilter !== 'all' || planFilter !== 'all';
+  const isSearchPending = searchInput !== debouncedSearch;
 
   const { data: planPricing } = useQuery({
     queryKey: ['partner', 'plan-pricing'],
@@ -157,25 +180,21 @@ export default function PartnerTenantsPage() {
     onError: () => toast.error('Không thể đổi gói dịch vụ'),
   });
 
-  const filteredTenants = useMemo(() => {
-    if (!tenants) return [];
-    const term = search.trim().toLowerCase();
-    return tenants.filter((t) => {
-      if (term && !t.businessName.toLowerCase().includes(term)) return false;
-      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
-      if (planFilter !== 'all' && t.plan !== planFilter) return false;
-      return true;
-    });
-  }, [tenants, search, statusFilter, planFilter]);
+  const filteredTenants = tenants ?? [];
+
+  const clearFilters = useCallback(() => {
+    setSearchInput('');
+    setStatusFilter('all');
+    setPlanFilter('all');
+  }, []);
 
   return (
     <>
-      <header className="sticky top-0 z-10 border-b border-border bg-background px-4 py-4 sm:px-6">
-        <h1 className="text-lg font-semibold sm:text-xl">Doanh nghiệp</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Quản lý toàn bộ doanh nghiệp đang sử dụng X-Cash AI
-        </p>
-      </header>
+      <Header
+        title="Doanh nghiệp"
+        description="Quản lý toàn bộ doanh nghiệp đang sử dụng X-Cash AI"
+        hideThemeToggle
+      />
 
       <div className="space-y-6 p-4 sm:p-6">
         <Card>
@@ -186,8 +205,8 @@ export default function PartnerTenantsPage() {
                 <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Tìm theo tên doanh nghiệp..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                   className="pl-8"
                 />
               </div>
@@ -195,7 +214,7 @@ export default function PartnerTenantsPage() {
                 value={statusFilter}
                 onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}
               >
-                <SelectTrigger className="sm:w-40">
+                <SelectTrigger className="whitespace-nowrap sm:w-44">
                   <SelectValue placeholder="Trạng thái" />
                 </SelectTrigger>
                 <SelectContent>
@@ -205,7 +224,7 @@ export default function PartnerTenantsPage() {
                 </SelectContent>
               </Select>
               <Select value={planFilter} onValueChange={setPlanFilter}>
-                <SelectTrigger className="sm:w-40">
+                <SelectTrigger className="whitespace-nowrap sm:w-40">
                   <SelectValue placeholder="Gói" />
                 </SelectTrigger>
                 <SelectContent>
@@ -218,43 +237,61 @@ export default function PartnerTenantsPage() {
                 </SelectContent>
               </Select>
             </div>
+            {hasActiveFilters ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {debouncedSearch.trim() ? (
+                  <Badge variant="secondary">"{debouncedSearch.trim()}"</Badge>
+                ) : null}
+                {isSearchPending ? (
+                  <span className="text-xs text-muted-foreground">Đang tìm...</span>
+                ) : null}
+                <Button variant="link" size="sm" className="h-auto px-1" onClick={clearFilters}>
+                  Xóa bộ lọc
+                </Button>
+              </div>
+            ) : null}
           </CardHeader>
           <CardContent>
             {loadingTenants ? (
               <TableSkeleton rows={6} columns={6} />
-            ) : !tenants?.length ? (
+            ) : tenantsError ? (
               <EmptyState
-                title="Chưa có doanh nghiệp nào"
-                description="Danh sách sẽ hiện ra khi có tenant đăng ký"
+                title="Không tải được dữ liệu"
+                description="Đã có lỗi xảy ra khi tải danh sách doanh nghiệp"
+                action={
+                  <Button variant="outline" onClick={() => refetchTenants()}>
+                    Thử lại
+                  </Button>
+                }
               />
             ) : !filteredTenants.length ? (
               <EmptyState
-                title="Không tìm thấy doanh nghiệp phù hợp"
-                description="Thử đổi từ khóa hoặc bộ lọc khác"
+                title={
+                  hasActiveFilters
+                    ? 'Không tìm thấy doanh nghiệp phù hợp'
+                    : 'Chưa có doanh nghiệp nào'
+                }
+                description={
+                  hasActiveFilters
+                    ? 'Thử đổi từ khóa hoặc bộ lọc khác'
+                    : 'Danh sách sẽ hiện ra khi có tenant đăng ký'
+                }
+                action={
+                  hasActiveFilters ? (
+                    <Button variant="outline" size="sm" onClick={clearFilters}>
+                      Xóa bộ lọc
+                    </Button>
+                  ) : undefined
+                }
               />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-2 pr-4 font-medium">Doanh nghiệp</th>
-                      <th className="pb-2 pr-4 font-medium">Gói</th>
-                      <th className="pb-2 pr-4 font-medium">Trạng thái</th>
-                      <th className="pb-2 pr-4 font-medium">GD/tháng</th>
-                      <th className="pb-2 pr-4 font-medium">Doanh thu</th>
-                      <th className="pb-2 font-medium">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {filteredTenants.map((t) => (
-                      <tr key={t.id} className="hover:bg-muted/30">
-                        <td className="py-2 pr-4 font-medium">{t.businessName}</td>
-                        <td className="py-2 pr-4">
-                          <Badge variant="secondary">
-                            {t.plan ? (PLAN_LABELS[t.plan] ?? t.plan) : '—'}
-                          </Badge>
-                        </td>
-                        <td className="py-2 pr-4">
+              <>
+                <div className="space-y-3 lg:hidden">
+                  {filteredTenants.map((t) => (
+                    <Card key={t.id} className="py-4">
+                      <CardContent className="space-y-3 text-sm">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-medium">{t.businessName}</p>
                           {t.status === 'suspended' ? (
                             <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
                               Đã khóa
@@ -264,56 +301,143 @@ export default function PartnerTenantsPage() {
                               Hoạt động
                             </Badge>
                           )}
-                        </td>
-                        <td className="py-2 pr-4">{t.transactionsThisMonth}</td>
-                        <td className="py-2 pr-4">{formatVND(t.revenuePerMonth)}</td>
-                        <td className="py-2">
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setViewingTenantId(t.id)}
-                            >
-                              <Eye className="size-4" />
-                              Chi tiết
-                            </Button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary">
+                            {t.plan ? (PLAN_LABELS[t.plan] ?? t.plan) : '—'}
+                          </Badge>
+                          <span className="text-muted-foreground">
+                            {t.transactionsThisMonth} GD/tháng
+                          </span>
+                          <span className="font-medium">{formatVND(t.revenuePerMonth)}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setViewingTenantId(t.id)}
+                          >
+                            <Eye className="size-4" />
+                            Chi tiết
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSetPlanTarget(t);
+                              setSelectedNewPlan(t.plan ?? 'free');
+                            }}
+                          >
+                            <Settings2 className="size-3.5" />
+                            Đổi gói
+                          </Button>
+                          {t.status === 'suspended' ? (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => {
-                                setSetPlanTarget(t);
-                                setSelectedNewPlan(t.plan ?? 'free');
-                              }}
+                              disabled={activateMutation.isPending}
+                              onClick={() => setTenantAction({ type: 'activate', tenant: t })}
                             >
-                              <Settings2 className="size-3.5" />
-                              Đổi gói
+                              Mở khóa
                             </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={suspendMutation.isPending}
+                              onClick={() => setTenantAction({ type: 'suspend', tenant: t })}
+                            >
+                              Khóa
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-muted-foreground">
+                        <th className="pb-2 pr-4 font-medium">Doanh nghiệp</th>
+                        <th className="pb-2 pr-4 font-medium">Gói</th>
+                        <th className="pb-2 pr-4 font-medium">Trạng thái</th>
+                        <th className="pb-2 pr-4 font-medium">GD/tháng</th>
+                        <th className="pb-2 pr-4 font-medium">Doanh thu</th>
+                        <th className="pb-2 font-medium">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {filteredTenants.map((t) => (
+                        <tr key={t.id} className="hover:bg-muted/30">
+                          <td className="py-2 pr-4 font-medium">{t.businessName}</td>
+                          <td className="py-2 pr-4">
+                            <Badge variant="secondary">
+                              {t.plan ? (PLAN_LABELS[t.plan] ?? t.plan) : '—'}
+                            </Badge>
+                          </td>
+                          <td className="py-2 pr-4">
                             {t.status === 'suspended' ? (
+                              <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                Đã khóa
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                Hoạt động
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="py-2 pr-4">{t.transactionsThisMonth}</td>
+                          <td className="py-2 pr-4">{formatVND(t.revenuePerMonth)}</td>
+                          <td className="py-2">
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setViewingTenantId(t.id)}
+                              >
+                                <Eye className="size-4" />
+                                Chi tiết
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
-                                disabled={activateMutation.isPending}
-                                onClick={() => setTenantAction({ type: 'activate', tenant: t })}
+                                onClick={() => {
+                                  setSetPlanTarget(t);
+                                  setSelectedNewPlan(t.plan ?? 'free');
+                                }}
                               >
-                                Mở khóa
+                                <Settings2 className="size-3.5" />
+                                Đổi gói
                               </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                disabled={suspendMutation.isPending}
-                                onClick={() => setTenantAction({ type: 'suspend', tenant: t })}
-                              >
-                                Khóa
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                              {t.status === 'suspended' ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={activateMutation.isPending}
+                                  onClick={() => setTenantAction({ type: 'activate', tenant: t })}
+                                >
+                                  Mở khóa
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  disabled={suspendMutation.isPending}
+                                  onClick={() => setTenantAction({ type: 'suspend', tenant: t })}
+                                >
+                                  Khóa
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

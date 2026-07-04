@@ -7,6 +7,7 @@ import { SubscriptionPlan, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WEBHOOK_QUEUE } from '../../queue/queue.module';
 import { RedisService } from '../../redis/redis.service';
+import { NotificationService } from '../notification/notification.service';
 import { BankingService } from './banking.service';
 
 describe('BankingService', () => {
@@ -53,6 +54,12 @@ describe('BankingService', () => {
     add: jest.fn().mockResolvedValue(undefined),
   };
 
+  const notificationService = {
+    createQuotaWarning: jest.fn().mockResolvedValue(undefined),
+    createQuotaExceeded: jest.fn().mockResolvedValue(undefined),
+    createOverageStarted: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -68,6 +75,7 @@ describe('BankingService', () => {
           },
         },
         { provide: getQueueToken(WEBHOOK_QUEUE), useValue: webhookQueue },
+        { provide: NotificationService, useValue: notificationService },
       ],
     }).compile();
 

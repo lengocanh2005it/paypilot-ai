@@ -40,7 +40,17 @@ xcash-ai/
 │
 ├── agent-docs/                   # tài liệu cho AI agent — xem agent-docs/README.md
 ├── .env.example                  # tham chiếu đầy đủ biến môi trường — split per-app khi setup
-├── .github/workflows/ci.yml      # CI: pnpm verify trên push/PR
+├── .github/workflows/
+│   ├── ci.yml
+│   └── deploy.yml                 # SSH deploy lên VPS (workflow_dispatch)
+├── docker-compose.yml             # postgres + redis; profile fullstack/production
+├── docker/
+│   ├── backend.Dockerfile
+│   ├── frontend.Dockerfile
+│   └── nginx-frontend.conf
+├── deploy/
+│   ├── README.md                  # hướng dẫn deploy VPS
+│   └── nginx/xcash.conf           # reverse proxy template
 ├── .husky/                       # pre-commit, pre-push
 ├── pnpm-workspace.yaml
 ├── turbo.json                    # định nghĩa task pipeline

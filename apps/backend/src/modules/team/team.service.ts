@@ -45,6 +45,7 @@ export class TeamService {
         role: dto.role as unknown as import('@prisma/client').Role,
         invitedById: inviterId,
         invitedAt: new Date(),
+        emailVerifiedAt: new Date(),
       },
       select: { id: true, name: true, email: true, role: true, createdAt: true },
     });

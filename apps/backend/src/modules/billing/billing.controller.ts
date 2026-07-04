@@ -48,8 +48,7 @@ export class BillingController {
     if (this.config.get<string>('NODE_ENV') === 'production') {
       return { success: false, message: 'Không khả dụng trong môi trường production' };
     }
-    void user;
-    return this.service.confirmPayment(orderCode);
+    return this.service.confirmPayment(orderCode, user.tenantId!);
   }
 
   @Get('overage-orders')
@@ -73,7 +72,6 @@ export class BillingController {
     if (this.config.get<string>('NODE_ENV') === 'production') {
       return { success: false, message: 'Không khả dụng trong môi trường production' };
     }
-    void user;
-    return this.service.confirmPayment(orderCode);
+    return this.service.confirmPayment(orderCode, user.tenantId!);
   }
 }

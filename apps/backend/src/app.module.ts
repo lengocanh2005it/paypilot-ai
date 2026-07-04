@@ -15,6 +15,7 @@ import { CasModule } from './modules/cas/cas.module';
 import { ChartOfAccountsModule } from './modules/chart-of-accounts/chart-of-accounts.module';
 import { ClassificationModule } from './modules/classification/classification.module';
 import { HealthModule } from './modules/health/health.module';
+import { NotificationModule } from './modules/notification/notification.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { PartnerModule } from './modules/partner/partner.module';
 import { ReportModule } from './modules/report/report.module';
@@ -60,6 +61,7 @@ import { RedisModule } from './redis/redis.module';
     TeamModule,
     BillingModule,
     PartnerModule,
+    NotificationModule,
   ],
   providers: [
     {

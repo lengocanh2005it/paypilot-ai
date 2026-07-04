@@ -1,7 +1,6 @@
 import { Menu } from 'lucide-react';
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { LogoMark } from '@/components/brand/Logo';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { DesktopSidebar, MobileSidebar } from './Sidebar';
@@ -29,8 +28,6 @@ export function TenantLayout() {
           >
             <Menu className="size-4" />
           </Button>
-          <LogoMark size={28} className="rounded-lg" />
-          <p className="truncate font-semibold text-primary">X-Cash AI</p>
           <div className="ml-auto">
             <ThemeToggle />
           </div>

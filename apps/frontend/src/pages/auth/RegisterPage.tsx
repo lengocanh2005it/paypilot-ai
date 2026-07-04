@@ -14,16 +14,29 @@ export default function RegisterPage() {
   const [ownerName, setOwnerName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+
+    if (password !== confirmPassword) {
+      toast.error('Mật khẩu xác nhận không khớp');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      await register({ businessName, ownerName, email, password });
-      toast.success('Đăng ký thành công');
-      navigate('/onboarding');
+      const result = await register({
+        businessName,
+        ownerName,
+        email,
+        password,
+        confirmPassword,
+      });
+      toast.success(result.message);
+      navigate(`/verify-email?email=${encodeURIComponent(result.email)}`, { replace: true });
     } catch (error) {
       toast.error(getErrorMessage(error, 'Không thể đăng ký tài khoản'));
     } finally {
@@ -81,6 +94,20 @@ export default function RegisterPage() {
             placeholder="Tối thiểu 8 ký tự"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            required
+            minLength={8}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="confirmPassword">Nhập lại mật khẩu</Label>
+          <Input
+            id="confirmPassword"
+            type="password"
+            autoComplete="new-password"
+            placeholder="Nhập lại mật khẩu"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
             required
             minLength={8}
           />

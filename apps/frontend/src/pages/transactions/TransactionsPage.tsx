@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Receipt } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { ConfidenceBadge } from '@/components/shared/ConfidenceBadge';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -27,12 +27,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { getApiData } from '@/lib/api';
 import { formatTransactionTime } from '@/lib/dashboard-transactions';
 import type { TransactionListResponse, TransactionSummary } from '@/types/transaction';
 import { TransactionDetailSheet } from './TransactionDetailSheet';
 
 const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 350;
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Tất cả trạng thái' },
@@ -47,6 +49,7 @@ function buildTransactionsUrl(params: {
   status: string;
   fromDate: string;
   toDate: string;
+  search: string;
 }) {
   const search = new URLSearchParams({
     page: String(params.page),
@@ -64,6 +67,9 @@ function buildTransactionsUrl(params: {
     end.setHours(23, 59, 59, 999);
     search.set('to_date', end.toISOString());
   }
+  if (params.search.trim()) {
+    search.set('search', params.search.trim());
+  }
 
   return `/transactions?${search.toString()}`;
 }
@@ -74,34 +80,34 @@ export default function TransactionsPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [searchText, setSearchText] = useState('');
+  const debouncedSearch = useDebouncedValue(
+    searchText,
+    SEARCH_DEBOUNCE_MS,
+    useCallback(() => {
+      setPage(1);
+    }, []),
+  );
   const [selectedTxn, setSelectedTxn] = useState<TransactionSummary | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const queryUrl = buildTransactionsUrl({ page, status, fromDate, toDate });
-  const hasActiveFilters = Boolean(status || fromDate || toDate || searchText);
+  const queryUrl = buildTransactionsUrl({
+    page,
+    status,
+    fromDate,
+    toDate,
+    search: debouncedSearch,
+  });
+  const hasActiveFilters = Boolean(status || fromDate || toDate || debouncedSearch.trim());
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['transactions', page, status, fromDate, toDate],
+    queryKey: ['transactions', page, status, fromDate, toDate, debouncedSearch],
     queryFn: () => getApiData<TransactionListResponse>(queryUrl),
     refetchInterval: 10_000,
   });
 
-  const filteredItems = useMemo(() => {
-    const items = data?.items ?? [];
-    if (!searchText.trim()) {
-      return items;
-    }
-
-    const keyword = searchText.trim().toLowerCase();
-    return items.filter(
-      (txn) =>
-        txn.content?.toLowerCase().includes(keyword) ||
-        txn.transactionId.toLowerCase().includes(keyword) ||
-        txn.senderAccount?.toLowerCase().includes(keyword),
-    );
-  }, [data?.items, searchText]);
-
+  const items = data?.items ?? [];
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const isSearchPending = searchText !== debouncedSearch;
 
   function openDetail(txn: TransactionSummary) {
     setSelectedTxn(txn);
@@ -197,6 +203,9 @@ export default function TransactionsPage() {
                 {fromDate ? <Badge variant="secondary">Từ {fromDate}</Badge> : null}
                 {toDate ? <Badge variant="secondary">Đến {toDate}</Badge> : null}
                 {searchText ? <Badge variant="secondary">"{searchText}"</Badge> : null}
+                {isSearchPending ? (
+                  <span className="text-xs text-muted-foreground">Đang tìm...</span>
+                ) : null}
                 <Button variant="link" size="sm" className="h-auto px-1" onClick={clearFilters}>
                   Xóa bộ lọc
                 </Button>
@@ -216,7 +225,7 @@ export default function TransactionsPage() {
               </Button>
             </CardContent>
           </Card>
-        ) : !filteredItems.length ? (
+        ) : !items.length ? (
           <EmptyState
             icon={Receipt}
             title="Không tìm thấy giao dịch nào"
@@ -236,7 +245,7 @@ export default function TransactionsPage() {
         ) : (
           <>
             <div className="space-y-3 md:hidden">
-              {filteredItems.map((txn) => (
+              {items.map((txn) => (
                 <Card
                   key={txn.id}
                   className="cursor-pointer py-4 transition-colors hover:bg-muted/30"
@@ -278,7 +287,7 @@ export default function TransactionsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredItems.map((txn) => (
+                  {items.map((txn) => (
                     <TableRow
                       key={txn.id}
                       className="cursor-pointer"
@@ -322,7 +331,7 @@ export default function TransactionsPage() {
             {data ? (
               <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
                 <p className="text-sm text-muted-foreground">
-                  Hiển thị {filteredItems.length} / {data.total} giao dịch
+                  Hiển thị {items.length} / {data.total} giao dịch
                 </p>
                 {data.total > PAGE_SIZE ? (
                   <div className="flex items-center gap-2">

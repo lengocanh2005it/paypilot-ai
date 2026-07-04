@@ -26,9 +26,31 @@ export class ClassificationService {
     });
   }
 
-  async getReviewQueue(tenantId: string, page: number, limit: number) {
+  async getReviewQueue(
+    tenantId: string,
+    page: number,
+    limit: number,
+    opts?: { search?: string; minConfidence?: number; maxConfidence?: number },
+  ) {
     const skip = (page - 1) * limit;
-    const where = { tenantId, status: TransactionStatus.review };
+    const search = opts?.search?.trim();
+    const { minConfidence, maxConfidence } = opts ?? {};
+
+    const where: Prisma.TransactionClassificationWhereInput = {
+      tenantId,
+      status: TransactionStatus.review,
+      ...(search
+        ? { transaction: { is: { content: { contains: search, mode: 'insensitive' } } } }
+        : {}),
+      ...(minConfidence != null || maxConfidence != null
+        ? {
+            confidenceScore: {
+              ...(minConfidence != null ? { gte: minConfidence } : {}),
+              ...(maxConfidence != null ? { lt: maxConfidence } : {}),
+            },
+          }
+        : {}),
+    };
 
     const [items, total] = await Promise.all([
       this.prisma.transactionClassification.findMany({

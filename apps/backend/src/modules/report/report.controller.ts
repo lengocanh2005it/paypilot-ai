@@ -14,6 +14,7 @@ import { RequiresPlan } from '../../common/decorators/requires-plan.decorator';
 import { JwtAuthGuard, RolesGuard } from '../../common/guards/auth.guards';
 import { PlanGuard } from '../../common/guards/plan.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { AccountBreakdownQueryDto } from './dto/account-breakdown.dto';
 import { ReportService } from './report.service';
 
 @ApiTags('reports')
@@ -29,6 +30,16 @@ export class ReportController {
     @Query('month', new DefaultValuePipe(new Date().getMonth() + 1), ParseIntPipe) month: number,
   ) {
     return this.service.getSummary(user.tenantId!, year, month);
+  }
+
+  @Get('account-breakdown')
+  getAccountBreakdown(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AccountBreakdownQueryDto,
+  ) {
+    const year = query.year ?? new Date().getFullYear();
+    const month = query.month ?? new Date().getMonth() + 1;
+    return this.service.getAccountBreakdown(user.tenantId!, year, month, query);
   }
 
   @Get('by-account')

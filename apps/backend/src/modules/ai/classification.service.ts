@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ClassificationType, Prisma, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 import { EmbeddingService } from './embedding.service';
 import { OpenAiService } from './openai.service';
 import { preprocessTransactionContent } from './utils/text-preprocessing';
@@ -25,6 +26,7 @@ export class ClassificationService {
     private readonly openAiService: OpenAiService,
     private readonly embeddingService: EmbeddingService,
     private readonly configService: ConfigService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async processTransaction(transactionDbId: string): Promise<ClassificationOutput | null> {
@@ -80,7 +82,7 @@ export class ClassificationService {
           creditAccount,
           amount: new Prisma.Decimal(Math.abs(amount)),
           confidenceScore,
-          classificationType: autoClassified ? ClassificationType.auto : ClassificationType.auto,
+          classificationType: autoClassified ? ClassificationType.auto : ClassificationType.manual,
           classifiedBy: 'ai',
           reason,
           status,
@@ -105,6 +107,19 @@ export class ClassificationService {
 
       return created;
     });
+
+    if (status === TransactionStatus.review) {
+      await this.notificationService
+        .createReviewNeeded(
+          transaction.tenantId,
+          transaction.id,
+          transaction.content,
+          confidenceScore,
+        )
+        .catch((err: unknown) =>
+          this.logger.warn(`Failed to create review notification for ${transaction.id}`, err),
+        );
+    }
 
     // Store embedding asynchronously (non-blocking)
     this.embeddingService

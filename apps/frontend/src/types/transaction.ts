@@ -6,6 +6,7 @@ export interface TransactionClassificationSummary {
   confidenceScore: number;
   classificationType: string;
   status: string;
+  reason: string | null;
 }
 
 export interface TransactionSummary {

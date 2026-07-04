@@ -1,14 +1,28 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { PaymentOrderStatus, Prisma, SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 import type { UpdatePlanPricingDto } from './dto/plan-pricing.dto';
 
 @Injectable()
 export class PartnerService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PartnerService.name);
 
-  async listTenants() {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService,
+  ) {}
+
+  async listTenants(params?: { search?: string; status?: string; plan?: string }) {
+    const search = params?.search?.trim();
+    const statusFilter = params?.status && params.status !== 'all' ? params.status : undefined;
+    const planFilter =
+      params?.plan && params.plan !== 'all' ? (params.plan as SubscriptionPlan) : undefined;
+
     const tenants = await this.prisma.tenant.findMany({
+      where: {
+        ...(search ? { businessName: { contains: search, mode: 'insensitive' } } : {}),
+      },
       include: {
         subscriptions: { orderBy: { startedAt: 'desc' }, take: 1 },
       },
@@ -23,18 +37,28 @@ export class PartnerService {
     });
     const countsByTenant = new Map(transactionCounts.map((c) => [c.tenantId, c._count._all]));
 
-    return tenants.map((tenant) => {
-      const subscription = tenant.subscriptions[0];
-      return {
-        id: tenant.id,
-        businessName: tenant.businessName,
-        createdAt: tenant.createdAt,
-        plan: subscription?.plan ?? null,
-        status: subscription?.status ?? 'active',
-        transactionsThisMonth: countsByTenant.get(tenant.id) ?? 0,
-        revenuePerMonth: subscription ? Number(subscription.pricePerMonth) : 0,
-      };
-    });
+    return tenants
+      .map((tenant) => {
+        const subscription = tenant.subscriptions[0];
+        return {
+          id: tenant.id,
+          businessName: tenant.businessName,
+          createdAt: tenant.createdAt,
+          plan: subscription?.plan ?? null,
+          status: subscription?.status ?? 'active',
+          transactionsThisMonth: countsByTenant.get(tenant.id) ?? 0,
+          revenuePerMonth: subscription ? Number(subscription.pricePerMonth) : 0,
+        };
+      })
+      .filter((tenant) => {
+        if (statusFilter && tenant.status !== statusFilter) {
+          return false;
+        }
+        if (planFilter && tenant.plan !== planFilter) {
+          return false;
+        }
+        return true;
+      });
   }
 
   async getTenantDetail(tenantId: string) {
@@ -114,6 +138,12 @@ export class PartnerService {
         actor: 'cas_partner',
       },
     });
+
+    void this.notificationService
+      .createTenantSuspended(tenantId)
+      .catch((err: unknown) =>
+        this.logger.warn(`Suspend notification failed for tenant ${tenantId}`, err),
+      );
 
     return { success: true };
   }

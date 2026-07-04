@@ -52,6 +52,32 @@ export enum PaymentOrderStatus {
   FAILED = 'failed',
 }
 
+export enum NotificationType {
+  REVIEW_NEEDED = 'review_needed',
+  QUOTA_WARNING = 'quota_warning',
+  QUOTA_EXCEEDED = 'quota_exceeded',
+  OVERAGE_STARTED = 'overage_started',
+  BILLING_SUCCESS = 'billing_success',
+  BILLING_PAYMENT_DUE = 'billing_payment_due',
+  TENANT_SUSPENDED = 'tenant_suspended',
+}
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationListResult {
+  items: AppNotification[];
+  unreadCount: number;
+  total: number;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data: T | null;

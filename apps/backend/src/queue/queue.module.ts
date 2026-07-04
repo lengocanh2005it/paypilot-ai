@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 export const WEBHOOK_QUEUE = 'webhook-processing';
+export const EMAIL_QUEUE = 'email-delivery';
 
 @Module({
   imports: [
@@ -17,6 +18,9 @@ export const WEBHOOK_QUEUE = 'webhook-processing';
     }),
     BullModule.registerQueue({
       name: WEBHOOK_QUEUE,
+    }),
+    BullModule.registerQueue({
+      name: EMAIL_QUEUE,
     }),
   ],
   exports: [BullModule],

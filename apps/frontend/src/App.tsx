@@ -6,8 +6,11 @@ import { AuthProvider } from '@/contexts/auth-context';
 import { ThemeProvider } from '@/contexts/theme-context';
 import AccountsPage from '@/pages/accounts/AccountsPage';
 import AnalyticsPage from '@/pages/analytics/AnalyticsPage';
+import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
+import ResetPasswordPage from '@/pages/auth/ResetPasswordPage';
+import VerifyEmailPage from '@/pages/auth/VerifyEmailPage';
 import CopilotPage from '@/pages/copilot/CopilotPage';
 import DashboardPage from '@/pages/dashboard/DashboardPage';
 import OnboardingCallbackPage from '@/pages/onboarding/OnboardingCallbackPage';
@@ -43,6 +46,23 @@ function App() {
               element={
                 <GuestRoute>
                   <RegisterPage />
+                </GuestRoute>
+              }
+            />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route
+              path="/forgot-password"
+              element={
+                <GuestRoute>
+                  <ForgotPasswordPage />
+                </GuestRoute>
+              }
+            />
+            <Route
+              path="/reset-password"
+              element={
+                <GuestRoute>
+                  <ResetPasswordPage />
                 </GuestRoute>
               }
             />

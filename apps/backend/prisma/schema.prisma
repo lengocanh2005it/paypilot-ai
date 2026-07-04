@@ -61,6 +61,16 @@ enum PaymentOrderStatus {
   failed
 }
 
+enum NotificationType {
+  review_needed
+  quota_warning
+  quota_exceeded
+  overage_started
+  billing_success
+  billing_payment_due
+  tenant_suspended
+}
+
 model Tenant {
   id                       String   @id @default(uuid())
   businessName             String   @map("business_name")
@@ -76,6 +86,7 @@ model Tenant {
   subscriptions       Subscription[]
   chartOfAccounts     ChartOfAccount[]
   classifications     TransactionClassification[]
+  notifications       Notification[]
 
   @@map("tenants")
 }
@@ -89,12 +100,14 @@ model User {
   role         Role
   invitedById  String?   @map("invited_by")
   invitedAt    DateTime? @map("invited_at")
+  emailVerifiedAt DateTime? @map("email_verified_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  invitedBy User?   @relation("UserInvites", fields: [invitedById], references: [id], onDelete: SetNull)
-  invites   User[]  @relation("UserInvites")
+  tenant        Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy     User?          @relation("UserInvites", fields: [invitedById], references: [id], onDelete: SetNull)
+  invites       User[]         @relation("UserInvites")
+  notifications Notification[]
 
   @@index([tenantId])
   @@map("users")
@@ -236,6 +249,25 @@ model UsageLog {
 
   @@index([tenantId])
   @@map("usage_logs")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  tenantId  String           @map("tenant_id")
+  userId    String?          @map("user_id")
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, userId, readAt])
+  @@map("notifications")
 }
 
 model AuditLog {

@@ -43,33 +43,35 @@ export function TransactionStatusChart({ data, isLoading }: TransactionStatusCha
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <Skeleton className="mx-auto h-[320px] w-[320px] rounded-full" />
+          <Skeleton className="mx-auto size-[200px] rounded-full sm:size-[280px]" />
         ) : total === 0 ? (
-          <div className="flex h-[320px] items-center justify-center rounded-lg border border-dashed bg-muted/30 px-4 text-center text-sm text-muted-foreground">
+          <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed bg-muted/30 px-4 text-center text-sm text-muted-foreground sm:h-[300px]">
             Chưa có dữ liệu trạng thái giao dịch.
           </div>
         ) : (
           <div className="space-y-4">
-            <ResponsiveContainer width="100%" height={320}>
-              <PieChart>
-                <Pie
-                  data={data}
-                  dataKey="value"
-                  nameKey="label"
-                  innerRadius={78}
-                  outerRadius={128}
-                  paddingAngle={3}
-                  stroke="var(--background)"
-                  strokeWidth={2}
-                >
-                  {data.map((slice) => (
-                    <Cell key={slice.status} fill={slice.color} />
-                  ))}
-                </Pie>
-                <Tooltip content={<StatusTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-2">
+            <div className="h-[200px] sm:h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={data}
+                    dataKey="value"
+                    nameKey="label"
+                    innerRadius="58%"
+                    outerRadius="92%"
+                    paddingAngle={3}
+                    stroke="var(--background)"
+                    strokeWidth={2}
+                  >
+                    {data.map((slice) => (
+                      <Cell key={slice.status} fill={slice.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<StatusTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 border-t border-border pt-4">
               {data.map((slice) => (
                 <div key={slice.status} className="flex items-center gap-2 text-sm">
                   <span
@@ -77,7 +79,7 @@ export function TransactionStatusChart({ data, isLoading }: TransactionStatusCha
                     style={{ backgroundColor: slice.color }}
                   />
                   <span className="text-muted-foreground">{slice.label}</span>
-                  <span className="ml-auto font-medium">{slice.value}</span>
+                  <span className="font-medium tabular-nums">{slice.value}</span>
                 </div>
               ))}
             </div>

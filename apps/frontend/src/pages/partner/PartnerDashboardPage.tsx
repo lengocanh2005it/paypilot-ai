@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -151,17 +152,19 @@ function StatCard({
   hint?: string;
 }) {
   return (
-    <Card>
-      <CardContent className="p-3.5">
+    <Card className="h-full py-0">
+      <CardContent className="px-5 py-4">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium text-foreground">{label}</p>
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Icon className="size-4" />
           </div>
         </div>
-        <p className="mt-1 text-2xl font-semibold tabular-nums leading-tight">{value}</p>
+        <p className="mt-2 text-2xl font-semibold tabular-nums leading-tight sm:text-3xl">
+          {value}
+        </p>
         {hint ? (
-          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{hint}</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{hint}</p>
         ) : null}
       </CardContent>
     </Card>
@@ -250,19 +253,18 @@ export default function PartnerDashboardPage() {
       .sort((a, b) => b.revenuePerMonth - a.revenuePerMonth)
       .slice(0, 5)
       .map((t) => ({
-        name: t.businessName.length > 22 ? `${t.businessName.slice(0, 22)}…` : t.businessName,
+        name: t.businessName.length > 15 ? `${t.businessName.slice(0, 15)}…` : t.businessName,
         revenue: t.revenuePerMonth,
       }));
   }, [tenants]);
 
   return (
     <>
-      <header className="sticky top-0 z-10 border-b border-border bg-background px-4 py-4 sm:px-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-lg font-semibold sm:text-xl">Dashboard</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Tổng quan toàn hệ thống X-Cash AI</p>
-          </div>
+      <Header
+        title="Dashboard"
+        description="Tổng quan toàn hệ thống X-Cash AI"
+        hideThemeToggle
+        actions={
           <div className="flex flex-wrap items-center gap-2">
             <Input
               type="date"
@@ -294,8 +296,8 @@ export default function PartnerDashboardPage() {
               </Button>
             ) : null}
           </div>
-        </div>
-      </header>
+        }
+      />
 
       <div className="space-y-6 p-4 sm:p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -498,7 +500,7 @@ export default function PartnerDashboardPage() {
                       dataKey="name"
                       tickLine={false}
                       axisLine={false}
-                      width={150}
+                      width={110}
                       tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
                     />
                     <Tooltip

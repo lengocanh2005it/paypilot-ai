@@ -49,8 +49,15 @@ export class ClassificationController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('search') search?: string,
+    @Query('minConfidence') minConfidence?: string,
+    @Query('maxConfidence') maxConfidence?: string,
   ) {
-    return this.service.getReviewQueue(user.tenantId!, page, Math.min(limit, 50));
+    return this.service.getReviewQueue(user.tenantId!, page, Math.min(limit, 50), {
+      search,
+      minConfidence: minConfidence != null ? Number(minConfidence) : undefined,
+      maxConfidence: maxConfidence != null ? Number(maxConfidence) : undefined,
+    });
   }
 
   @Post('review/:id/confirm')

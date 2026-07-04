@@ -13,12 +13,14 @@ import {
 } from 'react';
 import { type AuthSessionData, api, getApiData, postApiData, setAccessToken } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errors';
+import { persistLoginPreferences } from '@/lib/remember-me';
 import type { AuthenticatedUser } from '@/types/auth';
 import type { OnboardingStatus } from '@/types/onboarding';
 
 interface LoginInput {
   email: string;
   password: string;
+  rememberMe?: boolean;
 }
 
 interface RegisterInput {
@@ -26,6 +28,46 @@ interface RegisterInput {
   ownerName: string;
   email: string;
   password: string;
+  confirmPassword: string;
+}
+
+export interface RegisterResult {
+  email: string;
+  message: string;
+  otpExpiresInSeconds: number;
+}
+
+interface VerifyEmailInput {
+  email: string;
+  otp: string;
+}
+
+interface ResendVerificationInput {
+  email: string;
+}
+
+interface ForgotPasswordInput {
+  email: string;
+}
+
+export interface ForgotPasswordResult {
+  message: string;
+  otpExpiresInSeconds?: number;
+}
+
+interface ResetPasswordInput {
+  email: string;
+  otp: string;
+  password: string;
+  confirmPassword: string;
+}
+
+interface ResendPasswordResetInput {
+  email: string;
+}
+
+export interface ResetPasswordResult {
+  message: string;
 }
 
 interface AuthContextValue {
@@ -35,7 +77,12 @@ interface AuthContextValue {
   onboardingStatus: OnboardingStatus | undefined;
   isOnboardingLoading: boolean;
   login: (input: LoginInput) => Promise<void>;
-  register: (input: RegisterInput) => Promise<void>;
+  register: (input: RegisterInput) => Promise<RegisterResult>;
+  verifyEmail: (input: VerifyEmailInput) => Promise<void>;
+  resendVerification: (input: ResendVerificationInput) => Promise<void>;
+  forgotPassword: (input: ForgotPasswordInput) => Promise<ForgotPasswordResult>;
+  resetPassword: (input: ResetPasswordInput) => Promise<ResetPasswordResult>;
+  resendPasswordReset: (input: ResendPasswordResetInput) => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<AuthenticatedUser | null>;
 }
@@ -107,19 +154,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const loginMutation = useMutation({
-    mutationFn: (input: LoginInput) => postApiData<AuthSessionData>('/auth/login', input),
+    mutationFn: (input: LoginInput) =>
+      postApiData<AuthSessionData>('/auth/login', {
+        email: input.email,
+        password: input.password,
+        rememberMe: input.rememberMe !== false,
+      }),
+    onSuccess: (session, input) => {
+      applySession(session, setUser);
+      persistLoginPreferences(input.email, input.rememberMe !== false);
+      queryClient.invalidateQueries({ queryKey: ['onboarding'] });
+    },
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: (input: RegisterInput) => postApiData<RegisterResult>('/auth/register', input),
+  });
+
+  const verifyEmailMutation = useMutation({
+    mutationFn: (input: VerifyEmailInput) =>
+      postApiData<AuthSessionData>('/auth/verify-email', input),
     onSuccess: (session) => {
       applySession(session, setUser);
       queryClient.invalidateQueries({ queryKey: ['onboarding'] });
     },
   });
 
-  const registerMutation = useMutation({
-    mutationFn: (input: RegisterInput) => postApiData<AuthSessionData>('/auth/register', input),
-    onSuccess: (session) => {
-      applySession(session, setUser);
-      queryClient.invalidateQueries({ queryKey: ['onboarding'] });
-    },
+  const resendVerificationMutation = useMutation({
+    mutationFn: (input: ResendVerificationInput) =>
+      postApiData<{ message: string; otpExpiresInSeconds: number }>(
+        '/auth/resend-verification',
+        input,
+      ),
+  });
+
+  const forgotPasswordMutation = useMutation({
+    mutationFn: (input: ForgotPasswordInput) =>
+      postApiData<ForgotPasswordResult>('/auth/forgot-password', input),
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: (input: ResetPasswordInput) =>
+      postApiData<ResetPasswordResult>('/auth/reset-password', input),
+  });
+
+  const resendPasswordResetMutation = useMutation({
+    mutationFn: (input: ResendPasswordResetInput) =>
+      postApiData<{ message: string; otpExpiresInSeconds: number }>(
+        '/auth/resend-password-reset',
+        input,
+      ),
   });
 
   const logoutMutation = useMutation({
@@ -140,6 +224,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isBootstrapping ||
         loginMutation.isPending ||
         registerMutation.isPending ||
+        verifyEmailMutation.isPending ||
+        resendVerificationMutation.isPending ||
+        forgotPasswordMutation.isPending ||
+        resetPasswordMutation.isPending ||
+        resendPasswordResetMutation.isPending ||
         logoutMutation.isPending,
       isAuthenticated: Boolean(user),
       onboardingStatus,
@@ -148,7 +237,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loginMutation.mutateAsync(input);
       },
       register: async (input) => {
-        await registerMutation.mutateAsync(input);
+        return registerMutation.mutateAsync(input);
+      },
+      verifyEmail: async (input) => {
+        await verifyEmailMutation.mutateAsync(input);
+      },
+      resendVerification: async (input) => {
+        await resendVerificationMutation.mutateAsync(input);
+      },
+      forgotPassword: async (input) => {
+        return forgotPasswordMutation.mutateAsync(input);
+      },
+      resetPassword: async (input) => {
+        return resetPasswordMutation.mutateAsync(input);
+      },
+      resendPasswordReset: async (input) => {
+        await resendPasswordResetMutation.mutateAsync(input);
       },
       logout: async () => {
         await logoutMutation.mutateAsync();
@@ -160,6 +264,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isBootstrapping,
       loginMutation,
       registerMutation,
+      verifyEmailMutation,
+      resendVerificationMutation,
+      forgotPasswordMutation,
+      resetPasswordMutation,
+      resendPasswordResetMutation,
       logoutMutation,
       onboardingStatus,
       isOnboardingLoading,

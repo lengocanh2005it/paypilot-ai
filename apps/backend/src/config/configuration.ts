@@ -20,6 +20,7 @@ export default () => ({
   JWT_ACCESS_EXPIRES_IN: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret-change-me',
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+  JWT_REFRESH_SESSION_EXPIRES_IN: process.env.JWT_REFRESH_SESSION_EXPIRES_IN ?? '12h',
   CAS_API_BASE_URL: process.env.CAS_API_BASE_URL ?? 'https://sandbox.bankhub.dev',
   CAS_LINK_BASE_URL: resolveCasLinkBaseUrl(),
   CAS_API_VERSION: process.env.CAS_API_VERSION ?? '2023-01-01',
@@ -47,4 +48,13 @@ export default () => ({
   PAYOS_API_KEY: process.env.PAYOS_API_KEY ?? '',
   PAYOS_CHECKSUM_KEY: process.env.PAYOS_CHECKSUM_KEY ?? '',
   PAYOS_BILLING_WEBHOOK_URL: process.env.PAYOS_BILLING_WEBHOOK_URL ?? '',
+  RESEND_API_KEY: process.env.RESEND_API_KEY ?? '',
+  RESEND_SENDER_EMAIL: process.env.RESEND_SENDER_EMAIL ?? 'noreply@xcash.ai',
+  RESEND_SENDER_NAME: process.env.RESEND_SENDER_NAME ?? 'X-Cash AI',
+  EMAIL_OTP_TTL_SECONDS: Number.parseInt(process.env.EMAIL_OTP_TTL_SECONDS ?? '600', 10),
+  EMAIL_OTP_RESEND_COOLDOWN_SECONDS: Number.parseInt(
+    process.env.EMAIL_OTP_RESEND_COOLDOWN_SECONDS ?? '60',
+    10,
+  ),
+  EMAIL_OTP_MAX_ATTEMPTS: Number.parseInt(process.env.EMAIL_OTP_MAX_ATTEMPTS ?? '5', 10),
 });

@@ -1,0 +1,341 @@
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { NotificationType, Prisma } from '@prisma/client';
+import { Observable, Subject } from 'rxjs';
+import { filter, map } from 'rxjs/operators';
+import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationDeliveryService } from './notification-delivery.service';
+
+export interface NotificationItem {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  readAt: Date | null;
+  createdAt: Date;
+}
+
+export interface NotificationListResult {
+  items: NotificationItem[];
+  unreadCount: number;
+  total: number;
+}
+
+@Injectable()
+export class NotificationService {
+  private readonly logger = new Logger(NotificationService.name);
+  private readonly eventBus = new Subject<{ tenantId: string; notification: NotificationItem }>();
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly deliveryService: NotificationDeliveryService,
+    private readonly jwtService: JwtService,
+  ) {}
+
+  streamForToken(token: string): Observable<{ data: NotificationItem }> {
+    let tenantId: string;
+    try {
+      const payload = this.jwtService.verify<{ tenantId?: string }>(token);
+      if (!payload.tenantId) throw new Error('no tenantId');
+      tenantId = payload.tenantId;
+    } catch {
+      throw new UnauthorizedException('Token không hợp lệ');
+    }
+
+    return this.eventBus.pipe(
+      filter((e) => e.tenantId === tenantId),
+      map((e) => ({ data: e.notification })),
+    );
+  }
+
+  private userScope(userId: string): Prisma.NotificationWhereInput {
+    return {
+      OR: [{ userId: null }, { userId }],
+    };
+  }
+
+  async list(
+    tenantId: string,
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<NotificationListResult> {
+    const where: Prisma.NotificationWhereInput = {
+      tenantId,
+      ...this.userScope(userId),
+    };
+
+    const [items, total, unreadCount] = await Promise.all([
+      this.prisma.notification.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.notification.count({ where }),
+      this.prisma.notification.count({
+        where: { ...where, readAt: null },
+      }),
+    ]);
+
+    return { items, unreadCount, total };
+  }
+
+  async getUnreadCount(tenantId: string, userId: string): Promise<number> {
+    return this.prisma.notification.count({
+      where: {
+        tenantId,
+        readAt: null,
+        ...this.userScope(userId),
+      },
+    });
+  }
+
+  async markRead(
+    tenantId: string,
+    userId: string,
+    notificationId: string,
+  ): Promise<NotificationItem> {
+    const notification = await this.prisma.notification.findFirst({
+      where: {
+        id: notificationId,
+        tenantId,
+        ...this.userScope(userId),
+      },
+    });
+
+    if (!notification) {
+      throw new NotFoundException('Thông báo không tồn tại');
+    }
+
+    if (notification.readAt) {
+      return notification;
+    }
+
+    return this.prisma.notification.update({
+      where: { id: notificationId },
+      data: { readAt: new Date() },
+    });
+  }
+
+  async markAllRead(tenantId: string, userId: string): Promise<{ updated: number }> {
+    const result = await this.prisma.notification.updateMany({
+      where: {
+        tenantId,
+        readAt: null,
+        ...this.userScope(userId),
+      },
+      data: { readAt: new Date() },
+    });
+
+    return { updated: result.count };
+  }
+
+  async remove(
+    tenantId: string,
+    userId: string,
+    notificationId: string,
+  ): Promise<{ deleted: number }> {
+    const result = await this.prisma.notification.deleteMany({
+      where: {
+        id: notificationId,
+        tenantId,
+        ...this.userScope(userId),
+      },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException('Thông báo không tồn tại');
+    }
+
+    return { deleted: result.count };
+  }
+
+  async removeMany(tenantId: string, userId: string, ids: string[]): Promise<{ deleted: number }> {
+    if (ids.length === 0) {
+      return { deleted: 0 };
+    }
+
+    const result = await this.prisma.notification.deleteMany({
+      where: {
+        id: { in: ids },
+        tenantId,
+        ...this.userScope(userId),
+      },
+    });
+
+    return { deleted: result.count };
+  }
+
+  async removeAll(tenantId: string, userId: string): Promise<{ deleted: number }> {
+    const result = await this.prisma.notification.deleteMany({
+      where: {
+        tenantId,
+        ...this.userScope(userId),
+      },
+    });
+
+    return { deleted: result.count };
+  }
+
+  async createReviewNeeded(
+    tenantId: string,
+    _transactionDbId: string,
+    content: string | null,
+    confidenceScore: number,
+  ): Promise<void> {
+    const preview = this.buildContentPreview(content);
+    const body = preview
+      ? `Độ tin cậy ${confidenceScore}% — "${preview}"`
+      : `Độ tin cậy ${confidenceScore}% — cần kế toán xác nhận định khoản`;
+
+    await this.publish(tenantId, NotificationType.review_needed, {
+      title: 'Giao dịch mới cần review',
+      body,
+      link: '/review',
+    });
+  }
+
+  async createQuotaWarning(
+    tenantId: string,
+    used: number,
+    quota: number,
+    cycleStart: Date,
+  ): Promise<void> {
+    const percent = Math.round((used / quota) * 100);
+    await this.createOncePerCycle(tenantId, NotificationType.quota_warning, cycleStart, {
+      title: 'Sắp hết quota giao dịch',
+      body: `Đã dùng ${used}/${quota} giao dịch (${percent}%) trong chu kỳ này. Cân nhắc nâng cấp gói.`,
+      link: '/settings?tab=billing',
+    });
+  }
+
+  async createQuotaExceeded(tenantId: string, quota: number, cycleStart: Date): Promise<void> {
+    await this.createOncePerCycle(tenantId, NotificationType.quota_exceeded, cycleStart, {
+      title: 'Đã hết quota giao dịch',
+      body: `Đã dùng hết ${quota} giao dịch trong chu kỳ này.`,
+      link: '/settings?tab=billing',
+    });
+  }
+
+  async createOverageStarted(
+    tenantId: string,
+    pricePerTransaction: number,
+    cycleStart: Date,
+  ): Promise<void> {
+    await this.createOncePerCycle(tenantId, NotificationType.overage_started, cycleStart, {
+      title: 'Giao dịch vượt quota',
+      body: `Giao dịch mới vượt quota sẽ tính phí ${this.formatVnd(pricePerTransaction)}/giao dịch.`,
+      link: '/settings?tab=billing',
+    });
+  }
+
+  async createBillingSuccess(
+    tenantId: string,
+    kind: 'upgrade' | 'overage',
+    plan: string,
+    amount: number,
+  ): Promise<void> {
+    const planLabel = plan.toUpperCase();
+    const title =
+      kind === 'upgrade' ? 'Nâng cấp gói thành công' : 'Thanh toán phí vượt quota thành công';
+    const body =
+      kind === 'upgrade'
+        ? `Gói ${planLabel} đã được kích hoạt. Số tiền: ${this.formatVnd(amount)}.`
+        : `Đã thanh toán ${this.formatVnd(amount)} cho phí vượt quota gói ${planLabel}.`;
+
+    await this.publish(tenantId, NotificationType.billing_success, {
+      title,
+      body,
+      link: '/settings?tab=billing',
+    });
+  }
+
+  async createBillingPaymentDue(
+    tenantId: string,
+    amount: number,
+    overageCount: number,
+  ): Promise<void> {
+    await this.publish(tenantId, NotificationType.billing_payment_due, {
+      title: 'Có phí vượt quota cần thanh toán',
+      body: `${overageCount} giao dịch vượt quota — tổng ${this.formatVnd(amount)}. Vui lòng thanh toán để tiếp tục.`,
+      link: '/settings?tab=billing',
+    });
+  }
+
+  async createTenantSuspended(tenantId: string): Promise<void> {
+    await this.publish(tenantId, NotificationType.tenant_suspended, {
+      title: 'Tài khoản doanh nghiệp bị khóa',
+      body: 'Tài khoản đã bị Cas Partner tạm khóa. Liên hệ hỗ trợ để được mở lại.',
+      link: null,
+    });
+  }
+
+  private async publish(
+    tenantId: string,
+    type: NotificationType,
+    data: { title: string; body: string; link: string | null },
+  ): Promise<void> {
+    const notification = await this.prisma.notification.create({
+      data: {
+        tenantId,
+        userId: null,
+        type,
+        title: data.title,
+        body: data.body,
+        link: data.link,
+      },
+    });
+
+    this.eventBus.next({ tenantId, notification });
+
+    void Promise.all([
+      this.deliveryService
+        .enqueueEmailIfEnabled(tenantId, data)
+        .catch((err: unknown) =>
+          this.logger.warn(`Failed to queue email for tenant ${tenantId}`, err),
+        ),
+      this.deliveryService
+        .sendSlackIfEnabled(tenantId, data)
+        .catch((err: unknown) =>
+          this.logger.warn(`Failed to send Slack for tenant ${tenantId}`, err),
+        ),
+    ]);
+  }
+
+  private async createOncePerCycle(
+    tenantId: string,
+    type: NotificationType,
+    cycleStart: Date,
+    data: { title: string; body: string; link: string | null },
+  ): Promise<void> {
+    const existing = await this.prisma.notification.findFirst({
+      where: {
+        tenantId,
+        type,
+        userId: null,
+        createdAt: { gte: cycleStart },
+      },
+    });
+
+    if (existing) {
+      return;
+    }
+
+    await this.publish(tenantId, type, data);
+  }
+
+  private formatVnd(amount: number): string {
+    return `${amount.toLocaleString('vi-VN')}đ`;
+  }
+
+  private buildContentPreview(content: string | null): string {
+    if (!content?.trim()) {
+      return '';
+    }
+
+    const trimmed = content.trim();
+    return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed;
+  }
+}

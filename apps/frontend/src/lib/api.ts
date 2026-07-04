@@ -2,7 +2,7 @@ import type { ApiResponse } from '@xcash/shared-types';
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import type { AuthenticatedUser } from '@/types/auth';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api/v1';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api/v1';
 
 export interface AuthSessionData {
   accessToken: string;
@@ -56,7 +56,12 @@ function isAuthBypassRoute(url?: string): boolean {
     url.includes('/auth/refresh') ||
     url.includes('/auth/login') ||
     url.includes('/auth/register') ||
-    url.includes('/auth/logout')
+    url.includes('/auth/logout') ||
+    url.includes('/auth/verify-email') ||
+    url.includes('/auth/resend-verification') ||
+    url.includes('/auth/forgot-password') ||
+    url.includes('/auth/resend-password-reset') ||
+    url.includes('/auth/reset-password')
   );
 }
 
@@ -111,5 +116,15 @@ export async function getApiData<T>(url: string): Promise<T> {
 
 export async function postApiData<T, B = unknown>(url: string, body?: B): Promise<T> {
   const response = await api.post<ApiResponse<T>>(url, body);
+  return response.data.data as T;
+}
+
+export async function patchApiData<T, B = unknown>(url: string, body?: B): Promise<T> {
+  const response = await api.patch<ApiResponse<T>>(url, body);
+  return response.data.data as T;
+}
+
+export async function deleteApiData<T, B = unknown>(url: string, body?: B): Promise<T> {
+  const response = await api.delete<ApiResponse<T>>(url, body ? { data: body } : undefined);
   return response.data.data as T;
 }

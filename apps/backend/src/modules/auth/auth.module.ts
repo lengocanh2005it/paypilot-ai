@@ -1,15 +1,23 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { EMAIL_QUEUE, QueueModule } from '../../queue/queue.module';
+import { RedisModule } from '../../redis/redis.module';
 import { ChartOfAccountsModule } from '../chart-of-accounts/chart-of-accounts.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EmailVerificationService } from './email-verification.service';
+import { PasswordResetService } from './password-reset.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
   imports: [
     ChartOfAccountsModule,
+    RedisModule,
+    QueueModule,
+    BullModule.registerQueue({ name: EMAIL_QUEUE }),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -26,7 +34,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, EmailVerificationService, PasswordResetService, JwtStrategy],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

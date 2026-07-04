@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Receipt, Search, Wallet } from 'lucide-react';
-import { type ElementType, useEffect, useState } from 'react';
+import { type ElementType, useCallback, useState } from 'react';
+import { Header } from '@/components/layout/Header';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { api } from '@/lib/api';
 import { formatVND } from '@/lib/format-vnd';
 
@@ -40,6 +42,7 @@ interface PaymentsResponse {
 }
 
 const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 350;
 
 const PLAN_LABELS: Record<string, string> = {
   free: 'Free',
@@ -109,31 +112,32 @@ function SummaryCard({
 
 export default function PartnerPaymentsPage() {
   const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | PartnerPayment['status']>('all');
   const [planFilter, setPlanFilter] = useState<'all' | string>('all');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(1);
-
-  // Debounce ô tìm kiếm → giảm số lần gọi API
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput.trim());
+  const debouncedSearch = useDebouncedValue(
+    searchInput,
+    SEARCH_DEBOUNCE_MS,
+    useCallback(() => {
       setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    }, []),
+  );
 
   const { data, isLoading, isFetching, isError, refetch } = useQuery({
-    queryKey: ['partner', 'payments', { page, search, statusFilter, planFilter, fromDate, toDate }],
+    queryKey: [
+      'partner',
+      'payments',
+      { page, search: debouncedSearch, statusFilter, planFilter, fromDate, toDate },
+    ],
     queryFn: () =>
       api
         .get<{ data: PaymentsResponse }>('/partner/payments', {
           params: {
             page,
             limit: PAGE_SIZE,
-            search: search || undefined,
+            search: debouncedSearch.trim() || undefined,
             status: statusFilter,
             plan: planFilter,
             fromDate: fromDate || undefined,
@@ -146,7 +150,11 @@ export default function PartnerPaymentsPage() {
 
   const hasDateFilter = fromDate !== '' || toDate !== '';
   const hasActiveFilters =
-    search !== '' || statusFilter !== 'all' || planFilter !== 'all' || hasDateFilter;
+    debouncedSearch.trim() !== '' ||
+    statusFilter !== 'all' ||
+    planFilter !== 'all' ||
+    hasDateFilter;
+  const isSearchPending = searchInput !== debouncedSearch;
   const filterHint = hasActiveFilters ? 'Theo bộ lọc hiện tại' : undefined;
 
   const items = data?.items ?? [];
@@ -159,12 +167,11 @@ export default function PartnerPaymentsPage() {
 
   return (
     <>
-      <header className="sticky top-0 z-10 border-b border-border bg-background px-4 py-4 sm:px-6">
-        <h1 className="text-lg font-semibold sm:text-xl">Lịch sử thanh toán</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Toàn bộ giao dịch thanh toán gói dịch vụ (PayOS) từ các doanh nghiệp
-        </p>
-      </header>
+      <Header
+        title="Lịch sử thanh toán"
+        description="Toàn bộ giao dịch thanh toán gói dịch vụ (PayOS) từ các doanh nghiệp"
+        hideThemeToggle
+      />
 
       <div className="space-y-6 p-4 sm:p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -203,6 +210,11 @@ export default function PartnerPaymentsPage() {
                   onChange={(e) => setSearchInput(e.target.value)}
                   className="pl-8"
                 />
+                {isSearchPending ? (
+                  <span className="absolute top-full left-0 mt-1 text-[11px] text-muted-foreground">
+                    Đang tìm...
+                  </span>
+                ) : null}
               </div>
               <Select
                 value={statusFilter}
@@ -241,7 +253,7 @@ export default function PartnerPaymentsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   type="date"
                   aria-label="Từ ngày"
@@ -301,7 +313,37 @@ export default function PartnerPaymentsPage() {
               />
             ) : (
               <>
-                <div className="overflow-x-auto">
+                <div className="space-y-3 lg:hidden">
+                  {items.map((p) => (
+                    <Card key={p.id} className="py-4">
+                      <CardContent className="space-y-2 text-sm">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-medium">{p.businessName}</p>
+                          <Badge className={STATUS_CLASSES[p.status]}>
+                            {STATUS_LABELS[p.status]}
+                          </Badge>
+                        </div>
+                        <p className="font-mono text-xs text-muted-foreground">{p.orderCode}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary">
+                            {PLAN_LABELS[p.targetPlan] ?? p.targetPlan}
+                          </Badge>
+                          <span className="text-muted-foreground">
+                            {ORDER_TYPE_LABELS[p.orderType] ?? p.orderType}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium tabular-nums">{formatVND(p.amount)}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDateTime(p.paidAt ?? p.createdAt)}
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                <div className="hidden overflow-x-auto lg:block">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-muted-foreground">

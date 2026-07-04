@@ -23,6 +23,14 @@ describe('RolesGuard', () => {
     expect(guard.canActivate(context)).toBe(true);
   });
 
+  it('blocks cas_partner even when no roles are required', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+    const context = createMockContext({ role: Role.CAS_PARTNER, tenantId: null });
+    expect(() => guard.canActivate(context)).toThrow(
+      'Cas Partner không được truy cập API nghiệp vụ tenant',
+    );
+  });
+
   it('allows admin when admin role is required', () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([Role.ADMIN]);
     const context = createMockContext({ role: Role.ADMIN, tenantId: 'tenant-1' });

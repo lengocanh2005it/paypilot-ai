@@ -2,6 +2,7 @@ import { Injectable, StreamableFile } from '@nestjs/common';
 import { TransactionStatus } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { AccountBreakdownQueryDto } from './dto/account-breakdown.dto';
 
 export interface AccountSummary {
   accountCode: string;
@@ -17,21 +18,58 @@ export interface AccountSummary {
 export class ReportService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSummary(tenantId: string, year: number, month: number) {
-    const from = new Date(year, month - 1, 1);
-    const to = new Date(year, month, 1);
+  private periodBounds(year: number, month: number) {
+    return {
+      from: new Date(year, month - 1, 1),
+      to: new Date(year, month, 1),
+    };
+  }
 
-    const [classifications, reviewCount, totalCount, classifiedCount] = await Promise.all([
-      this.prisma.transactionClassification.findMany({
-        where: {
-          tenantId,
-          status: TransactionStatus.classified,
-          transaction: { transactionDate: { gte: from, lt: to } },
-        },
-        include: {
-          transaction: { select: { transactionDate: true, content: true, amount: true } },
-        },
-      }),
+  private async buildAccountSummaries(
+    tenantId: string,
+    from: Date,
+    to: Date,
+  ): Promise<AccountSummary[]> {
+    const classifications = await this.prisma.transactionClassification.findMany({
+      where: {
+        tenantId,
+        status: TransactionStatus.classified,
+        transaction: { transactionDate: { gte: from, lt: to } },
+      },
+      select: { debitAccount: true, creditAccount: true, amount: true },
+    });
+
+    const accountMap = new Map<string, AccountSummary>();
+
+    for (const c of classifications) {
+      const amount = Number(c.amount);
+      this.updateAccount(accountMap, c.debitAccount, amount, 0);
+      this.updateAccount(accountMap, c.creditAccount, 0, amount);
+    }
+
+    const codes = [...accountMap.keys()];
+    if (codes.length > 0) {
+      const accounts = await this.prisma.chartOfAccount.findMany({
+        where: { tenantId, accountCode: { in: codes } },
+        select: { accountCode: true, accountName: true, accountType: true },
+      });
+      for (const a of accounts) {
+        const entry = accountMap.get(a.accountCode);
+        if (entry) {
+          entry.accountName = a.accountName;
+          entry.accountType = a.accountType;
+        }
+      }
+    }
+
+    return [...accountMap.values()].sort((a, b) => a.accountCode.localeCompare(b.accountCode));
+  }
+
+  async getSummary(tenantId: string, year: number, month: number) {
+    const { from, to } = this.periodBounds(year, month);
+
+    const [byAccount, reviewCount, totalCount, classifiedCount] = await Promise.all([
+      this.buildAccountSummaries(tenantId, from, to),
       this.prisma.transactionClassification.count({
         where: {
           tenantId,
@@ -51,35 +89,6 @@ export class ReportService {
       }),
     ]);
 
-    const accountMap = new Map<string, AccountSummary>();
-
-    for (const c of classifications) {
-      const amount = Number(c.amount);
-
-      this.updateAccount(accountMap, c.debitAccount, amount, 0, tenantId);
-      this.updateAccount(accountMap, c.creditAccount, 0, amount, tenantId);
-    }
-
-    // Enrich with account names
-    const codes = [...accountMap.keys()];
-    if (codes.length > 0) {
-      const accounts = await this.prisma.chartOfAccount.findMany({
-        where: { tenantId, accountCode: { in: codes } },
-        select: { accountCode: true, accountName: true, accountType: true },
-      });
-      for (const a of accounts) {
-        const entry = accountMap.get(a.accountCode);
-        if (entry) {
-          entry.accountName = a.accountName;
-          entry.accountType = a.accountType;
-        }
-      }
-    }
-
-    const byAccount = [...accountMap.values()].sort((a, b) =>
-      a.accountCode.localeCompare(b.accountCode),
-    );
-
     const totalRevenue = byAccount
       .filter((a) => a.accountType === 'revenue')
       .reduce((s, a) => s + a.totalCredit - a.totalDebit, 0);
@@ -94,7 +103,44 @@ export class ReportService {
       period: { year, month },
       summary: { totalRevenue, totalExpense, net: totalRevenue - totalExpense },
       stats: { totalCount, classifiedCount, reviewCount, aiAccuracy },
-      byAccount,
+    };
+  }
+
+  async getAccountBreakdown(
+    tenantId: string,
+    year: number,
+    month: number,
+    query: AccountBreakdownQueryDto,
+  ) {
+    const { from, to } = this.periodBounds(year, month);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const search = query.search?.trim().toLowerCase();
+    const accountType =
+      query.accountType && query.accountType !== 'all' ? query.accountType : undefined;
+
+    let items = await this.buildAccountSummaries(tenantId, from, to);
+
+    if (search) {
+      items = items.filter(
+        (a) =>
+          a.accountCode.toLowerCase().includes(search) ||
+          a.accountName.toLowerCase().includes(search),
+      );
+    }
+
+    if (accountType) {
+      items = items.filter((a) => a.accountType === accountType);
+    }
+
+    const total = items.length;
+    const start = (page - 1) * limit;
+
+    return {
+      items: items.slice(start, start + limit),
+      page,
+      limit,
+      total,
     };
   }
 
@@ -265,7 +311,6 @@ export class ReportService {
     code: string,
     debit: number,
     credit: number,
-    _tenantId: string,
   ): void {
     const existing = map.get(code);
     if (existing) {

@@ -39,11 +39,12 @@ cp apps/frontend/.env.example apps/frontend/.env
 | App | `PORT`, `APP_URL`, `FRONTEND_URL` | backend mặc định port 3000, frontend (Vite) port 5173 |
 | Database | `DATABASE_URL` | PostgreSQL, **phải bật extension `pgvector`** trước khi migrate |
 | Redis | `REDIS_URL` | dùng cho cache + BullMQ + webhook idempotency |
-| JWT | `JWT_ACCESS_SECRET`, `JWT_ACCESS_EXPIRES_IN=15m`, `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRES_IN=7d` | Access token ngắn hạn, Refresh lưu HttpOnly Cookie |
+| JWT | `JWT_ACCESS_SECRET`, `JWT_ACCESS_EXPIRES_IN=15m`, `JWT_REFRESH_SECRET`, `JWT_REFRESH_EXPIRES_IN=7d`, `JWT_REFRESH_SESSION_EXPIRES_IN=12h` | Access ngắn hạn; Refresh cookie 7d khi `rememberMe=true`, session 12h khi `rememberMe=false` |
+| Email (Resend) | `RESEND_API_KEY`, `RESEND_SENDER_EMAIL`, `RESEND_SENDER_NAME`, `EMAIL_OTP_TTL_SECONDS`, `EMAIL_OTP_RESEND_COOLDOWN_SECONDS`, `EMAIL_OTP_MAX_ATTEMPTS` | OTP đăng ký + quên mật khẩu qua BullMQ queue `email-delivery` |
 | OpenAI | `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`, `OPENAI_CHAT_MODEL` | công ty cấp sẵn key, không tự train model |
 | Cas SDK | `CAS_API_BASE_URL`, `CAS_CLIENT_ID`, `CAS_SECRET_KEY`, `CAS_GRANT_REDIRECT_URI` | sandbox thật, lấy tại `sandbox.console.bankhub.dev/developer/keys` |
 | Cas Webhook | `CAS_WEBHOOK_URL` | URL đăng ký trên Cas Console; dev local dùng **ngrok** → `https://<id>.ngrok-free.app/api/v1/webhook/cas` |
-| PayOS (billing) | `PAYOS_CHECKSUM_KEY`, `PAYOS_BILLING_WEBHOOK_URL` | mock qua Postman, chưa có account PayOS thật |
+| PayOS (billing) | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`, `PAYOS_BILLING_WEBHOOK_URL` | mock fallback khi thiếu CLIENT_ID/API_KEY; webhook upgrade + overage |
 | Webhook security | `WEBHOOK_SIGNATURE_HEADER`, `WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS`, `WEBHOOK_IDEMPOTENCY_TTL_SECONDS`, `WEBHOOK_SKIP_SIGNATURE_VERIFY` | dev local/ngrok: `WEBHOOK_SKIP_SIGNATURE_VERIFY=true`; production **phải** `false` |
 | AI Classification | `AI_CLASSIFICATION_THRESHOLD=85` | mặc định, tenant có thể override qua `tenants.classification_threshold` |
 | Rate Limiting | `RATE_LIMIT_PER_MINUTE=120` | giới hạn request/phút, tính theo `tenantId` (fallback `userId`/IP) qua `TenantThrottlerGuard` |
@@ -125,7 +126,7 @@ curl -X POST "http://localhost:3000/api/v1/webhook/cas" \
 
 **Lưu ý Dashboard:** FE gọi `GET /transactions?limit=100` (max BE cho phép).
 
-**Deploy VPS:** hoãn **Sprint 4** — không chặn đóng Sprint 1. Xem `deploy/README.md` khi sẵn sàng production.
+**Deploy VPS (Sprint 4 — còn lại):** Dockerfiles + `deploy.yml` + `deploy/README.md` đã có; cần cấu hình secrets GitHub + domain/SSL trên VPS thật. Xem `deploy/README.md`.
 
 ## Tài khoản demo Cas (sandbox)
 

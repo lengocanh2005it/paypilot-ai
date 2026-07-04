@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { SubscriptionPlan } from '@prisma/client';
 import { meetsPlan } from '../../common/util/plan.util';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -73,5 +78,22 @@ export class SettingsService {
     };
     await this.redis.client.set(`settings:notifications:${tenantId}`, JSON.stringify(config));
     return config;
+  }
+
+  async testSlackWebhook(webhookUrl: string): Promise<void> {
+    let res: Response;
+    try {
+      res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: '[X-Cash AI] Kiểm tra kết nối Slack thành công ✓' }),
+      });
+    } catch {
+      throw new BadRequestException('Không thể kết nối đến Slack webhook URL.');
+    }
+
+    if (!res.ok) {
+      throw new BadRequestException(`Slack webhook không hợp lệ (HTTP ${res.status}).`);
+    }
   }
 }
