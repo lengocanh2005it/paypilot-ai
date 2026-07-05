@@ -614,6 +614,11 @@ function BillingTab() {
   const [cycleFilters, setCycleFilters] = useState({ source: '', direction: '', search: '' });
   const [cycleSearch, setCycleSearch] = useState('');
 
+  useEffect(() => {
+    const t = setTimeout(() => setCycleFilters((f) => ({ ...f, search: cycleSearch.trim() })), 500);
+    return () => clearTimeout(t);
+  }, [cycleSearch]);
+
   const {
     data: cycleData,
     isLoading: isCycleLoading,
@@ -867,11 +872,6 @@ function BillingTab() {
               placeholder="Tìm theo nội dung..."
               value={cycleSearch}
               onChange={(e) => setCycleSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter')
-                  setCycleFilters((f) => ({ ...f, search: cycleSearch.trim() }));
-              }}
-              onBlur={() => setCycleFilters((f) => ({ ...f, search: cycleSearch.trim() }))}
               className="h-8 w-48 text-sm"
             />
             <Select
