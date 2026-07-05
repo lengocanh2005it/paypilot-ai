@@ -634,7 +634,13 @@ export default function TransactionsPage() {
         onOpenChange={setSheetOpen}
       />
 
-      <ImportTransactionsDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+      <ImportTransactionsDialog
+        open={importDialogOpen}
+        onOpenChange={(open) => {
+          setImportDialogOpen(open);
+          if (!open) refetch();
+        }}
+      />
 
       <ConfirmDialog
         open={bulkConfirmOpen}
