@@ -31,8 +31,10 @@ export function useTransactionEvents() {
 
       es.onmessage = (e: MessageEvent<string>) => {
         try {
-          const event = JSON.parse(e.data) as TransactionEvent;
-          if (event.type !== 'transaction_classified') return; // keepalive
+          // Backend SSE format: { data: TransactionEvent }
+          const parsed = JSON.parse(e.data) as { data: TransactionEvent };
+          const event = parsed.data;
+          if (event?.type !== 'transaction_classified') return; // keepalive
           void qc.invalidateQueries({ queryKey: ['transactions'] });
           void qc.invalidateQueries({
             queryKey: ['transactions', event.transactionId, 'detail'],
