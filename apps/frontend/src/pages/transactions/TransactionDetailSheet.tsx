@@ -63,7 +63,10 @@ export function TransactionDetailSheet({
         <SheetHeader>
           <SheetTitle>Chi tiết giao dịch</SheetTitle>
           {displayTxn ? (
-            <SheetDescription className="font-mono text-xs">
+            <SheetDescription
+              className="truncate font-mono text-xs"
+              title={displayTxn.transactionId}
+            >
               {displayTxn.transactionId}
             </SheetDescription>
           ) : null}
