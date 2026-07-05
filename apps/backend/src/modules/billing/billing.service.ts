@@ -13,6 +13,18 @@ import { PayosService } from './payos.service';
 
 const OVERAGE_PLANS = ['starter', 'pro'] as const;
 
+function startOfDayUTC(d: Date | null): Date {
+  const r = new Date(d ?? 0);
+  r.setUTCHours(0, 0, 0, 0);
+  return r;
+}
+
+function endOfDayUTC(d: Date | null): Date {
+  const r = new Date(d ?? 0);
+  r.setUTCHours(23, 59, 59, 999);
+  return r;
+}
+
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
@@ -50,19 +62,24 @@ export class BillingService {
     });
     if (!sub) throw new NotFoundException('Không tìm thấy gói dịch vụ');
 
+    // Dùng đầu ngày / cuối ngày UTC để tránh bỏ sót GD trong ngày bắt đầu chu kỳ
+    // (currentCycleStart lưu đúng timestamp khi subscription được tạo, không phải 00:00)
+    const cycleFrom = startOfDayUTC(sub.currentCycleStart);
+    const cycleTo = endOfDayUTC(sub.currentCycleEnd);
+
     const [fromBank, fromImport] = await Promise.all([
       this.prisma.transaction.count({
         where: {
           tenantId,
           source: TransactionSource.cas,
-          transactionDate: { gte: sub.currentCycleStart, lte: sub.currentCycleEnd },
+          transactionDate: { gte: cycleFrom, lte: cycleTo },
         },
       }),
       this.prisma.transaction.count({
         where: {
           tenantId,
           source: TransactionSource.import,
-          transactionDate: { gte: sub.currentCycleStart, lte: sub.currentCycleEnd },
+          transactionDate: { gte: cycleFrom, lte: cycleTo },
         },
       }),
     ]);
@@ -86,10 +103,13 @@ export class BillingService {
     });
     if (!sub) throw new NotFoundException('Không tìm thấy gói dịch vụ');
 
+    const cycleFrom = startOfDayUTC(sub.currentCycleStart);
+    const cycleTo = endOfDayUTC(sub.currentCycleEnd);
+
     const transactions = await this.prisma.transaction.findMany({
       where: {
         tenantId,
-        transactionDate: { gte: sub.currentCycleStart, lte: sub.currentCycleEnd },
+        transactionDate: { gte: cycleFrom, lte: cycleTo },
       },
       select: {
         id: true,
@@ -105,8 +125,8 @@ export class BillingService {
     });
 
     return {
-      cycleStart: sub.currentCycleStart,
-      cycleEnd: sub.currentCycleEnd,
+      cycleStart: cycleFrom,
+      cycleEnd: cycleTo,
       total: transactions.length,
       transactions,
     };
