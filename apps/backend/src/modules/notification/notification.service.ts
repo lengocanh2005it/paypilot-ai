@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { NotificationType, Prisma } from '@prisma/client';
-import { Observable, Subject } from 'rxjs';
+import { interval, merge, Observable, Subject } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationDeliveryService } from './notification-delivery.service';
@@ -66,10 +66,15 @@ export class NotificationService {
       throw new UnauthorizedException('Token không hợp lệ');
     }
 
-    return this.txEventBus.pipe(
+    const events$ = this.txEventBus.pipe(
       filter((e) => e.tenantId === tenantId),
       map((e) => ({ data: e.event })),
     );
+    // keepalive mỗi 25s để tránh idle-close của proxy/browser
+    const keepalive$ = interval(25_000).pipe(
+      map(() => ({ data: { type: 'keepalive' } as unknown as TransactionEvent })),
+    );
+    return merge(events$, keepalive$);
   }
 
   emitTransactionClassified(

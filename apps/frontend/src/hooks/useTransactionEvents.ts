@@ -32,14 +32,13 @@ export function useTransactionEvents() {
       es.onmessage = (e: MessageEvent<string>) => {
         try {
           const event = JSON.parse(e.data) as TransactionEvent;
-          if (event.type === 'transaction_classified') {
-            void qc.invalidateQueries({ queryKey: ['transactions'] });
-            void qc.invalidateQueries({
-              queryKey: ['transactions', event.transactionId, 'detail'],
-            });
-            if (event.status === 'review') {
-              void qc.invalidateQueries({ queryKey: ['review'] });
-            }
+          if (event.type !== 'transaction_classified') return; // keepalive
+          void qc.invalidateQueries({ queryKey: ['transactions'] });
+          void qc.invalidateQueries({
+            queryKey: ['transactions', event.transactionId, 'detail'],
+          });
+          if (event.status === 'review') {
+            void qc.invalidateQueries({ queryKey: ['review'] });
           }
         } catch {
           // ignore malformed events

@@ -141,6 +141,9 @@ export default function TransactionsPage() {
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['transactions', page, status, source, fromDate, toDate, debouncedSearch],
     queryFn: () => getApiData<TransactionListResponse>(queryUrl),
+    // Fallback polling nếu SSE disconnect; SSE thường invalidate trước 30s này
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   const items = data?.items ?? [];
