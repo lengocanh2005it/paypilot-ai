@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/table';
 import { useAuth } from '@/hooks/useAuth';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useTransactionEvents } from '@/hooks/useTransactionEvents';
 import { getApiData, postApiData } from '@/lib/api';
 import { formatTransactionTime } from '@/lib/dashboard-transactions';
 import { getErrorMessage } from '@/lib/errors';
@@ -103,6 +104,7 @@ function isPendingTransaction(status: string) {
 export default function TransactionsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  useTransactionEvents();
   const canBulkReclassify = user?.role === Role.ADMIN || user?.role === Role.ACCOUNTANT;
   const canImport = user?.role === Role.ADMIN || user?.role === Role.ACCOUNTANT;
   const [page, setPage] = useState(1);
@@ -139,7 +141,6 @@ export default function TransactionsPage() {
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['transactions', page, status, source, fromDate, toDate, debouncedSearch],
     queryFn: () => getApiData<TransactionListResponse>(queryUrl),
-    refetchInterval: 10_000,
   });
 
   const items = data?.items ?? [];

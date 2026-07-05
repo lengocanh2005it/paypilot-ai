@@ -119,6 +119,12 @@ export class ClassificationService {
       return created;
     });
 
+    this.notificationService.emitTransactionClassified(
+      transaction.tenantId,
+      transaction.id,
+      status as 'classified' | 'review',
+    );
+
     if (status === TransactionStatus.review) {
       await this.notificationService
         .createReviewNeeded(
