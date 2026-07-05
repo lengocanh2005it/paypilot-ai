@@ -614,7 +614,11 @@ function BillingTab() {
   const [cycleFilters, setCycleFilters] = useState({ source: '', direction: '', search: '' });
   const [cycleSearch, setCycleSearch] = useState('');
 
-  const { data: cycleData, isLoading: isCycleLoading } = useQuery({
+  const {
+    data: cycleData,
+    isLoading: isCycleLoading,
+    isFetching: isCycleFetching,
+  } = useQuery({
     queryKey: ['billing', 'cycle-transactions', cycleFilters],
     queryFn: () => {
       const params = new URLSearchParams();
@@ -627,6 +631,7 @@ function BillingTab() {
         .then((r) => r.data.data);
     },
     enabled: cycleDetailOpen,
+    placeholderData: (prev) => prev,
   });
 
   // Mở sẵn dialog chọn gói khi được điều hướng từ nút "Nâng cấp gói dịch vụ" (?upgrade=1)
@@ -913,7 +918,12 @@ function BillingTab() {
               </Button>
             )}
           </div>
-          <div className="overflow-y-auto flex-1 -mx-6 px-6">
+          <div
+            className={cn(
+              'overflow-y-auto flex-1 -mx-6 px-6 transition-opacity',
+              isCycleFetching && !isCycleLoading && 'opacity-60',
+            )}
+          >
             {isCycleLoading ? (
               <div className="space-y-2 py-4">
                 {Array.from({ length: 5 }).map((_, i) => (
