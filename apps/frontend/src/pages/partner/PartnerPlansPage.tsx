@@ -26,6 +26,7 @@ interface PlanPricing {
   plan: string;
   pricePerMonth: number;
   transactionQuota: number;
+  copilotQuota: number;
   overagePricePerTransaction: number | null;
   editable: boolean;
 }
@@ -50,6 +51,7 @@ export default function PartnerPlansPage() {
   const [priceInput, setPriceInput] = useState('');
   const [quotaInput, setQuotaInput] = useState('');
   const [overageInput, setOverageInput] = useState('');
+  const [copilotQuotaInput, setCopilotQuotaInput] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const { data: planPricing, isLoading: loadingPricing } = useQuery({
@@ -63,11 +65,13 @@ export default function PartnerPlansPage() {
       plan: string;
       pricePerMonth: number;
       transactionQuota: number;
+      copilotQuota: number;
       overagePricePerTransaction: number | null;
     }) =>
       api.patch(`/partner/plan-pricing/${payload.plan}`, {
         pricePerMonth: payload.pricePerMonth,
         transactionQuota: payload.transactionQuota,
+        copilotQuota: payload.copilotQuota,
         overagePricePerTransaction: payload.overagePricePerTransaction ?? undefined,
       }),
     onSuccess: () => {
@@ -82,6 +86,7 @@ export default function PartnerPlansPage() {
     setEditingPlan(plan);
     setPriceInput(String(plan.pricePerMonth));
     setQuotaInput(String(plan.transactionQuota));
+    setCopilotQuotaInput(String(plan.copilotQuota ?? -1));
     setOverageInput(
       plan.overagePricePerTransaction != null ? String(plan.overagePricePerTransaction) : '',
     );
@@ -107,6 +112,7 @@ export default function PartnerPlansPage() {
       plan: editingPlan.plan,
       pricePerMonth: Number(priceInput),
       transactionQuota: Number(quotaInput),
+      copilotQuota: copilotQuotaInput.trim() ? Number(copilotQuotaInput) : -1,
       overagePricePerTransaction: overageInput.trim() ? Number(overageInput) : null,
     });
   };
@@ -174,6 +180,16 @@ export default function PartnerPlansPage() {
                           </span>
                         </p>
                         <p>
+                          Copilot:{' '}
+                          <span className="font-medium text-foreground">
+                            {p.copilotQuota === -1
+                              ? 'Không giới hạn'
+                              : p.copilotQuota === 0
+                                ? 'Không có'
+                                : `${p.copilotQuota} lượt/tháng`}
+                          </span>
+                        </p>
+                        <p>
                           Phí vượt:{' '}
                           <span className="font-medium text-foreground">
                             {p.overagePricePerTransaction != null
@@ -215,6 +231,7 @@ export default function PartnerPlansPage() {
                       <th className="pb-2 pr-6 font-medium">Gói</th>
                       <th className="pb-2 pr-6 font-medium">Giá/tháng</th>
                       <th className="pb-2 pr-6 font-medium">Quota GD/tháng</th>
+                      <th className="pb-2 pr-6 font-medium">Copilot/tháng</th>
                       <th className="pb-2 pr-6 font-medium">Phí vượt/GD</th>
                       <th className="pb-2 font-medium">Thao tác</th>
                     </tr>
@@ -226,6 +243,13 @@ export default function PartnerPlansPage() {
                         <td className="py-2 pr-6">{formatVND(p.pricePerMonth)}</td>
                         <td className="py-2 pr-6">
                           {p.plan === 'enterprise' ? 'Không giới hạn' : p.transactionQuota}
+                        </td>
+                        <td className="py-2 pr-6">
+                          {p.copilotQuota === -1
+                            ? 'Không giới hạn'
+                            : p.copilotQuota === 0
+                              ? 'Không có'
+                              : p.copilotQuota}
                         </td>
                         <td className="py-2 pr-6">
                           {p.overagePricePerTransaction != null
@@ -280,6 +304,19 @@ export default function PartnerPlansPage() {
                   value={quotaInput}
                   onChange={(e) => setQuotaInput(e.target.value)}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="copilot-quota">Lượt chat Copilot/tháng</Label>
+                <Input
+                  id="copilot-quota"
+                  type="number"
+                  min={-1}
+                  value={copilotQuotaInput}
+                  onChange={(e) => setCopilotQuotaInput(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Nhập -1 để không giới hạn lượt chat (dành cho Enterprise).
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="overage">

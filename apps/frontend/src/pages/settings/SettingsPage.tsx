@@ -508,6 +508,8 @@ interface PlanData {
   currentCycleStart: string;
   currentCycleEnd: string;
   status: string;
+  copilotQuota: number;
+  copilotUsed: number;
   usageBreakdown?: { fromBank: number; fromImport: number };
 }
 
@@ -958,6 +960,15 @@ function BillingTab() {
     ? Math.min(100, Math.round((data.transactionUsed / data.transactionQuota) * 100))
     : 0;
   const isNearLimit = usedPct >= 80;
+
+  const copilotUnlimited = data?.copilotQuota === -1;
+  const copilotUsedPct =
+    data && !copilotUnlimited
+      ? Math.min(100, Math.round((data.copilotUsed / data.copilotQuota) * 100))
+      : 0;
+  const copilotNearLimit = copilotUsedPct >= 80;
+  const copilotExceeded = copilotUsedPct >= 100;
+
   const isDev = import.meta.env.DEV;
 
   return (
@@ -1050,6 +1061,47 @@ function BillingTab() {
                   </button>
                 )}
               </div>
+
+              {/* Copilot quota */}
+              {!copilotUnlimited && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Lượt chat Copilot</span>
+                    <span
+                      className={cn(
+                        'font-medium',
+                        copilotExceeded
+                          ? 'text-destructive'
+                          : copilotNearLimit
+                            ? 'text-orange-500'
+                            : undefined,
+                      )}
+                    >
+                      {data.copilotUsed.toLocaleString()} / {data.copilotQuota.toLocaleString()}
+                    </span>
+                  </div>
+                  <Progress
+                    value={copilotUsedPct}
+                    className={cn(
+                      copilotExceeded
+                        ? '[&>div]:bg-destructive'
+                        : copilotNearLimit
+                          ? '[&>div]:bg-orange-500'
+                          : undefined,
+                    )}
+                  />
+                  {copilotExceeded && (
+                    <p className="text-xs text-destructive">
+                      Đã dùng hết lượt chat Copilot. Nâng cấp gói để tiếp tục.
+                    </p>
+                  )}
+                  {copilotNearLimit && !copilotExceeded && (
+                    <p className="text-xs text-orange-500">
+                      Sắp hết lượt chat Copilot trong chu kỳ này.
+                    </p>
+                  )}
+                </div>
+              )}
             </>
           )}
         </CardContent>
