@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { tavily } from '@tavily/core';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
@@ -8,6 +9,8 @@ import { getCasIntegrationFaq } from './copilot-cas-faq';
 
 @Injectable()
 export class CopilotToolService {
+  private readonly logger = new Logger(CopilotToolService.name);
+
   constructor(
     private readonly reportService: ReportService,
     private readonly onboardingService: OnboardingService,
@@ -34,14 +37,15 @@ export class CopilotToolService {
 
     const status = await this.onboardingService.getStatus(tenantId);
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    // GD từ Casso có grantId (non-null); GD import Excel có grantId = null
     const [lastCas, countLast7Days] = await Promise.all([
       this.prisma.transaction.findFirst({
-        where: { tenantId, source: 'cas' },
+        where: { tenantId, grantId: { not: null } },
         orderBy: { transactionDate: 'desc' },
         select: { transactionDate: true },
       }),
       this.prisma.transaction.count({
-        where: { tenantId, source: 'cas', transactionDate: { gte: sevenDaysAgo } },
+        where: { tenantId, grantId: { not: null }, transactionDate: { gte: sevenDaysAgo } },
       }),
     ]);
 
@@ -104,13 +108,19 @@ export class CopilotToolService {
 
       case 'search_transactions': {
         const keyword = String(args.keyword ?? '');
-        const source = args.source
-          ? (String(args.source) as import('@prisma/client').TransactionSource)
-          : undefined;
+        // source: 'cas' = GD từ Casso (grantId not null), 'import' = Excel (grantId null)
+        const sourceArg = args.source ? String(args.source) : undefined;
+        const grantFilter =
+          sourceArg === 'cas'
+            ? { grantId: { not: null } }
+            : sourceArg === 'import'
+              ? { grantId: null }
+              : {};
         const limit = Math.min(20, Math.max(1, Number(args.limit ?? 10)));
         const items = await this.prisma.transaction.findMany({
           where: {
             tenantId,
+            ...grantFilter,
             ...(keyword
               ? {
                   OR: [
@@ -119,14 +129,13 @@ export class CopilotToolService {
                   ],
                 }
               : {}),
-            ...(source ? { source } : {}),
           },
           select: {
             transactionId: true,
             content: true,
             amount: true,
             transactionDate: true,
-            source: true,
+            grantId: true,
             classification: {
               select: { debitAccount: true, creditAccount: true, status: true },
             },
@@ -134,11 +143,52 @@ export class CopilotToolService {
           orderBy: { transactionDate: 'desc' },
           take: limit,
         });
-        return { items, total: items.length };
+        return {
+          items: items.map((t) => ({ ...t, source: t.grantId ? 'cas' : 'import' })),
+          total: items.length,
+        };
       }
+
+      case 'search_casso_public':
+        return this.searchCassoPublic(String(args.query ?? ''));
 
       default:
         throw new BadRequestException(`Unknown copilot tool: ${name}`);
     }
+  }
+
+  private async searchCassoPublic(query: string) {
+    if (!query.trim()) return { results: [], disclaimer: '' };
+
+    const cacheKey = `copilot:tool:casso_search:${Buffer.from(query).toString('base64').slice(0, 64)}`;
+    const cached = await this.redisService.client.get(cacheKey);
+    if (cached) return JSON.parse(cached) as object;
+
+    const apiKey = this.configService.get<string>('TAVILY_API_KEY', '');
+    if (!apiKey) {
+      this.logger.warn('TAVILY_API_KEY chưa cấu hình — search_casso_public bị bỏ qua');
+      return { results: [], disclaimer: 'Tính năng tìm kiếm chưa được cấu hình.' };
+    }
+
+    const client = tavily({ apiKey });
+    const response = await client.search(`${query} site:casso.vn`, {
+      maxResults: 3,
+      searchDepth: 'basic',
+      includeAnswer: true,
+    });
+
+    const payload = {
+      answer: response.answer ?? null,
+      results: response.results.map((r) => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.content?.slice(0, 300) ?? '',
+      })),
+      disclaimer:
+        'Thông tin từ website công khai của Casso. Để biết chi tiết tích hợp trong X-Cash AI, vào Cài đặt → Ngân hàng.',
+    };
+
+    await this.redisService.client.set(cacheKey, JSON.stringify(payload), 'EX', 86400);
+    return payload;
   }
 }

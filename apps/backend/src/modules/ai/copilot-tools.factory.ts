@@ -1,3 +1,4 @@
+import type { ConfigService } from '@nestjs/config';
 import type { CopilotToolService } from './copilot-tool.service';
 
 type ToolDefinition = {
@@ -15,7 +16,9 @@ type ToolDefinition = {
 export function buildCopilotTools(
   tenantId: string,
   toolService: CopilotToolService,
+  configService?: ConfigService,
 ): ToolDefinition[] {
+  const cassoSearchEnabled = configService?.get<boolean>('COPILOT_CASSO_SEARCH_ENABLED') ?? false;
   const bind =
     (name: string) =>
     (args: Record<string, unknown>): Promise<unknown> =>
@@ -194,5 +197,32 @@ export function buildCopilotTools(
         function: bind('search_transactions'),
       },
     },
+    ...(cassoSearchEnabled
+      ? [
+          {
+            type: 'function' as const,
+            function: {
+              name: 'search_casso_public',
+              description:
+                'Tìm kiếm thông tin công khai từ website Casso (casso.vn). Chỉ dùng khi user hỏi về sản phẩm Casso như ngân hàng hỗ trợ, giá dịch vụ, tính năng — thông tin không có trong hệ thống X-Cash AI.',
+              strict: true,
+              parameters: {
+                type: 'object',
+                properties: {
+                  query: {
+                    type: 'string',
+                    description:
+                      'Câu hỏi tìm kiếm, vd "Casso hỗ trợ ngân hàng nào", "giá dịch vụ Casso"',
+                  },
+                },
+                required: ['query'],
+                additionalProperties: false,
+              },
+              parse: JSON.parse,
+              function: bind('search_casso_public'),
+            },
+          },
+        ]
+      : []),
   ];
 }

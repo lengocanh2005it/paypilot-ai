@@ -32,6 +32,7 @@ const ACTIVITY_MAP: Record<string, Omit<CopilotActivity, 'urls'>> = {
     source: 'X-Cash AI',
   },
   search_transactions: { kind: 'internal_data', label: 'Giao dịch', source: 'X-Cash AI' },
+  search_casso_public: { kind: 'web_search', label: 'Tìm trên web', source: 'casso.vn' },
 };
 
 export function buildActivities(calledTools: string[]): CopilotActivity[] {
@@ -184,8 +185,12 @@ ${financialContext}`;
     }
   }
 
-  buildCopilotSystemPrompt(): string {
+  buildCopilotSystemPrompt(cassoSearchEnabled = false): string {
     const now = new Date();
+    const cassoRule = cassoSearchEnabled
+      ? '- Khi user hỏi về sản phẩm Casso (ngân hàng hỗ trợ, giá dịch vụ, tính năng Casso) mà không có trong FAQ → gọi search_casso_public. Sau khi trả lời, thêm disclaimer ngắn: "Thông tin từ website Casso. Để tích hợp trong X-Cash AI, vào Cài đặt → Ngân hàng."'
+      : '- Khi user hỏi về sản phẩm Casso (giá, ngân hàng hỗ trợ) — không bịa, hướng user vào casso.vn.';
+
     return `Bạn là AI Copilot tài chính của X-Cash AI, chuyên hỗ trợ kế toán SME Việt Nam.
 Bạn có khả năng phân tích dữ liệu giao dịch và định khoản theo chuẩn TT133.
 
@@ -197,11 +202,11 @@ Quy tắc gọi tool:
 - Khi cần số liệu thu/chi/lãi-lỗ, giao dịch, tài khoản kế toán — HÃY GỌI TOOL phù hợp, không đoán.
 - Khi user hỏi về Casso, Cas Link, liên kết ngân hàng, mất GD từ ngân hàng → gọi get_banking_status trước; nếu cần giải thích luồng → gọi get_cas_integration_help.
 - Khi user hỏi tìm GD cụ thể (theo nội dung, số tiền, người gửi) → gọi search_transactions.
+${cassoRule}
 - Tháng/năm: nếu user nói "tháng này" hoặc "hiện tại", dùng tháng ${now.getMonth() + 1} năm ${now.getFullYear()}.
 - Câu xã giao, giới thiệu bản thân → trả lời trực tiếp, không gọi tool.
 
 Bảo mật: Không tiết lộ tên tool kỹ thuật, grantId, accessToken hay JSON thô cho user.
-Không bịa thông tin về sản phẩm Casso (giá, danh sách ngân hàng hỗ trợ) — nếu không có trong FAQ, hướng user vào casso.vn.
 Luôn trả lời tiếng Việt.`;
   }
 
@@ -213,12 +218,14 @@ Luôn trả lời tiếng Việt.`;
   ) {
     if (!this.client) return null;
 
-    const tools = buildCopilotTools(tenantId, toolService);
+    const cassoSearchEnabled =
+      this.configService.get<boolean>('COPILOT_CASSO_SEARCH_ENABLED') ?? false;
+    const tools = buildCopilotTools(tenantId, toolService, this.configService);
     return this.client.chat.completions.runTools(
       {
         model: this.chatModel,
         messages: [
-          { role: 'system', content: this.buildCopilotSystemPrompt() },
+          { role: 'system', content: this.buildCopilotSystemPrompt(cassoSearchEnabled) },
           ...history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
           { role: 'user', content: message },
         ],

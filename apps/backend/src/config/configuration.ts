@@ -69,4 +69,6 @@ export default () => ({
     process.env.COPILOT_CONTEXT_CACHE_TTL_SECONDS ?? '300',
     10,
   ),
+  COPILOT_CASSO_SEARCH_ENABLED: process.env.COPILOT_CASSO_SEARCH_ENABLED === '1',
+  TAVILY_API_KEY: process.env.TAVILY_API_KEY ?? '',
 });

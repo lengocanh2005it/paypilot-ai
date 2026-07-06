@@ -2,7 +2,7 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Copilot Function Calling migration (Phase 2)** — SSE streaming endpoint `POST /ai/copilot/stream`, tool thứ 8 `search_transactions`, `CopilotLoadingStatus.tsx`, FE streaming với JSON fallback.
+Cập nhật lần cuối: **Copilot Function Calling migration (Phase 3)** — `search_casso_public` tool via Tavily, tìm kiếm domain `casso.vn`, cache Redis 24h, env flag `COPILOT_CASSO_SEARCH_ENABLED` mặc định tắt.
 
 ---
 
@@ -81,10 +81,17 @@ Cập nhật lần cuối: **Copilot Function Calling migration (Phase 2)** — 
 
 **Đã xong (Copilot Function Calling — Phase 2):**
 - Backend: `POST /ai/copilot/stream` — SSE endpoint, `@Res()` bypass `ResponseInterceptor`, stream `activity`/`delta`/`done` events; fallback về `chatCopilot()` khi flag=0 ✅
-- Backend: tool thứ 8 `search_transactions` — Prisma trực tiếp (tránh circular dep), filter keyword (content/senderAccount), source (cas|import), limit 1–20 ✅
+- Backend: tool thứ 8 `search_transactions` — Prisma trực tiếp (tránh circular dep), filter keyword (content/senderAccount), source (cas=grantId not null | import=grantId null), limit 1–20 ✅
 - Backend: `OpenAiService.buildCopilotSystemPrompt()` + `createCopilotRunner()` (stream=true) + export `buildActivities()` dùng chung cho cả 2 endpoint ✅
 - Frontend: `CopilotLoadingStatus.tsx` — dots bounce khi chưa có activity; icon + label khi tool đang chạy ✅
 - Frontend: `CopilotPage.tsx` rewrite — `sendViaStream()` dùng `fetch`+`ReadableStream`+`getAccessToken()`; `sendViaJson()` axios fallback; `streamingContent` state cho streaming bubble; `AbortController` để cleanup ✅
+
+**Đã xong (Copilot Function Calling — Phase 3):**
+- Backend: tool `search_casso_public` — Tavily API (`@tavily/core`), search `site:casso.vn`, cache Redis 24h theo query hash ✅
+- Backend: `COPILOT_CASSO_SEARCH_ENABLED=0` mặc định tắt; chỉ bật khi có `TAVILY_API_KEY` ✅
+- Backend: `buildCopilotTools()` nhận `configService` để kiểm tra flag, thêm tool vào danh sách có điều kiện ✅
+- Backend: `buildCopilotSystemPrompt(cassoSearchEnabled)` — khi bật thêm quy tắc gọi `search_casso_public` + disclaimer; khi tắt hướng user vào casso.vn ✅
+- Env mới: `COPILOT_CASSO_SEARCH_ENABLED`, `TAVILY_API_KEY` (`.env.example` + `configuration.ts`) ✅
 
 **Chưa làm (Sprint 4 — còn lại):**
 - Bổ sung env production đầy đủ vào `docker-compose.yml` (OpenAI, Resend, PayOS, v.v.) + deploy lên VPS
@@ -130,7 +137,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 │       ├── sprint-plan.md                     ← X-Cash AI ✅
 │       ├── payos-billing-plan.md              ← PayOS billing (đã hoàn thành) ✅
 │       ├── tt133-accounting.md                ← giải thích TT133 theo góc nhìn dev ✅
-│       └── copilot-function-calling-migration.md ← spec migrate Copilot → runTools (Phase 1 ✅; Phase 2 ✅; Phase 3 optional)
+│       └── copilot-function-calling-migration.md ← spec migrate Copilot → runTools (Phase 1 ✅; Phase 2 ✅; Phase 3 ✅)
 ├── apps/
 │   ├── backend/
 │   │   ├── .env.example
@@ -494,7 +501,8 @@ postinstall      → prisma generate
 - **Frontend dependencies đáng chú ý:** `qrcode.react` (`QRCodeSVG`) — PayOS v2 trả về raw VietQR string, không phải URL; phải render bằng `QRCodeSVG` thay vì `<img src>`. Import: `import { QRCodeSVG } from 'qrcode.react'`.
 - **Copilot function calling:** `COPILOT_USE_FUNCTION_CALLING=1` bật `runTools` — model gọi đúng tool khi cần, không preload context cố định. `tenantId` chỉ từ JWT closure (không expose trong tool schema). Tránh circular dep: `CopilotToolService` dùng Prisma trực tiếp cho `review_count` và `search_transactions`, không import `ClassificationModule`/`TransactionModule`. `AiModule` import `OnboardingModule` (không import `BankingModule`). `maxChatCompletions: 5`, `temperature: 0.3`. Response: `{ reply, meta?: { activities: CopilotActivity[] } }` — FE hiện chip nguồn bằng `CopilotSourceChips`.
 - **Copilot SSE streaming (Phase 2):** `POST /ai/copilot/stream` dùng `@Res()` để bypass `ResponseInterceptor`. Runner emit `functionToolCall` → SSE `activity` event (icon + label tiếng Việt). Runner emit `content` → SSE `delta` event (incremental text). Sau `runner.finalContent()` → SSE `done` event (`{ reply, meta }`). FE dùng `fetch` + `ReadableStream` + `getAccessToken()` (không dùng `EventSource` vì cần POST + Bearer). Fallback: nếu stream thất bại → retry bằng axios `/ai/copilot`.
-- **`search_transactions` tool:** Prisma trực tiếp — `content`+`senderAccount` ILIKE keyword; `source` cast sang `TransactionSource` enum (không phải string); limit 1–20. Tool 8 trong tổng số 8 tools của Copilot.
+- **`search_transactions` tool:** Prisma trực tiếp — `content`+`senderAccount` ILIKE keyword; `source=cas` → `grantId: { not: null }`, `source=import` → `grantId: null` (Transaction không có cột `source`, dùng `grantId` làm discriminator); limit 1–20.
+- **`search_casso_public` tool (Phase 3):** Tavily `@tavily/core`, query thêm `site:casso.vn`, cache 24h theo base64(query) key. Chỉ active khi `COPILOT_CASSO_SEARCH_ENABLED=1` + `TAVILY_API_KEY` set. `buildCopilotTools()` nhận `configService?` để kiểm tra flag — nếu không truyền (backward compat) thì tool không xuất hiện. SSE controller và `ACTIVITY_MAP` đã có entry `web_search` cho tool này.
 - **Copilot tools cache keys:** `copilot:tool:summary:{tenantId}:{y}-{m}` TTL=300s; `copilot:tool:banking:{tenantId}` TTL=60s. Key cũ `copilot:context:{tenantId}:{y}-{m}` còn dùng khi flag=0 (fallback).
 - **Overage billing flow:** (1) webhook banking ghi `usageLog(metric='overage_transaction')` khi Starter/Pro vượt quota; (2) cron `BillingCycleService` 2am daily tìm sub hết `currentCycleEnd` → gọi `createOverageOrder()` nếu có overage → reset `transactionUsedThisCycle=0` và `currentCycleEnd`; (3) tenant thấy banner cam trên BillingTab → click "Thanh toán ngay" → tạo PayOS order `orderType='overage'`; (4) webhook PayOS xác nhận → `confirmPayment()` nhận biết `orderType` → chỉ mark paid + auditLog, không đổi gói. Giá đọc từ `planPricing.overagePricePerTransaction` (không hardcode).
 - **`payment_orders.order_type`:** field `orderType` (default `'upgrade'`) — Prisma client typed bình thường, không cần `as any`.

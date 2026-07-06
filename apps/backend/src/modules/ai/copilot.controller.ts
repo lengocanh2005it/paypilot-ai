@@ -153,6 +153,11 @@ export class CopilotController {
           label: 'Đang tìm kiếm giao dịch…',
           source: 'X-Cash AI',
         },
+        search_casso_public: {
+          kind: 'web_search',
+          label: 'Đang tìm trên web (casso.vn)…',
+          source: 'casso.vn',
+        },
       };
       const meta = activityMap[call.name];
       if (meta) writeEvent('activity', meta);
