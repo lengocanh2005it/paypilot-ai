@@ -50,6 +50,11 @@ export class BillingService {
     });
     if (!sub) throw new NotFoundException('Không tìm thấy gói dịch vụ');
 
+    const planPricing = await this.prisma.planPricing.findUnique({
+      where: { plan: sub.plan },
+      select: { copilotQuota: true },
+    });
+
     return {
       plan: sub.plan,
       pricePerMonth: Number(sub.pricePerMonth),
@@ -58,6 +63,8 @@ export class BillingService {
       currentCycleStart: sub.currentCycleStart,
       currentCycleEnd: sub.currentCycleEnd,
       status: sub.status,
+      copilotQuota: planPricing?.copilotQuota ?? -1,
+      copilotUsed: sub.copilotUsedThisCycle,
     };
   }
 

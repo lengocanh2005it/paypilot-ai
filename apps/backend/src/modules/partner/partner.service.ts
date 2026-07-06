@@ -371,6 +371,7 @@ export class PartnerService {
       plan: p.plan,
       pricePerMonth: Number(p.pricePerMonth),
       transactionQuota: p.transactionQuota,
+      copilotQuota: p.copilotQuota,
       overagePricePerTransaction:
         p.overagePricePerTransaction !== null ? Number(p.overagePricePerTransaction) : null,
       editable: p.plan !== 'free',
@@ -396,6 +397,7 @@ export class PartnerService {
         pricePerMonth: dto.pricePerMonth,
         transactionQuota: dto.transactionQuota,
         overagePricePerTransaction: dto.overagePricePerTransaction ?? null,
+        ...(dto.copilotQuota !== undefined ? { copilotQuota: dto.copilotQuota } : {}),
       },
     });
 
@@ -428,6 +430,7 @@ export class PartnerService {
       plan: updated.plan,
       pricePerMonth: Number(updated.pricePerMonth),
       transactionQuota: updated.transactionQuota,
+      copilotQuota: updated.copilotQuota,
       overagePricePerTransaction:
         updated.overagePricePerTransaction !== null
           ? Number(updated.overagePricePerTransaction)
