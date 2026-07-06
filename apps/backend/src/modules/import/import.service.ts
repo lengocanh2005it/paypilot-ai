@@ -66,38 +66,104 @@ export class ImportService {
   }
 
   parseDate(raw: unknown): Date | null {
-    if (!raw) return null;
+    if (raw === null || raw === undefined || raw === '') return null;
 
-    // Excel serial number
-    if (typeof raw === 'number') {
-      const d = XLSX.SSF.parse_date_code(raw);
-      if (d) return new Date(Date.UTC(d.y, d.m - 1, d.d, 12, 0, 0));
+    if (typeof raw !== 'number') {
+      const fromString = this.parseDateString(String(raw).trim());
+      if (fromString) return fromString;
     }
 
-    const str = String(raw).trim();
+    if (typeof raw === 'number') {
+      return this.parseExcelSerialDate(raw);
+    }
 
-    // dd/MM/yyyy or dd-MM-yyyy
-    const dmyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-    // Excel chỉ có ngày — dùng 12:00 UTC để sort cùng ngày ổn định hơn midnight
+    return null;
+  }
+
+  /**
+   * Parse ngày cột import — luôn theo dd/MM VN từ chuỗi hiển thị;
+   * không dùng serial Excel (tránh locale máy hiểu MM/dd).
+   */
+  parseImportDate(
+    cell: XLSX.CellObject | undefined,
+    formattedValue: unknown,
+  ): { date: Date | null; displayValue: string; errorMessage?: string } {
+    const displayValue =
+      this.getDateDisplayText(cell, formattedValue) ?? String(formattedValue ?? '');
+
+    if (displayValue) {
+      const date = this.parseDateString(displayValue);
+      if (date) return { date, displayValue };
+    }
+
+    if (cell && typeof cell.v === 'number') {
+      const hasDisplayText = displayValue && !/^\d+(\.\d+)?$/.test(displayValue);
+      return {
+        date: null,
+        displayValue,
+        errorMessage: hasDisplayText
+          ? `Ngày "${displayValue}" không hợp lệ — dùng dd/MM/yyyy (vd 03/07/2026 cho 3 tháng 7).`
+          : 'Cột Ngày đang là số Excel (ô căn phải). Chọn Format → Text, hoặc nhập dd/MM/yyyy (vd 01/07/2026 = 1 tháng 7).',
+      };
+    }
+
+    return {
+      date: null,
+      displayValue,
+      errorMessage: 'Ngày không hợp lệ (định dạng dd/MM/yyyy)',
+    };
+  }
+
+  getDateDisplayText(cell: XLSX.CellObject | undefined, formattedValue: unknown): string | null {
+    if (typeof formattedValue === 'string' && formattedValue.trim()) {
+      return formattedValue.trim();
+    }
+    if (cell?.t === 's' && typeof cell.v === 'string') {
+      return cell.v.trim();
+    }
+    if (typeof cell?.w === 'string' && cell.w.trim() && !/^\d+(\.\d+)?$/.test(cell.w.trim())) {
+      return cell.w.trim();
+    }
+    if (cell && typeof cell.v === 'number' && cell.z) {
+      const formatted = XLSX.SSF.format(cell.z, cell.v);
+      if (formatted && !/^\d+(\.\d+)?$/.test(formatted.trim())) {
+        return formatted.trim();
+      }
+    }
+    return null;
+  }
+
+  private parseDateString(str: string): Date | null {
+    if (!str) return null;
+
+    // dd/MM/yyyy, dd/MM/yy, dd-MM-yyyy (chuẩn VN — ngày trước tháng)
+    const dmyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
     if (dmyMatch) {
-      const [, dd, mm, yyyy] = dmyMatch;
+      const [, dd, mm, yy] = dmyMatch;
       const day = Number(dd);
       const month = Number(mm);
-      const year = Number(yyyy);
+      let year = Number(yy);
+      if (yy.length === 2) {
+        year = 2000 + year;
+      }
       if (month < 1 || month > 12 || day < 1 || day > 31) return null;
       const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-      // Verify no overflow (e.g., day=32 rolls over)
       if (d.getUTCDate() !== day || d.getUTCMonth() !== month - 1) return null;
       if (!Number.isNaN(d.getTime())) return d;
     }
 
-    // yyyy-MM-dd
     const ymdMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (ymdMatch) {
       const d = new Date(str);
       if (!Number.isNaN(d.getTime())) return d;
     }
 
+    return null;
+  }
+
+  private parseExcelSerialDate(serial: number): Date | null {
+    const d = XLSX.SSF.parse_date_code(serial);
+    if (d) return new Date(Date.UTC(d.y, d.m - 1, d.d, 12, 0, 0));
     return null;
   }
 
@@ -116,6 +182,11 @@ export class ImportService {
     const raw: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
       defval: '',
+    }) as unknown[][];
+    const formattedRows: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: '',
+      raw: false,
     }) as unknown[][];
 
     // row 0 = header, skip
@@ -138,21 +209,23 @@ export class ImportService {
       // skip fully empty rows
       if (cols.every((c) => c === '' || c === null || c === undefined)) continue;
 
-      const rawDate = cols[0];
+      const dateCell = sheet[XLSX.utils.encode_cell({ r: i + 1, c: 0 })];
+      const formattedDate = formattedRows[i + 1]?.[0];
       const rawDesc = cols[1];
       const rawAmount = cols[2];
       const rawDirection = cols[3];
 
       let hasError = false;
 
-      // -- date
-      const date = this.parseDate(rawDate);
+      // -- date (chuỗi hiển thị dd/MM VN — không tin serial Excel)
+      const parsedDate = this.parseImportDate(dateCell, formattedDate);
+      const date = parsedDate.date;
       if (!date) {
         errors.push({
           row: excelRow,
           column: 'Ngày',
-          value: String(rawDate),
-          message: 'Ngày không hợp lệ (định dạng dd/MM/yyyy)',
+          value: parsedDate.displayValue,
+          message: parsedDate.errorMessage ?? 'Ngày không hợp lệ (định dạng dd/MM/yyyy)',
         });
         hasError = true;
       } else if (Date.now() - date.getTime() > TWO_YEARS_MS) {
@@ -427,6 +500,15 @@ export class ImportService {
     ];
     const ws = XLSX.utils.aoa_to_sheet(data);
 
+    // Cột Ngày = text (@) — tránh Excel tự đổi sang serial theo locale máy (MM/dd)
+    for (let r = 1; r <= 500; r++) {
+      const ref = XLSX.utils.encode_cell({ r, c: 0 });
+      const cell = ws[ref];
+      if (!cell) continue;
+      const text = String(cell.v);
+      ws[ref] = { t: 's', v: text, w: text };
+    }
+
     // Column widths
     ws['!cols'] = [{ wch: 14 }, { wch: 40 }, { wch: 16 }, { wch: 8 }];
 
@@ -446,12 +528,16 @@ export class ImportService {
       ['HƯỚNG DẪN NHẬP LIỆU'],
       [],
       ['Cột', 'Định dạng', 'Ví dụ'],
-      ['Ngày', 'dd/MM/yyyy', '01/07/2026'],
+      ['Ngày', 'dd/MM/yyyy', '01/07/2026 (= 1 tháng 7)'],
       ['Mô tả', 'Chuỗi ký tự, tối đa 500', 'Mua nguyên liệu cafe'],
       ['Số tiền', 'Số nguyên dương (VNĐ)', '2500000'],
       ['Loại', 'Thu hoặc Chi', 'Chi'],
       [],
       ['Lưu ý:'],
+      ['- Định dạng ngày: dd/MM/yyyy (ngày/tháng/năm Việt Nam). Ví dụ 01/07/2026 = 1 tháng 7'],
+      [
+        '- Nếu ô Ngày căn phải sau khi gõ, Excel đang lưu dạng số — format cột Text (@) hoặc tải lại file mẫu',
+      ],
       ['- Không xóa dòng tiêu đề (dòng 1)'],
       ['- Không nhập giao dịch trùng với sao kê ngân hàng đã liên kết'],
       ['- Tối đa 500 dòng mỗi lần upload'],

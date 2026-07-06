@@ -359,6 +359,7 @@ export class BillingService {
         transactionDate: t.transactionDate,
         createdAt: t.createdAt,
         senderAccount: t.senderAccount,
+        source: t.source,
         classification: t.classification
           ? {
               debitAccount: t.classification.debitAccount,

@@ -1,3 +1,4 @@
+import type * as XLSX from 'xlsx';
 import { ImportService } from './import.service';
 
 // Minimal stub — no DI needed for pure methods
@@ -32,6 +33,33 @@ describe('ImportService — parseDate', () => {
     expect(d?.getUTCFullYear()).toBe(2026);
     expect(d?.getUTCMonth()).toBe(6);
     expect(d?.getUTCDate()).toBe(1);
+  });
+  it('parses short dd/MM as VN (1/7/2026 = 1 tháng 7)', () => {
+    const d = svc.parseDate('1/7/2026');
+    expect(d?.getUTCMonth()).toBe(6);
+    expect(d?.getUTCDate()).toBe(1);
+  });
+  it('parses dd/MM/yy from Excel short date (3/7/26 = 3 tháng 7)', () => {
+    const d = svc.parseDate('3/7/26');
+    expect(d?.getUTCFullYear()).toBe(2026);
+    expect(d?.getUTCMonth()).toBe(6);
+    expect(d?.getUTCDate()).toBe(3);
+  });
+  it('parseImportDate accepts Excel display 3/7/26', () => {
+    const r = svc.parseImportDate({ t: 'n', v: 45835 } as XLSX.CellObject, '3/7/26');
+    expect(r.date?.getUTCDate()).toBe(3);
+    expect(r.date?.getUTCMonth()).toBe(6);
+  });
+  it('parseImportDate reads US Excel display 1/7/2026 as VN 1 tháng 7', () => {
+    const cell = { t: 'n', v: 46029, w: '1/7/2026' } as XLSX.CellObject;
+    const r = svc.parseImportDate(cell, '1/7/2026');
+    expect(r.date?.getUTCMonth()).toBe(6);
+    expect(r.date?.getUTCDate()).toBe(1);
+  });
+  it('parseImportDate rejects serial-only cells without display text', () => {
+    const r = svc.parseImportDate({ t: 'n', v: 46029 } as XLSX.CellObject, 46029);
+    expect(r.date).toBeNull();
+    expect(r.errorMessage).toMatch(/số Excel/);
   });
   it('parses dd-MM-yyyy', () => {
     const d = svc.parseDate('15-03-2025');

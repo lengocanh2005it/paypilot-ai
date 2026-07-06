@@ -3,8 +3,8 @@ import { Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfidenceBadge } from '@/components/shared/ConfidenceBadge';
 import { SignedTransactionAmount } from '@/components/shared/SignedTransactionAmount';
+import { TransactionSourceBadge } from '@/components/shared/TransactionSourceBadge';
 import { TransactionStatusBadge } from '@/components/shared/TransactionStatusBadge';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -92,14 +92,7 @@ export function TransactionDetailSheet({
               ) : null}
               <div className="mt-2 flex items-center gap-2 flex-wrap">
                 <TransactionStatusBadge status={displayTxn.status} />
-                {displayTxn.source === 'import' && (
-                  <Badge
-                    variant="outline"
-                    className="border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-                  >
-                    Import Excel
-                  </Badge>
-                )}
+                <TransactionSourceBadge source={displayTxn.source} size="md" />
               </div>
             </div>
 

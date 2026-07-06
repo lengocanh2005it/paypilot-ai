@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { SignedTransactionAmount } from '@/components/shared/SignedTransactionAmount';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
+import { TransactionSourceBadge } from '@/components/shared/TransactionSourceBadge';
 import { TransactionStatusBadge } from '@/components/shared/TransactionStatusBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -470,18 +471,11 @@ export default function TransactionsPage() {
                           onClick={() => openDetail(txn)}
                         >
                           <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <p className="text-xs text-muted-foreground">
                                 {formatTransactionTime(txn.transactionDate)}
                               </p>
-                              {txn.source === 'import' && (
-                                <Badge
-                                  variant="outline"
-                                  className="border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-                                >
-                                  Import Excel
-                                </Badge>
-                              )}
+                              <TransactionSourceBadge source={txn.source} />
                             </div>
                             <TransactionStatusBadge status={txn.status} />
                           </div>
@@ -518,6 +512,7 @@ export default function TransactionsPage() {
                       </TableHead>
                     ) : null}
                     <TableHead className="py-3">Thời gian</TableHead>
+                    <TableHead className="py-3">Nguồn</TableHead>
                     <TableHead className="py-3 text-right">Số tiền</TableHead>
                     <TableHead className="py-3">Nội dung</TableHead>
                     <TableHead className="py-3">Người gửi</TableHead>
@@ -544,20 +539,13 @@ export default function TransactionsPage() {
                           </TableCell>
                         ) : null}
                         <TableCell
-                          className="text-sm text-muted-foreground"
+                          className="text-sm text-muted-foreground whitespace-nowrap"
                           onClick={() => openDetail(txn)}
                         >
-                          <div className="flex items-center gap-1.5">
-                            <span>{formatTransactionTime(txn.transactionDate)}</span>
-                            {txn.source === 'import' && (
-                              <Badge
-                                variant="outline"
-                                className="border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-                              >
-                                Import Excel
-                              </Badge>
-                            )}
-                          </div>
+                          {formatTransactionTime(txn.transactionDate)}
+                        </TableCell>
+                        <TableCell onClick={() => openDetail(txn)}>
+                          <TransactionSourceBadge source={txn.source} />
                         </TableCell>
                         <TableCell
                           className="text-right font-semibold"

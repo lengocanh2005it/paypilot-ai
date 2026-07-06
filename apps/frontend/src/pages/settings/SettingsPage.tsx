@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { AuditLogPanel } from '@/components/audit/AuditLogPanel';
 import { Header } from '@/components/layout/Header';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { TransactionSourceBadge } from '@/components/shared/TransactionSourceBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1409,6 +1410,7 @@ interface CycleTransaction {
   transactionDate: string;
   createdAt: string;
   senderAccount: string | null;
+  source: 'cas' | 'import';
   classification: {
     debitAccount: string | null;
     creditAccount: string | null;
@@ -1556,6 +1558,7 @@ function CycleTransactionsDialog({
                 <tr className="border-b text-xs text-muted-foreground">
                   <th className="px-4 py-2.5 text-left font-medium">Ngày</th>
                   <th className="px-4 py-2.5 text-left font-medium">Nội dung</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Nguồn</th>
                   <th className="px-4 py-2.5 text-right font-medium">Số tiền</th>
                   <th className="px-4 py-2.5 text-left font-medium">Định khoản</th>
                   <th className="px-4 py-2.5 text-left font-medium">Trạng thái</th>
@@ -1574,6 +1577,9 @@ function CycleTransactionsDialog({
                           {tx.senderAccount}
                         </p>
                       )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <TransactionSourceBadge source={tx.source} size="md" />
                     </td>
                     <td
                       className={cn(
