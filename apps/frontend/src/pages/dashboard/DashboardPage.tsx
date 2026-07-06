@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Brain, CheckCircle2, Clock, Landmark } from 'lucide-react';
-import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { CashflowTrendChart } from '@/components/dashboard/CashflowTrendChart';
+import { DashboardActivityChart } from '@/components/dashboard/DashboardActivityChart';
 import { DashboardStatCard } from '@/components/dashboard/DashboardStatCard';
+import { MonthlyOverviewCard } from '@/components/dashboard/MonthlyOverviewCard';
 import { RecentTransactionsCard } from '@/components/dashboard/RecentTransactionsCard';
-import { RevenueLineChart } from '@/components/dashboard/RevenueLineChart';
+import { TransactionSourceChart } from '@/components/dashboard/TransactionSourceChart';
 import { TransactionStatusChart } from '@/components/dashboard/TransactionStatusChart';
 import { Header } from '@/components/layout/Header';
 import { UserAvatar } from '@/components/shared/UserAvatar';
@@ -16,13 +18,18 @@ import { useAuth } from '@/hooks/useAuth';
 import { useReviewCount } from '@/hooks/useReviewCount';
 import { getApiData } from '@/lib/api';
 import {
-  buildDailyRevenueTrend,
-  buildTransactionStatusBreakdown,
+  type DailyTrendApiResponse,
+  mapDailyTrendResponse,
+  mapSourceBreakdownResponse,
+  mapStatusBreakdownResponse,
+  type SourceBreakdownApiResponse,
+  type StatusBreakdownApiResponse,
 } from '@/lib/dashboard-transactions';
 import { dayIsoRange } from '@/lib/date-range';
 import type { TransactionListResponse } from '@/types/transaction';
 
-const CHART_TRANSACTION_LIMIT = 100;
+const RECENT_TRANSACTION_LIMIT = 8;
+const DAILY_TREND_DAYS = 7;
 
 interface SummaryData {
   period: { year: number; month: number };
@@ -88,15 +95,41 @@ export default function DashboardPage() {
     refetchInterval: 10_000,
   });
 
-  const { data: chartData, isLoading: loadingCharts } = useQuery({
-    queryKey: ['transactions', 'dashboard', 'charts'],
+  const { data: dailyTrendData, isLoading: loadingDailyTrend } = useQuery({
+    queryKey: ['reports', 'daily-trend', DAILY_TREND_DAYS, 'dashboard'],
     queryFn: () =>
-      getApiData<TransactionListResponse>(`/transactions?limit=${CHART_TRANSACTION_LIMIT}`),
+      getApiData<DailyTrendApiResponse>(`/reports/daily-trend?days=${DAILY_TREND_DAYS}`),
     enabled: bankingLinked,
     refetchInterval: 10_000,
   });
 
-  const items = chartData?.items ?? [];
+  const { data: statusBreakdownData, isLoading: loadingStatusBreakdown } = useQuery({
+    queryKey: ['reports', 'status-breakdown', 'dashboard'],
+    queryFn: () => getApiData<StatusBreakdownApiResponse>('/reports/status-breakdown'),
+    enabled: bankingLinked,
+    refetchInterval: 10_000,
+  });
+
+  const { data: sourceBreakdownData, isLoading: loadingSourceBreakdown } = useQuery({
+    queryKey: ['reports', 'source-breakdown', 'dashboard'],
+    queryFn: () => getApiData<SourceBreakdownApiResponse>('/reports/source-breakdown'),
+    enabled: bankingLinked,
+    refetchInterval: 10_000,
+  });
+
+  const { data: recentData, isLoading: loadingRecent } = useQuery({
+    queryKey: ['transactions', 'dashboard', 'recent'],
+    queryFn: () =>
+      getApiData<TransactionListResponse>(`/transactions?limit=${RECENT_TRANSACTION_LIMIT}`),
+    enabled: bankingLinked,
+    refetchInterval: 10_000,
+  });
+
+  const dailyTrend = dailyTrendData ? mapDailyTrendResponse(dailyTrendData) : [];
+  const statusData = statusBreakdownData ? mapStatusBreakdownResponse(statusBreakdownData) : [];
+  const sourceData = sourceBreakdownData ? mapSourceBreakdownResponse(sourceBreakdownData) : [];
+  const recentItems = recentData?.items ?? [];
+
   const classifiedTodayCount = classifiedTodayData?.total ?? 0;
   const classifiedYesterdayCount = classifiedYesterdayData?.total ?? 0;
   const classifiedChangePercent =
@@ -104,9 +137,8 @@ export default function DashboardPage() {
       ? ((classifiedTodayCount - classifiedYesterdayCount) / classifiedYesterdayCount) * 100
       : null;
 
-  const revenueTrend = useMemo(() => buildDailyRevenueTrend(items), [items]);
-  const statusData = useMemo(() => buildTransactionStatusBreakdown(items), [items]);
-  const recentItems = useMemo(() => items.slice(0, 5), [items]);
+  const chartsLoading =
+    loadingDailyTrend || loadingStatusBreakdown || loadingSourceBreakdown || loadingRecent;
 
   const statsLoading =
     bankingLinked &&
@@ -114,7 +146,7 @@ export default function DashboardPage() {
       loadingReviewCount ||
       loadingPending ||
       loadingClassifiedToday ||
-      loadingCharts);
+      chartsLoading);
 
   const classifiedFooter =
     classifiedChangePercent != null ? (
@@ -142,7 +174,7 @@ export default function DashboardPage() {
         description="Tổng quan hoạt động định khoản và giao dịch của doanh nghiệp"
       />
 
-      <div className="space-y-6 p-4 sm:p-6">
+      <div className="space-y-5 p-4 sm:p-6">
         <Card className="overflow-hidden border-primary/15 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent py-0 shadow-sm">
           <CardContent className="flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center sm:gap-5 sm:p-6">
             <UserAvatar
@@ -239,16 +271,37 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <RevenueLineChart data={revenueTrend} isLoading={statsLoading} />
+        {bankingLinked ? (
+          <MonthlyOverviewCard
+            month={month}
+            year={year}
+            revenue={summary?.summary.totalRevenue ?? 0}
+            expense={summary?.summary.totalExpense ?? 0}
+            net={summary?.summary.net ?? 0}
+            isLoading={loadingSummary}
+          />
+        ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="min-w-0 lg:col-span-2">
-            <RecentTransactionsCard items={recentItems} isLoading={statsLoading} />
+        <CashflowTrendChart data={dailyTrend} isLoading={bankingLinked && loadingDailyTrend} />
+
+        <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+          <div className="grid gap-4">
+            <TransactionStatusChart
+              data={statusData}
+              isLoading={bankingLinked && loadingStatusBreakdown}
+            />
+            <TransactionSourceChart
+              data={sourceData}
+              isLoading={bankingLinked && loadingSourceBreakdown}
+            />
           </div>
-          <div className="min-w-0">
-            <TransactionStatusChart data={statusData} isLoading={statsLoading} />
-          </div>
+          <DashboardActivityChart
+            data={dailyTrend}
+            isLoading={bankingLinked && loadingDailyTrend}
+          />
         </div>
+
+        <RecentTransactionsCard items={recentItems} isLoading={bankingLinked && loadingRecent} />
       </div>
     </>
   );

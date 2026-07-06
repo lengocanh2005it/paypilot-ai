@@ -29,7 +29,7 @@ Chỉ compose wrapper mỏng ở `components/layout/` (app shell) hoặc `compon
 
 **Đã cài trong repo (`components/ui/`):** `button`, `card`, `badge`, `input`, `skeleton`, `table`, `label`, `dialog`, `sheet`, `tabs`, `checkbox`, `progress`, `separator`, `switch`.
 
-**Dashboard:** stat cards lấy từ `GET /reports/summary` (độ chính xác AI tháng), `GET /review/count`, và count API giao dịch `pending`/`classified` hôm nay — không derive từ 100 GD đầu. **Charts (Recharts)** vẫn aggregate client-side từ `GET /transactions?limit=100` (max BE cho phép) — `TransactionTrendChart` (AreaChart 7 ngày), `TransactionStatusChart` (Donut trạng thái), helper tại `lib/dashboard-transactions.ts`. Màu chart dùng CSS variables `--chart-1`…`--chart-5` trong `index.css` (hỗ trợ dark mode).
+**Dashboard:** stat cards lấy từ `GET /reports/summary` (độ chính xác AI tháng), `GET /review/count`, và count API giao dịch `pending`/`classified` hôm nay. **Tổng quan tháng:** `MonthlyOverviewCard` dùng `summary.totalRevenue/totalExpense/net`. **Charts:** `GET /reports/daily-trend?days=7` → `CashflowTrendChart` (bar thu/chi + line số GD); `GET /reports/status-breakdown` + `GET /reports/source-breakdown` → donut compact; **Giao dịch gần đây** `GET /transactions?limit=5`. Helper map tại `lib/dashboard-transactions.ts`. Màu chart: CSS variables `--chart-1`…`--chart-5`.
 
 ## Dark / Light mode
 

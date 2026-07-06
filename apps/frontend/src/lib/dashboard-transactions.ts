@@ -19,6 +19,10 @@ export interface DailyTransactionTrendPoint {
   label: string;
   count: number;
   amount: number;
+  activityCount: number;
+  classifiedCount: number;
+  revenueAmount: number;
+  expenseAmount: number;
 }
 
 export interface TransactionStatusSlice {
@@ -26,6 +30,101 @@ export interface TransactionStatusSlice {
   label: string;
   value: number;
   color: string;
+}
+
+export interface DailyTrendApiResponse {
+  days: number;
+  from: string;
+  to: string;
+  points: Array<{
+    label: string;
+    count: number;
+    amount: number;
+    activityCount?: number;
+    classifiedCount?: number;
+    revenueAmount?: number;
+    expenseAmount?: number;
+  }>;
+}
+
+export interface StatusBreakdownApiItem {
+  status: string;
+  count: number;
+}
+
+export interface StatusBreakdownApiResponse {
+  items: StatusBreakdownApiItem[];
+  total: number;
+}
+
+export interface SourceBreakdownApiItem {
+  source: 'cas' | 'import' | string;
+  count: number;
+}
+
+export interface SourceBreakdownApiResponse {
+  items: SourceBreakdownApiItem[];
+  total: number;
+}
+
+export interface DonutSlice {
+  id: string;
+  label: string;
+  value: number;
+  color: string;
+}
+
+export const TRANSACTION_SOURCE_LABELS: Record<string, string> = {
+  cas: 'Ngân hàng',
+  import: 'Import Excel',
+};
+
+export const TRANSACTION_SOURCE_COLORS: Record<string, string> = {
+  cas: 'var(--chart-3)',
+  import: '#f59e0b',
+};
+
+export function mapDailyTrendResponse(
+  response: DailyTrendApiResponse,
+): DailyTransactionTrendPoint[] {
+  return response.points.map((point) => ({
+    label: point.label,
+    count: point.classifiedCount ?? point.count,
+    amount: point.revenueAmount ?? point.amount,
+    activityCount: point.activityCount ?? 0,
+    classifiedCount: point.classifiedCount ?? point.count,
+    revenueAmount: point.revenueAmount ?? point.amount,
+    expenseAmount: point.expenseAmount ?? 0,
+  }));
+}
+
+export function mapStatusBreakdownResponse(
+  response: StatusBreakdownApiResponse,
+): TransactionStatusSlice[] {
+  const counts = new Map<string, number>();
+  for (const item of response.items) {
+    counts.set(item.status, item.count);
+  }
+
+  return (Object.values(TransactionStatus) as TransactionStatus[])
+    .map((status) => ({
+      status,
+      label: TRANSACTION_STATUS_LABELS[status],
+      value: counts.get(status) ?? 0,
+      color: TRANSACTION_STATUS_COLORS[status],
+    }))
+    .filter((slice) => slice.value > 0);
+}
+
+export function mapSourceBreakdownResponse(response: SourceBreakdownApiResponse): DonutSlice[] {
+  return response.items
+    .map((item) => ({
+      id: item.source,
+      label: TRANSACTION_SOURCE_LABELS[item.source] ?? item.source,
+      value: item.count,
+      color: TRANSACTION_SOURCE_COLORS[item.source] ?? 'var(--chart-4)',
+    }))
+    .filter((slice) => slice.value > 0);
 }
 
 function startOfDay(date: Date) {
@@ -48,6 +147,10 @@ export function buildDailyTransactionTrend(
       label: date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
       count: 0,
       amount: 0,
+      activityCount: 0,
+      classifiedCount: 0,
+      revenueAmount: 0,
+      expenseAmount: 0,
     };
   });
 
@@ -62,7 +165,17 @@ export function buildDailyTransactionTrend(
     bucket.amount += Number(item.amount) || 0;
   }
 
-  return buckets.map(({ label, count, amount }) => ({ label, count, amount }));
+  return buckets.map(
+    ({ label, count, amount, activityCount, classifiedCount, revenueAmount, expenseAmount }) => ({
+      label,
+      count,
+      amount,
+      activityCount,
+      classifiedCount,
+      revenueAmount,
+      expenseAmount,
+    }),
+  );
 }
 
 export function buildDailyRevenueTrend(

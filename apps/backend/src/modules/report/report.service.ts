@@ -1,9 +1,32 @@
 import { Injectable, StreamableFile } from '@nestjs/common';
-import { TransactionStatus } from '@prisma/client';
+import { TransactionDirection, TransactionSource, TransactionStatus } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AccountBreakdownQueryDto } from './dto/account-breakdown.dto';
 import { buildExportWorkbook } from './report-excel.util';
+
+export interface DailyTrendPoint {
+  date: string;
+  label: string;
+  /** @deprecated use classifiedCount */
+  count: number;
+  /** @deprecated use revenueAmount */
+  amount: number;
+  activityCount: number;
+  classifiedCount: number;
+  revenueAmount: number;
+  expenseAmount: number;
+}
+
+export interface StatusBreakdownItem {
+  status: TransactionStatus;
+  count: number;
+}
+
+export interface SourceBreakdownItem {
+  source: TransactionSource;
+  count: number;
+}
 
 export interface AccountSummary {
   accountCode: string;
@@ -24,6 +47,166 @@ export class ReportService {
       from: new Date(year, month - 1, 1),
       to: new Date(year, month, 1),
     };
+  }
+
+  private startOfDay(date: Date) {
+    const normalized = new Date(date);
+    normalized.setHours(0, 0, 0, 0);
+    return normalized;
+  }
+
+  private formatDayKey(date: Date) {
+    const day = this.startOfDay(date);
+    const year = day.getFullYear();
+    const month = String(day.getMonth() + 1).padStart(2, '0');
+    const dayOfMonth = String(day.getDate()).padStart(2, '0');
+    return `${year}-${month}-${dayOfMonth}`;
+  }
+
+  private formatDayLabel(dayKey: string) {
+    const [, month, day] = dayKey.split('-');
+    return `${day}/${month}`;
+  }
+
+  private buildDailyTrendBuckets(days: number): DailyTrendPoint[] {
+    const today = this.startOfDay(new Date());
+    return Array.from({ length: days }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - (days - 1 - index));
+      const dayKey = this.formatDayKey(date);
+      return {
+        date: dayKey,
+        label: this.formatDayLabel(dayKey),
+        count: 0,
+        amount: 0,
+        activityCount: 0,
+        classifiedCount: 0,
+        revenueAmount: 0,
+        expenseAmount: 0,
+      };
+    });
+  }
+
+  private isClassifiedRevenue(tx: {
+    amount: unknown;
+    source: TransactionSource;
+    direction: TransactionDirection | null;
+  }) {
+    if (tx.source === TransactionSource.import) {
+      return tx.direction === TransactionDirection.in;
+    }
+    return Number(tx.amount) > 0;
+  }
+
+  private isClassifiedExpense(tx: {
+    amount: unknown;
+    source: TransactionSource;
+    direction: TransactionDirection | null;
+  }) {
+    if (tx.source === TransactionSource.import) {
+      return tx.direction === TransactionDirection.out;
+    }
+    return Number(tx.amount) < 0;
+  }
+
+  private flowAmount(tx: { amount: unknown }) {
+    return Math.abs(Number(tx.amount)) || 0;
+  }
+
+  async getDailyTrend(tenantId: string, days = 7) {
+    const clampedDays = Math.min(31, Math.max(1, days));
+    const buckets = this.buildDailyTrendBuckets(clampedDays);
+    const from = buckets[0]?.date
+      ? new Date(`${buckets[0].date}T00:00:00`)
+      : this.startOfDay(new Date());
+    const to = this.startOfDay(new Date());
+    to.setHours(23, 59, 59, 999);
+
+    const bucketByDay = new Map(buckets.map((bucket) => [bucket.date, bucket]));
+    const dateRange = { gte: from, lte: to };
+
+    const [classifiedTransactions, activityTransactions] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: { tenantId, status: TransactionStatus.classified, transactionDate: dateRange },
+        select: {
+          transactionDate: true,
+          amount: true,
+          source: true,
+          direction: true,
+        },
+      }),
+      this.prisma.transaction.findMany({
+        where: { tenantId, transactionDate: dateRange },
+        select: { transactionDate: true },
+      }),
+    ]);
+
+    for (const transaction of classifiedTransactions) {
+      const dayKey = this.formatDayKey(transaction.transactionDate);
+      const bucket = bucketByDay.get(dayKey);
+      if (!bucket) {
+        continue;
+      }
+
+      bucket.classifiedCount += 1;
+      const value = this.flowAmount(transaction);
+      if (this.isClassifiedRevenue(transaction)) {
+        bucket.revenueAmount += value;
+      } else if (this.isClassifiedExpense(transaction)) {
+        bucket.expenseAmount += value;
+      }
+      bucket.count = bucket.classifiedCount;
+      bucket.amount = bucket.revenueAmount;
+    }
+
+    for (const transaction of activityTransactions) {
+      const dayKey = this.formatDayKey(transaction.transactionDate);
+      const bucket = bucketByDay.get(dayKey);
+      if (bucket) {
+        bucket.activityCount += 1;
+      }
+    }
+
+    return {
+      days: clampedDays,
+      from: buckets[0]?.date ?? this.formatDayKey(from),
+      to: buckets.at(-1)?.date ?? this.formatDayKey(to),
+      points: buckets,
+    };
+  }
+
+  async getStatusBreakdown(tenantId: string) {
+    const groups = await this.prisma.transaction.groupBy({
+      by: ['status'],
+      where: { tenantId },
+      _count: { _all: true },
+    });
+
+    const items: StatusBreakdownItem[] = groups.map((group) => ({
+      status: group.status,
+      count: group._count._all,
+    }));
+
+    const total = items.reduce((sum, item) => sum + item.count, 0);
+
+    return { items, total };
+  }
+
+  async getSourceBreakdown(tenantId: string) {
+    const groups = await this.prisma.transaction.groupBy({
+      by: ['source'],
+      where: { tenantId },
+      _count: { _all: true },
+    });
+
+    const items: SourceBreakdownItem[] = groups.map((group) => ({
+      source: group.source,
+      count: group._count._all,
+    }));
+
+    const total = items.reduce((sum, item) => sum + item.count, 0);
+
+    return { items, total };
   }
 
   private async buildAccountSummaries(

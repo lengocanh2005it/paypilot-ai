@@ -15,6 +15,7 @@ import { JwtAuthGuard, RolesGuard } from '../../common/guards/auth.guards';
 import { PlanGuard } from '../../common/guards/plan.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { AccountBreakdownQueryDto } from './dto/account-breakdown.dto';
+import { DashboardDailyTrendQueryDto } from './dto/dashboard-charts.dto';
 import { ReportService } from './report.service';
 
 @ApiTags('reports')
@@ -22,6 +23,24 @@ import { ReportService } from './report.service';
 @UseGuards(JwtAuthGuard, RolesGuard, PlanGuard)
 export class ReportController {
   constructor(private readonly service: ReportService) {}
+
+  @Get('daily-trend')
+  getDailyTrend(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardDailyTrendQueryDto,
+  ) {
+    return this.service.getDailyTrend(user.tenantId!, query.days ?? 7);
+  }
+
+  @Get('status-breakdown')
+  getStatusBreakdown(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.getStatusBreakdown(user.tenantId!);
+  }
+
+  @Get('source-breakdown')
+  getSourceBreakdown(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.getSourceBreakdown(user.tenantId!);
+  }
 
   @Get('summary')
   getSummary(

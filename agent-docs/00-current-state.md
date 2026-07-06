@@ -26,7 +26,7 @@ Cập nhật lần cuối: **Copilot Quota (Phase 1–4 hoàn thành)** — Sche
 - Backend: `settings` module — threshold (Prisma) + notifications (Redis key `settings:notifications:{tenantId}`) ✅
 - Backend: `team` module — invite qua email (link kích hoạt + tự đặt mật khẩu), list/remove member, resend invite, safety check ✅
 - Backend: `billing` module — current-plan + usage-history ✅
-- Backend: `report` module mở rộng — `GET /reports/comparison` (so tháng trước) + `GET /reports/top-accounts` (top 5 chi/thu) ✅
+- Backend: `report` module mở rộng — `GET /reports/comparison` (so tháng trước) + `GET /reports/top-accounts` (top 5 chi/thu) + `GET /reports/daily-trend` (thu/chi/activity theo ngày) + `GET /reports/status-breakdown` + `GET /reports/source-breakdown` (Dashboard charts) ✅
 - Backend: `GET /review/count` — đếm số GD đang chờ review, dùng cho polling notification (không dùng SSE vì `EventSource` chuẩn không gửi được header `Authorization: Bearer`) ✅
 - Frontend: `SettingsPage` (6 tab: Banking/Threshold/Notifications/Team/**Nhật ký**/Billing) ✅
 - Frontend: hook `useReviewCount` (poll 20s) → Sidebar hiện badge đỏ + toast khi review count tăng ✅
@@ -104,7 +104,7 @@ Cập nhật lần cuối: **Copilot Quota (Phase 1–4 hoàn thành)** — Sche
 - Frontend: `CopilotPage` — SSE buffer giữ frame cắt TCP; throw nếu stream kết thúc không có `done` → fallback `sendViaJson` ✅
 
 **Đã xong (UX polish — tenant + partner):**
-- Frontend: `DashboardPage` — stat cards từ `/reports/summary` (AI accuracy tháng), `GET /review/count`, count API `pending`/`classified` hôm nay; charts vẫn `limit=100`; stat cards clickable (`/review`, `/transactions?status=...`); banner CTA liên kết NH khi `bankingLinked=false` ✅
+- Frontend: `DashboardPage` — stat cards từ `/reports/summary` (AI accuracy tháng), `GET /review/count`, count API `pending`/`classified` hôm nay; `MonthlyOverviewCard` (thu/chi/lãi lỗ tháng); `CashflowTrendChart` từ `GET /reports/daily-trend` (thu+chi+activity 7 ngày); donut trạng thái + nguồn (`status-breakdown`, `source-breakdown`); giao dịch gần đây `limit=5`; stat cards clickable; banner CTA liên kết NH khi `bankingLinked=false` ✅
 - Frontend: `AccountsPage` — input tìm mã/tên TK; `TransactionsPage` đọc `?status=` từ URL + badge status tiếng Việt; cột "Độ tin cậy" ✅
 - Frontend: `ReviewPage` `refetchInterval: 15_000`; validate TK Nợ/Có `^\d{3,4}$` khi sửa định khoản ✅
 - Frontend: `SettingsPage` NotificationsTab sync form qua `useEffect`; tab `title` trên mobile ✅

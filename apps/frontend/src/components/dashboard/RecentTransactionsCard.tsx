@@ -2,6 +2,7 @@ import { TransactionStatus } from '@xcash/shared-types';
 import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SignedTransactionAmount } from '@/components/shared/SignedTransactionAmount';
+import { TransactionSourceBadge } from '@/components/shared/TransactionSourceBadge';
 import { TransactionStatusBadge } from '@/components/shared/TransactionStatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,62 +17,84 @@ interface RecentTransactionsCardProps {
 
 export function RecentTransactionsCard({ items, isLoading }: RecentTransactionsCardProps) {
   return (
-    <Card className="flex h-full flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Giao dịch gần đây</CardTitle>
-        <CardDescription>Cập nhật mỗi 10 giây</CardDescription>
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 pb-2">
+        <div>
+          <CardTitle className="text-base">Giao dịch gần đây</CardTitle>
+          <CardDescription>Cập nhật mỗi 10 giây</CardDescription>
+        </div>
+        <Button asChild size="sm" variant="outline" className="shrink-0">
+          <Link to="/transactions">
+            Xem tất cả
+            <ArrowRight className="size-4" />
+          </Link>
+        </Button>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
+      <CardContent>
         {isLoading ? (
           <div className="space-y-2">
-            <Skeleton className="h-14 w-full" />
-            <Skeleton className="h-14 w-full" />
-            <Skeleton className="h-14 w-full" />
-          </div>
-        ) : !items.length ? (
-          <p className="flex flex-1 items-center justify-center py-6 text-center text-sm text-muted-foreground">
-            Chưa có giao dịch nào hôm nay
-          </p>
-        ) : (
-          <div className="divide-y">
-            {items.map((txn) => (
-              <div
-                key={txn.id}
-                className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{txn.content ?? txn.transactionId}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {formatTransactionTime(txn.transactionDate)}
-                    {txn.senderAccount ? ` • ${txn.senderAccount}` : ''}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <span className="text-sm font-semibold">
-                    <SignedTransactionAmount amount={Number(txn.amount)} />
-                  </span>
-                  <TransactionStatusBadge
-                    status={txn.status}
-                    className={
-                      txn.status === TransactionStatus.REVIEW
-                        ? 'border-amber-500/30 bg-amber-500/10'
-                        : undefined
-                    }
-                  />
-                </div>
-              </div>
+            <Skeleton className="hidden h-8 w-full md:block" />
+            {Array.from({ length: 5 }, (_, i) => `sk-${i}`).map((key) => (
+              <Skeleton key={key} className="h-12 w-full" />
             ))}
           </div>
+        ) : !items.length ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">Chưa có giao dịch nào</p>
+        ) : (
+          <>
+            <div className="hidden border-b border-border pb-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(0,1fr)_100px_120px_100px_110px] md:gap-4">
+              <span>Mô tả</span>
+              <span>Thời gian</span>
+              <span className="text-right">Số tiền</span>
+              <span>Nguồn</span>
+              <span>Trạng thái</span>
+            </div>
+            <div className="divide-y">
+              {items.map((txn) => (
+                <div
+                  key={txn.id}
+                  className="flex flex-col gap-2 py-3 first:pt-2 md:grid md:grid-cols-[minmax(0,1fr)_100px_120px_100px_110px] md:items-center md:gap-4 md:py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {txn.content ?? txn.transactionId}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground md:hidden">
+                      {formatTransactionTime(txn.transactionDate)}
+                      {txn.senderAccount ? ` • ${txn.senderAccount}` : ''}
+                    </p>
+                    {txn.senderAccount ? (
+                      <p className="mt-0.5 hidden truncate text-xs text-muted-foreground md:block">
+                        {txn.senderAccount}
+                      </p>
+                    ) : null}
+                  </div>
+                  <span className="hidden text-xs text-muted-foreground md:block">
+                    {formatTransactionTime(txn.transactionDate)}
+                  </span>
+                  <span className="text-sm font-semibold md:text-right">
+                    <SignedTransactionAmount amount={Number(txn.amount)} />
+                  </span>
+                  <div className="flex items-center gap-2 md:block">
+                    <span className="text-xs text-muted-foreground md:hidden">Nguồn:</span>
+                    <TransactionSourceBadge source={txn.source} />
+                  </div>
+                  <div className="flex items-center gap-2 md:justify-end">
+                    <span className="text-xs text-muted-foreground md:hidden">Trạng thái:</span>
+                    <TransactionStatusBadge
+                      status={txn.status}
+                      className={
+                        txn.status === TransactionStatus.REVIEW
+                          ? 'border-amber-500/30 bg-amber-500/10'
+                          : undefined
+                      }
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
-
-        <div className="mt-auto pt-4">
-          <Button asChild size="sm" variant="ghost" className="h-auto w-fit px-2">
-            <Link to="/transactions">
-              Xem tất cả
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );
