@@ -69,6 +69,8 @@ enum NotificationType {
   billing_success
   billing_payment_due
   tenant_suspended
+  copilot_quota_warning
+  copilot_quota_exceeded
 }
 
 model Tenant {
@@ -203,6 +205,7 @@ model Subscription {
   pricePerMonth              Decimal            @default(0) @map("price_per_month") @db.Decimal(18, 2)
   transactionQuota           Int                @default(50) @map("transaction_quota")
   transactionUsedThisCycle   Int                @default(0) @map("transaction_used_this_cycle")
+  copilotUsedThisCycle       Int                @default(0) @map("copilot_used_this_cycle")
   overagePricePerTransaction Decimal?           @map("overage_price_per_transaction") @db.Decimal(18, 2)
   status                     SubscriptionStatus @default(active)
   startedAt                  DateTime           @default(now()) @map("started_at")
@@ -220,6 +223,7 @@ model PlanPricing {
   plan                       SubscriptionPlan @unique
   pricePerMonth              Decimal          @default(0) @map("price_per_month") @db.Decimal(18, 2)
   transactionQuota           Int              @map("transaction_quota")
+  copilotQuota               Int              @default(-1) @map("copilot_quota")
   overagePricePerTransaction Decimal?         @map("overage_price_per_transaction") @db.Decimal(18, 2)
   updatedAt                  DateTime         @updatedAt @map("updated_at")
 
