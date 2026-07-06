@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Role } from '@xcash/shared-types';
 import { Loader2, Receipt, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { ConfidenceBadge } from '@/components/shared/ConfidenceBadge';
@@ -92,9 +93,10 @@ function isPendingTransaction(status: string) {
 export default function TransactionsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const canBulkReclassify = user?.role === Role.ADMIN || user?.role === Role.ACCOUNTANT;
   const [page, setPage] = useState(1);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(() => searchParams.get('status') ?? '');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [searchText, setSearchText] = useState('');
@@ -118,6 +120,7 @@ export default function TransactionsPage() {
     search: debouncedSearch,
   });
   const hasActiveFilters = Boolean(status || fromDate || toDate || debouncedSearch.trim());
+  const statusLabel = STATUS_OPTIONS.find((option) => option.value === status)?.label;
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['transactions', page, status, fromDate, toDate, debouncedSearch],
@@ -292,7 +295,9 @@ export default function TransactionsPage() {
             {hasActiveFilters ? (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground">Đang lọc:</span>
-                {status ? <Badge variant="secondary">Trạng thái: {status}</Badge> : null}
+                {status ? (
+                  <Badge variant="secondary">Trạng thái: {statusLabel ?? status}</Badge>
+                ) : null}
                 {fromDate ? <Badge variant="secondary">Từ {fromDate}</Badge> : null}
                 {toDate ? <Badge variant="secondary">Đến {toDate}</Badge> : null}
                 {searchText ? <Badge variant="secondary">"{searchText}"</Badge> : null}
@@ -451,7 +456,7 @@ export default function TransactionsPage() {
                     <TableHead className="py-3">Nội dung</TableHead>
                     <TableHead className="py-3">Người gửi</TableHead>
                     <TableHead className="py-3 text-center">TK Nợ/Có</TableHead>
-                    <TableHead className="py-3 text-center">Confidence</TableHead>
+                    <TableHead className="py-3 text-center">Độ tin cậy</TableHead>
                     <TableHead className="py-3 text-right">Trạng thái</TableHead>
                   </TableRow>
                 </TableHeader>

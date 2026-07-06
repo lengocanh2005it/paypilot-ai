@@ -17,12 +17,16 @@ export function buildCopilotTools(
   tenantId: string,
   toolService: CopilotToolService,
   configService?: ConfigService,
+  resultsCapture?: Map<string, unknown>,
 ): ToolDefinition[] {
   const cassoSearchEnabled = configService?.get<boolean>('COPILOT_CASSO_SEARCH_ENABLED') ?? false;
   const bind =
     (name: string) =>
-    (args: Record<string, unknown>): Promise<unknown> =>
-      toolService.execute(tenantId, name, args);
+    async (args: Record<string, unknown>): Promise<unknown> => {
+      const result = await toolService.execute(tenantId, name, args);
+      resultsCapture?.set(name, result);
+      return result;
+    };
 
   return [
     {
@@ -143,25 +147,24 @@ export function buildCopilotTools(
     {
       type: 'function',
       function: {
-        name: 'get_cas_integration_help',
+        name: 'search_knowledge_base',
         description:
-          'Lấy hướng dẫn tích hợp Casso / Cas Link theo chủ đề: tổng quan, cách liên kết, mất giao dịch, giải thích webhook.',
+          'Tìm kiếm thông tin trong knowledge base của X-Cash AI: Casso (sản phẩm, tích hợp, liên kết NH, webhook), TT133 (chuẩn kế toán, định khoản, danh sách tài khoản), tính năng X-Cash AI (Human Review, import Excel, báo cáo, phân quyền, gói dịch vụ). Dùng khi user hỏi khái niệm hoặc hướng dẫn không cần dữ liệu real-time.',
         strict: true,
         parameters: {
           type: 'object',
           properties: {
-            topic: {
+            query: {
               type: 'string',
-              enum: ['overview', 'how_to_link', 'missing_transactions', 'webhook_explained'],
               description:
-                'overview = tổng quan; how_to_link = cách liên kết; missing_transactions = không thấy GD; webhook_explained = webhook Cas Balance Hook',
+                'Câu hỏi hoặc từ khóa cần tra cứu, vd "Casso là gì", "TT133 tài khoản 642", "cách liên kết ngân hàng", "Human Review là gì"',
             },
           },
-          required: ['topic'],
+          required: ['query'],
           additionalProperties: false,
         },
         parse: JSON.parse,
-        function: bind('get_cas_integration_help'),
+        function: bind('search_knowledge_base'),
       },
     },
     {
@@ -169,7 +172,7 @@ export function buildCopilotTools(
       function: {
         name: 'search_transactions',
         description:
-          'Tìm kiếm giao dịch theo từ khóa nội dung hoặc tài khoản. Dùng source="cas" để lọc giao dịch từ ngân hàng, source="import" cho giao dịch import Excel.',
+          'Tìm kiếm giao dịch theo từ khóa nội dung hoặc tài khoản. Dùng source="cas" để lọc giao dịch từ ngân hàng, source="import" cho giao dịch import Excel, source="all" hoặc bỏ qua để tìm tất cả nguồn.',
         strict: true,
         parameters: {
           type: 'object',
@@ -180,8 +183,9 @@ export function buildCopilotTools(
             },
             source: {
               type: 'string',
-              enum: ['cas', 'import'],
-              description: 'Lọc theo nguồn: cas = ngân hàng, import = Excel',
+              enum: ['cas', 'import', 'all'],
+              description:
+                'Lọc theo nguồn: cas = ngân hàng, import = Excel, all = tất cả (mặc định)',
             },
             limit: {
               type: 'integer',
@@ -190,7 +194,7 @@ export function buildCopilotTools(
               description: 'Số kết quả, mặc định 10',
             },
           },
-          required: ['keyword', 'source', 'limit'],
+          required: ['keyword', 'limit'],
           additionalProperties: false,
         },
         parse: JSON.parse,

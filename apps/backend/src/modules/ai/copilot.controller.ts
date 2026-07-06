@@ -11,7 +11,7 @@ import { PlanGuard } from '../../common/guards/plan.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { CopilotContextService } from './copilot-context.service';
 import { CopilotToolService } from './copilot-tool.service';
-import { buildActivities, OpenAiService } from './openai.service';
+import { buildActivities, getStreamingActivityMeta, OpenAiService } from './openai.service';
 
 class ChatMessage {
   @IsString()
@@ -78,98 +78,53 @@ export class CopilotController {
 
     const writeEvent = (event: string, data: unknown) => {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      // flush ngay sau mỗi write để token stream thật sự theo thời gian thực
+      (res as unknown as { flush?: () => void }).flush?.();
     };
 
-    if (!this.configService.get<boolean>('COPILOT_USE_FUNCTION_CALLING')) {
-      const financialContext = await this.copilotContextService.getFinancialContext(tenantId);
-      const reply = await this.openAiService.chatCopilot(
+    try {
+      if (!this.configService.get<boolean>('COPILOT_USE_FUNCTION_CALLING')) {
+        const financialContext = await this.copilotContextService.getFinancialContext(tenantId);
+        const reply = await this.openAiService.chatCopilot(
+          dto.message,
+          dto.history,
+          financialContext,
+        );
+        writeEvent('done', { reply, meta: undefined });
+        return;
+      }
+
+      const resultsCapture = new Map<string, unknown>();
+      const runner = this.openAiService.createCopilotRunner(
+        tenantId,
         dto.message,
         dto.history,
-        financialContext,
+        this.copilotToolService,
+        resultsCapture,
       );
-      writeEvent('done', { reply, meta: undefined });
-      res.end();
-      return;
-    }
 
-    const runner = this.openAiService.createCopilotRunner(
-      tenantId,
-      dto.message,
-      dto.history,
-      this.copilotToolService,
-    );
+      if (!runner) {
+        writeEvent('done', {
+          reply: 'AI Copilot chưa được cấu hình. Vui lòng liên hệ quản trị viên.',
+          meta: undefined,
+        });
+        return;
+      }
 
-    if (!runner) {
-      writeEvent('done', {
-        reply: 'AI Copilot chưa được cấu hình. Vui lòng liên hệ quản trị viên.',
-        meta: undefined,
+      const calledTools: string[] = [];
+
+      runner.on('functionToolCall', (call) => {
+        calledTools.push(call.name);
+        const meta = getStreamingActivityMeta(call.name);
+        if (meta) writeEvent('activity', meta);
       });
-      res.end();
-      return;
-    }
 
-    const calledTools: string[] = [];
+      runner.on('content', (delta: string) => {
+        if (delta) writeEvent('delta', { content: delta });
+      });
 
-    runner.on('functionToolCall', (call) => {
-      calledTools.push(call.name);
-      const activityMap: Record<string, { kind: string; label: string; source: string }> = {
-        get_month_summary: {
-          kind: 'internal_data',
-          label: 'Đang tra cứu báo cáo tháng…',
-          source: 'X-Cash AI',
-        },
-        get_month_comparison: {
-          kind: 'internal_data',
-          label: 'Đang so sánh tháng…',
-          source: 'X-Cash AI',
-        },
-        get_top_accounts: {
-          kind: 'internal_data',
-          label: 'Đang tra cứu top tài khoản…',
-          source: 'X-Cash AI',
-        },
-        get_review_queue_count: {
-          kind: 'internal_data',
-          label: 'Đang đếm hàng đợi xét duyệt…',
-          source: 'X-Cash AI',
-        },
-        lookup_chart_account: {
-          kind: 'internal_data',
-          label: 'Đang tra cứu tài khoản TT133…',
-          source: 'X-Cash AI',
-        },
-        get_banking_status: {
-          kind: 'internal_data',
-          label: 'Đang kiểm tra liên kết ngân hàng…',
-          source: 'X-Cash AI',
-        },
-        get_cas_integration_help: {
-          kind: 'knowledge',
-          label: 'Đang tra cứu hướng dẫn Casso…',
-          source: 'X-Cash AI',
-        },
-        search_transactions: {
-          kind: 'internal_data',
-          label: 'Đang tìm kiếm giao dịch…',
-          source: 'X-Cash AI',
-        },
-        search_casso_public: {
-          kind: 'web_search',
-          label: 'Đang tìm trên web (casso.vn)…',
-          source: 'casso.vn',
-        },
-      };
-      const meta = activityMap[call.name];
-      if (meta) writeEvent('activity', meta);
-    });
-
-    runner.on('content', (delta: string) => {
-      if (delta) writeEvent('delta', { content: delta });
-    });
-
-    try {
       const reply = (await runner.finalContent()) ?? 'Xin lỗi, tôi không thể trả lời lúc này.';
-      const activities = buildActivities(calledTools);
+      const activities = buildActivities(calledTools, resultsCapture);
       writeEvent('done', { reply, meta: activities.length > 0 ? { activities } : undefined });
     } catch {
       writeEvent('done', { reply: 'Xin lỗi, có lỗi xảy ra. Vui lòng thử lại.', meta: undefined });

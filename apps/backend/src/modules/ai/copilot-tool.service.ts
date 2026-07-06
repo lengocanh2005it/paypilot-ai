@@ -5,11 +5,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
 import { ReportService } from '../report/report.service';
-import { getCasIntegrationFaq } from './copilot-cas-faq';
+import { type KnowledgeSearchResult, searchKnowledgeByKeyword } from './knowledge';
+import { OpenAiService } from './openai.service';
+
+type MonthSummary = Awaited<ReturnType<ReportService['getSummary']>>;
 
 @Injectable()
 export class CopilotToolService {
   private readonly logger = new Logger(CopilotToolService.name);
+  private readonly tavilyClient: ReturnType<typeof tavily> | null;
 
   constructor(
     private readonly reportService: ReportService,
@@ -17,12 +21,16 @@ export class CopilotToolService {
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
-  ) {}
+    private readonly openAiService: OpenAiService,
+  ) {
+    const apiKey = configService.get<string>('TAVILY_API_KEY', '');
+    this.tavilyClient = apiKey ? tavily({ apiKey }) : null;
+  }
 
   async getMonthSummary(tenantId: string, year: number, month: number) {
     const cacheKey = `copilot:tool:summary:${tenantId}:${year}-${month}`;
     const cached = await this.redisService.client.get(cacheKey);
-    if (cached) return JSON.parse(cached) as ReturnType<ReportService['getSummary']>;
+    if (cached) return JSON.parse(cached) as MonthSummary;
 
     const data = await this.reportService.getSummary(tenantId, year, month);
     const ttl = this.configService.get<number>('COPILOT_CONTEXT_CACHE_TTL_SECONDS', 300);
@@ -103,8 +111,11 @@ export class CopilotToolService {
       case 'get_banking_status':
         return this.getBankingStatus(tenantId);
 
+      case 'search_knowledge_base':
+        return this.searchKnowledge(String(args.query ?? ''));
+
       case 'get_cas_integration_help':
-        return getCasIntegrationFaq(String(args.topic));
+        return this.searchKnowledge(String(args.topic ?? ''));
 
       case 'search_transactions': {
         const keyword = String(args.keyword ?? '');
@@ -157,6 +168,41 @@ export class CopilotToolService {
     }
   }
 
+  private async searchKnowledge(query: string): Promise<KnowledgeSearchResult> {
+    if (!query.trim()) return { sections: [], query, totalFound: 0 };
+
+    if (!this.openAiService.isConfigured()) return searchKnowledgeByKeyword(query);
+
+    // Embed query rồi tìm trong pgvector
+    try {
+      const vector = await this.openAiService.createEmbedding(query);
+      if (!vector) return searchKnowledgeByKeyword(query);
+
+      const vectorStr = `[${vector.join(',')}]`;
+      const rows = await this.prisma.$queryRaw<
+        Array<{ section_id: string; title: string; content: string; distance: number }>
+      >`
+        SELECT section_id, title, content, embedding <=> ${vectorStr}::vector AS distance
+        FROM knowledge_embeddings
+        ORDER BY distance ASC
+        LIMIT 2
+      `;
+
+      if (rows.length === 0) return searchKnowledgeByKeyword(query);
+
+      return {
+        sections: rows.map((r) => ({ id: r.section_id, title: r.title, content: r.content })),
+        query,
+        totalFound: rows.length,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `pgvector knowledge search thất bại, dùng keyword fallback: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return searchKnowledgeByKeyword(query);
+    }
+  }
+
   private async searchCassoPublic(query: string) {
     if (!query.trim()) return { results: [], disclaimer: '' };
 
@@ -166,29 +212,47 @@ export class CopilotToolService {
     const hasCassoKeyword = CASSO_KEYWORDS.some((kw) => normalizedQuery.includes(kw));
     const safeQuery = hasCassoKeyword ? query : `casso ${query}`;
 
-    const cacheKey = `copilot:tool:casso_search:${Buffer.from(safeQuery).toString('base64').slice(0, 64)}`;
+    const maxResults = this.configService.get<number>('TAVILY_MAX_RESULTS', 5);
+    const searchDepth = this.configService.get<string>('TAVILY_SEARCH_DEPTH', 'basic') as
+      | 'basic'
+      | 'advanced';
+    const cacheKey = `copilot:tool:casso_search:${searchDepth}:${Buffer.from(safeQuery).toString('base64').slice(0, 60)}`;
     const cached = await this.redisService.client.get(cacheKey);
     if (cached) return JSON.parse(cached) as object;
 
-    const apiKey = this.configService.get<string>('TAVILY_API_KEY', '');
-    if (!apiKey) {
+    if (!this.tavilyClient) {
       this.logger.warn('TAVILY_API_KEY chưa cấu hình — search_casso_public bị bỏ qua');
       return { results: [], disclaimer: 'Tính năng tìm kiếm chưa được cấu hình.' };
     }
 
-    const client = tavily({ apiKey });
-    const response = await client.search(`${safeQuery} site:casso.vn`, {
-      maxResults: 3,
-      searchDepth: 'basic',
-      includeAnswer: true,
-    });
+    const timeoutMs = this.configService.get<number>('TAVILY_TIMEOUT_MS', 3000);
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Tavily search timeout')), timeoutMs),
+    );
+    let response: Awaited<ReturnType<typeof this.tavilyClient.search>>;
+    try {
+      response = await Promise.race([
+        this.tavilyClient.search(`${safeQuery} site:casso.vn`, {
+          maxResults,
+          searchDepth,
+          includeAnswer: true,
+          includeRawContent: 'text',
+        }),
+        timeout,
+      ]);
+    } catch (err) {
+      this.logger.error(
+        `search_casso_public thất bại (depth=${searchDepth}, timeout=${timeoutMs}ms): ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { results: [], disclaimer: 'Không thể tìm kiếm lúc này. Vui lòng thử lại sau.' };
+    }
 
     const payload = {
       answer: response.answer ?? null,
       results: response.results.map((r) => ({
         title: r.title,
         url: r.url,
-        snippet: r.content?.slice(0, 300) ?? '',
+        snippet: (r.rawContent ?? r.content)?.slice(0, 800) ?? '',
       })),
       disclaimer:
         'Thông tin từ website công khai của Casso. Để biết chi tiết tích hợp trong X-Cash AI, vào Cài đặt → Ngân hàng.',

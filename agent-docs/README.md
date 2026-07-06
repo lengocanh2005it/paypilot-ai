@@ -22,6 +22,7 @@ Tài liệu này dành cho AI coding agent (Claude Code) và developer làm vi�
 | Biết task nào thuộc sprint nào, ai phụ trách | [`reference/sprint-plan.md`](./reference/sprint-plan.md) |
 | Luồng nâng cấp gói qua PayOS (đã triển khai) | [`reference/payos-billing-plan.md`](./reference/payos-billing-plan.md) |
 | Implement import giao dịch từ Excel (Sprint 5) | [`reference/manual-import-spec.md`](./reference/manual-import-spec.md) — spec đầy đủ API, schema, AI direction, quota |
+| Implement giới hạn lượt chat Copilot theo gói | [`reference/copilot-quota-spec.md`](./reference/copilot-quota-spec.md) — schema, guard, reset cron, FE billing tab |
 
 ## Cấu trúc `agent-docs/`
 

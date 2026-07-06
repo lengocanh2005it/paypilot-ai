@@ -288,3 +288,16 @@ model AuditLog {
   @@index([entityType, entityId])
   @@map("audit_logs")
 }
+
+model KnowledgeEmbedding {
+  id        String                 @id @default(uuid())
+  sectionId String                 @unique @map("section_id")
+  title     String
+  content   String
+  contentHash String              @map("content_hash")
+  embedding Unsupported("vector(1536)")?
+  updatedAt DateTime               @default(now()) @updatedAt @map("updated_at")
+
+  @@index([sectionId])
+  @@map("knowledge_embeddings")
+}

@@ -126,7 +126,7 @@ curl -X POST "http://localhost:3000/api/v1/webhook/cas" \
 
 5. Mở **Dashboard** / **Giao dịch** — thấy giao dịch mới. Mỗi lần gửi mock dùng `transaction.id` **khác nhau** (idempotency Redis 24h).
 
-**Lưu ý Dashboard:** FE gọi `GET /transactions?limit=100` (max BE cho phép).
+**Lưu ý Dashboard:** stat cards dùng `/reports/summary` + `/review/count` + count API; **charts** vẫn gọi `GET /transactions?limit=100` (max BE cho phép).
 
 **Deploy VPS (Sprint 4 — còn lại):** Dockerfiles + `deploy.yml` + `deploy/README.md` đã có; cần cấu hình secrets GitHub + domain/SSL trên VPS thật. Xem `deploy/README.md`.
 
@@ -160,4 +160,4 @@ Luồng đúng: chọn ngân hàng → **đăng nhập iBanking** trong popup (k
 | `grantToken` hết hạn khi test Cas Link | Token chỉ sống 30 phút, dùng 1 lần — tạo lại token mới, không cache/reuse |
 | Cas Link báo lỗi ở form xác thực STK/tên TK | Đang dùng nhầm scope `qrpay` — X-Cash AI cần `identity,transaction`. Restart backend, bấm lại Liên kết ngân hàng |
 | Callback `/onboarding/banking/callback` lỗi `Cas API error 400` sau khi Cas Link thành công | Thường do thiếu scope `identity` khi gọi `GET /identity`, hoặc `publicToken` đã dùng (bấm lại từ đầu, tạo grant mới). Restart backend sau khi đổi scope |
-| Dashboard hiện 0 giao dịch dù webhook OK | FE gọi `limit>100` → BE trả 400; Dashboard dùng `limit=100` |
+| Dashboard hiện 0 giao dịch dù webhook OK | FE gọi `limit>100` → BE trả 400; charts Dashboard dùng `limit=100`; stat cards dùng summary/count API riêng |

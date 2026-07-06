@@ -17,8 +17,10 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
 import { formatVND } from '@/lib/format-vnd';
+import { PLAN_LABELS } from '@/lib/plan-labels';
 
 interface PlanPricing {
   plan: string;
@@ -27,13 +29,6 @@ interface PlanPricing {
   overagePricePerTransaction: number | null;
   editable: boolean;
 }
-
-const PLAN_LABELS: Record<string, string> = {
-  free: 'Free',
-  starter: 'Starter',
-  pro: 'Pro',
-  enterprise: 'Enterprise',
-};
 
 const PLAN_DESCRIPTIONS: Record<string, string> = {
   free: 'Dùng thử — định khoản AI, Dashboard, Human Review',
@@ -77,8 +72,7 @@ export default function PartnerPlansPage() {
       }),
     onSuccess: () => {
       toast.success('Đã cập nhật giá gói');
-      setEditingPlan(null);
-      setConfirmOpen(false);
+      closeEditDialog();
       queryClient.invalidateQueries({ queryKey: ['partner', 'plan-pricing'] });
     },
     onError: () => toast.error('Không thể cập nhật giá gói'),
@@ -100,6 +94,11 @@ export default function PartnerPlansPage() {
       return;
     }
     setConfirmOpen(true);
+  };
+
+  const closeEditDialog = () => {
+    setEditingPlan(null);
+    setConfirmOpen(false);
   };
 
   const handleConfirm = () => {
@@ -127,12 +126,12 @@ export default function PartnerPlansPage() {
                 // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholder
                 <Card key={i}>
                   <CardHeader className="pb-2">
-                    <div className="h-5 w-20 animate-pulse rounded bg-muted" />
+                    <Skeleton className="h-5 w-20" />
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    <div className="h-8 w-32 animate-pulse rounded bg-muted" />
-                    <div className="h-4 w-full animate-pulse rounded bg-muted" />
-                    <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+                    <Skeleton className="h-8 w-32" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
                   </CardContent>
                 </Card>
               ))
@@ -253,7 +252,7 @@ export default function PartnerPlansPage() {
         </Card>
 
         {/* Edit dialog */}
-        <Dialog open={editingPlan !== null} onOpenChange={(open) => !open && setEditingPlan(null)}>
+        <Dialog open={editingPlan !== null} onOpenChange={(open) => !open && closeEditDialog()}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
@@ -296,7 +295,7 @@ export default function PartnerPlansPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setEditingPlan(null)}>
+              <Button variant="ghost" onClick={closeEditDialog}>
                 Hủy
               </Button>
               <Button onClick={handleSubmit} disabled={updatePricingMutation.isPending}>
