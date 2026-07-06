@@ -2,7 +2,7 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Merge feat/excel-import + Copilot quota** — Import Excel (backend `import/` module, dialog 3 bước, filter nguồn, usageBreakdown billing) + Copilot hardening/quota trên nhánh `feat/copilot-function-calling`.
+Cập nhật lần cuối: **Copilot Quota (Phase 1–4 hoàn thành)** — Schema (2 enum values + 2 cột), guard `CopilotQuotaGuard`, increment/notify fire-and-forget, reset quota theo billing cycle, expose trong API + Partner DTO, UI progress bar BillingTab + PartnerPlansPage input field. Branch `feat/copilot-function-calling`.
 
 ---
 
@@ -118,6 +118,12 @@ Cập nhật lần cuối: **Merge feat/excel-import + Copilot quota** — Impor
 - Frontend: `PartnerDashboardPage` hint MRR/plan pie "snapshot hiện tại, không theo kỳ lọc ngày"; `PartnerPlansPage` fix confirm khi đóng dialog edit; skeleton dùng `<Skeleton>` ✅
 - Frontend: `PartnerLayout` bỏ `ThemeToggle` trùng trên mobile top bar (giữ sidebar footer) ✅
 
+**Đã xong (Copilot Quota — Phase 1–4):**
+- **Phase 1 — Schema:** migration `20260706143059_add_copilot_quota` — thêm `NotificationType.copilot_quota_warning` + `copilot_quota_exceeded`; cột `subscriptions.copilot_used_this_cycle` (Int, default 0); cột `plan_pricing.copilot_quota` (Int, default -1 = unlimited); seed `plan_pricing` copilotQuota (Free=0, Starter=200, Pro=1000, Enterprise=-1) ✅
+- **Phase 2 — Guard + increment:** `CopilotQuotaGuard` (`common/guards/copilot-quota.guard.ts`) — đọc subscription + planPricing từ DB (no cache), skip nếu quota=-1 (Enterprise), throw 429 nếu đã vượt, store `{ id }` vào `request[COPILOT_SUBSCRIPTION_KEY]`; guard chain trên `CopilotController`: `JwtAuthGuard → RolesGuard → PlanGuard → CopilotQuotaGuard`; `incrementAndNotify()` fire-and-forget sau `writeEvent('done')` — `$increment copilotUsedThisCycle` + gọi `checkCopilotQuotaNotifications()`; `NotificationService.checkCopilotQuotaNotifications()` dedup `copilot_quota_warning` (≥80%) và `copilot_quota_exceeded` (≥100%) mỗi chu kỳ bằng `createOncePerCycle()` ✅
+- **Phase 3 — Billing cycle reset + expose:** `BillingCycleService` reset `copilotUsedThisCycle=0` khi hết cycle; `BillingService.getCurrentPlan()` trả thêm `copilotQuota` + `copilotUsed`; `UpdatePlanPricingDto` thêm optional `copilotQuota` (Min -1); `PartnerService.updatePlanPricing()` + `listPlanPricing()` lưu và trả `copilotQuota` ✅
+- **Phase 4 — Frontend:** `SettingsPage` BillingTab — progress bar "Lượt chat Copilot" (ẩn khi quota=-1, màu primary/<80%, orange/≥80%, destructive/≥100%); `PartnerPlansPage` — hiện `copilotQuota` trong card + bảng tổng hợp, thêm input field trong dialog với helper text "Nhập -1 để không giới hạn" ✅
+
 **Chưa làm (Sprint 4 — còn lại):**
 - Bổ sung env production đầy đủ vào `docker-compose.yml` (OpenAI, Resend, PayOS, v.v.) + deploy lên VPS
 - SSL/HTTPS + nginx config production (domain thật, certbot) — template có tại `deploy/nginx/xcash.conf`
@@ -179,7 +185,8 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │   │       ├── 20260703150000_extend_notification_types/ ← thêm quota/billing/suspend types ✅
 │   │   │       ├── 20260703160000_add_user_email_verified_at/ ← cột users.email_verified_at + backfill user cũ ✅
 │   │   │       ├── 20260704100000_add_user_avatar_url/ ← cột users.avatar_url ✅
-│   │   │       └── 20260704162813_add_transaction_source_direction_import_batch/ ← enum TransactionSource/Direction, cột source/direction/importBatchId trên transactions ✅
+│   │   │       ├── 20260704162813_add_transaction_source_direction_import_batch/ ← enum TransactionSource/Direction, cột source/direction/importBatchId trên transactions ✅
+│   │   │       └── 20260706143059_add_copilot_quota/ ← NotificationType enum thêm copilot_quota_warning/exceeded; subscriptions.copilot_used_this_cycle; plan_pricing.copilot_quota ✅
 │   │   ├── package.json
 │   │   ├── nest-cli.json
 │   │   ├── .swcrc
@@ -191,6 +198,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │       │   ├── decorators/                # @Roles, @RequiresPlan, @Public
 │   │       │   ├── guards/auth.guards.ts       # JwtAuthGuard, RolesGuard, PartnerGuard
 │   │       │   ├── guards/plan.guard.ts
+│   │       │   ├── guards/copilot-quota.guard.ts  # CopilotQuotaGuard — đọc DB, skip quota=-1, throw 429, store subscription id ✅
 │   │       │   ├── guards/tenant-throttler.guard.ts
 │   │       │   ├── filters/all-exceptions.filter.ts
 │   │       │   ├── interceptors/response.interceptor.ts
@@ -209,7 +217,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   └── change-password.service.ts
 │   │           ├── banking/                   # POST /webhook/cas → enqueue ai-classify ✅
 │   │           ├── ai/                        # openai.service, embedding.service, classification.service, classification.processor, copilot.controller ✅
-│   │           │   ├── copilot.controller.ts      # POST /ai/copilot + POST /ai/copilot/stream (SSE) — feature flag routing
+│   │           │   ├── copilot.controller.ts      # POST /ai/copilot + POST /ai/copilot/stream (SSE) — guard chain JwtAuth→Roles→Plan→CopilotQuota; incrementAndNotify() fire-and-forget
 │   │           │   ├── copilot-context.service.ts # Fallback: preload summary tháng hiện tại (dùng khi flag=0)
 │   │           │   ├── copilot-tool.service.ts    # execute(tenantId, name, args) — 8 tools + Redis cache (+ search_casso_public khi bật)
 │   │           │   ├── copilot-tools.factory.ts   # buildCopilotTools() → 8 Tool[] (+ search_casso_public optional)
@@ -414,7 +422,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 | POST | `/auth/accept-invite` | Public | Đặt mật khẩu + kích hoạt + cấp JWT |
 | GET | `/audit-logs` | Admin, Accountant | Nhật ký hoạt động tenant — phân trang, lọc `action`, `fromDate`, `toDate` |
 | GET | `/billing/plans` | Admin, Accountant | Danh sách gói từ `plan_pricing` |
-| GET | `/billing/current-plan` | Admin, Accountant | Gói hiện tại — kèm `usageBreakdown { fromBank, fromImport }` |
+| GET | `/billing/current-plan` | Admin, Accountant | Gói hiện tại — kèm `usageBreakdown { fromBank, fromImport }`, `copilotQuota`, `copilotUsed` |
 | GET | `/billing/usage-history` | Admin | Lịch sử sử dụng quota |
 | POST | `/billing/upgrade` | Admin | Tạo PaymentOrder + link PayOS (mock fallback khi chưa có keys) |
 | POST | `/billing/upgrade/:orderCode/mock-confirm` | Admin | Dev-only — giả lập xác nhận thanh toán upgrade |
@@ -431,7 +439,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 | PATCH | `/partner/tenants/:id/plan` | Cas Partner | Đặt gói cho tenant (không chặn downgrade) |
 | GET | `/partner/tenants/:id` | Cas Partner | Chi tiết 1 tenant (plan + GD tháng + AI accuracy + members) |
 | GET | `/partner/plan-pricing` | Cas Partner | Xem giá/quota từng gói |
-| PATCH | `/partner/plan-pricing/:plan` | Cas Partner | Sửa giá/quota/phí vượt (chặn sửa `free`) |
+| PATCH | `/partner/plan-pricing/:plan` | Cas Partner | Sửa giá/quota/phí vượt/copilotQuota (chặn sửa `free`) |
 | GET | `/partner/audit-logs` | Cas Partner | Audit log toàn hệ thống — lọc `tenantId`, `action`, phân trang |
 
 Swagger UI: `http://localhost:3000/api/docs`
@@ -463,6 +471,9 @@ transaction_classifications
 - `tenants.matching_threshold` → `tenants.classification_threshold` (default 85)
 - `TransactionStatus` enum: `matched` → `classified`
 - `transactions`: bỏ cột `confidence_score`, thêm relation `classification`; thêm `source (TransactionSource)`, `direction (TransactionDirection)`, `importBatchId (String?)`
+- `subscriptions`: thêm `copilot_used_this_cycle (Int, default 0)` — đếm lượt chat Copilot trong chu kỳ hiện tại, reset cùng `transactionUsedThisCycle` khi hết chu kỳ
+- `plan_pricing`: thêm `copilot_quota (Int, default -1)` — số lượt Copilot/tháng; -1 = unlimited (Enterprise), 0 = blocked (Free)
+- `NotificationType` enum: thêm `copilot_quota_warning`, `copilot_quota_exceeded`
 - `TransactionSource` enum: `cas` (từ webhook Cas Balance Hook), `import` (nhập tay từ Excel)
 - `TransactionDirection` enum: `in` (thu), `out` (chi)
 
@@ -547,6 +558,8 @@ postinstall      → prisma generate
 - **`search_transactions` tool:** Prisma trực tiếp — `content`+`senderAccount` ILIKE keyword; `source` optional (`cas` → `grantId: { not: null }`, `import` → `grantId: null`, `all`/bỏ trống = không lọc source); limit 1–20 (required trong schema).
 - **`search_casso_public` tool (Phase 3):** Tavily `@tavily/core` singleton trong `CopilotToolService`, query thêm `site:casso.vn`, cache 24h theo base64(query) key. Chỉ active khi `COPILOT_CASSO_SEARCH_ENABLED=1` + `TAVILY_API_KEY` set. `buildCopilotTools()` nhận `configService?` để kiểm tra flag — nếu không truyền (backward compat) thì tool không xuất hiện. `TOOL_ACTIVITIES` có entry `web_search` cho tool này.
 - **Copilot tools cache keys:** `copilot:tool:summary:{tenantId}:{y}-{m}` TTL=300s; `copilot:tool:banking:{tenantId}` TTL=60s. Key cũ `copilot:context:{tenantId}:{y}-{m}` còn dùng khi flag=0 (fallback).
+- **Copilot Quota guard chain:** `JwtAuthGuard → RolesGuard → PlanGuard → CopilotQuotaGuard` — thứ tự này quan trọng. `CopilotQuotaGuard` luôn đọc DB (no cache) để tránh race condition khi nhiều request đến cùng lúc. Sentinel `-1` (Enterprise) bypass hoàn toàn check quota. Guard store `{ id: subscription.id }` vào `request[COPILOT_SUBSCRIPTION_KEY]` để controller dùng cho `$increment`. Increment là fire-and-forget sau `writeEvent('done')` — lỗi increment không fail request.
+- **Copilot Quota notification dedup:** `checkCopilotQuotaNotifications()` trong `NotificationService` dùng `createOncePerCycle(tenantId, type, cycleStart)` để chỉ gửi notification 1 lần/chu kỳ per loại (`copilot_quota_warning` ≥80%, `copilot_quota_exceeded` ≥100%). Nếu quota=-1 (unlimited) thì không gửi gì.
 - **Overage billing flow:** (1) webhook banking ghi `usageLog(metric='overage_transaction')` khi Starter/Pro vượt quota; (2) cron `BillingCycleService` 2am daily tìm sub hết `currentCycleEnd` → gọi `createOverageOrder()` nếu có overage → reset `transactionUsedThisCycle=0` và `currentCycleEnd`; (3) tenant thấy banner cam trên BillingTab → click "Thanh toán ngay" → tạo PayOS order `orderType='overage'`; (4) webhook PayOS xác nhận → `confirmPayment()` nhận biết `orderType` → chỉ mark paid + auditLog, không đổi gói. Giá đọc từ `planPricing.overagePricePerTransaction` (không hardcode).
 - **`payment_orders.order_type`:** field `orderType` (default `'upgrade'`) — Prisma client typed bình thường, không cần `as any`.
 - **Excel Import:** `POST /transactions/import` và `/validate` nhận `multipart/form-data` với field `file`. Backend dùng `xlsx` package đọc file, validate từng row, tạo transaction với `source = TransactionSource.import` và `importBatchId` chung cho cả batch. Template download từ `GET /transactions/import/template` (buffer xlsx trả về).
