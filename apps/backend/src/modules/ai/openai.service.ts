@@ -1,6 +1,51 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import type { CopilotToolService } from './copilot-tool.service';
+import { buildCopilotTools } from './copilot-tools.factory';
+
+export interface CopilotActivity {
+  kind: 'internal_data' | 'knowledge' | 'web_search';
+  label: string;
+  source?: string;
+  urls?: string[];
+}
+
+const ACTIVITY_MAP: Record<string, Omit<CopilotActivity, 'urls'>> = {
+  get_month_summary: { kind: 'internal_data', label: 'Báo cáo tháng', source: 'X-Cash AI' },
+  get_month_comparison: { kind: 'internal_data', label: 'So sánh tháng', source: 'X-Cash AI' },
+  get_top_accounts: { kind: 'internal_data', label: 'Top tài khoản', source: 'X-Cash AI' },
+  get_review_queue_count: {
+    kind: 'internal_data',
+    label: 'Hàng đợi xét duyệt',
+    source: 'X-Cash AI',
+  },
+  lookup_chart_account: {
+    kind: 'internal_data',
+    label: 'Hệ thống tài khoản TT133',
+    source: 'X-Cash AI',
+  },
+  get_banking_status: { kind: 'internal_data', label: 'Liên kết ngân hàng', source: 'X-Cash AI' },
+  get_cas_integration_help: {
+    kind: 'knowledge',
+    label: 'Hướng dẫn tích hợp Casso',
+    source: 'X-Cash AI',
+  },
+};
+
+function buildActivities(calledTools: string[]): CopilotActivity[] {
+  const seen = new Set<string>();
+  const result: CopilotActivity[] = [];
+  for (const name of calledTools) {
+    const meta = ACTIVITY_MAP[name];
+    if (!meta) continue;
+    const key = `${meta.kind}:${meta.label}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ ...meta });
+  }
+  return result;
+}
 
 export interface ClassificationResult {
   debitAccount: string;
@@ -104,6 +149,76 @@ ${financialContext}`;
     }
   }
 
+  async chatCopilotWithTools(
+    tenantId: string,
+    message: string,
+    history: Array<{ role: 'user' | 'assistant'; content: string }>,
+    toolService: CopilotToolService,
+  ): Promise<{ reply: string; activities: CopilotActivity[] }> {
+    if (!this.client) {
+      return {
+        reply: 'AI Copilot chưa được cấu hình. Vui lòng liên hệ quản trị viên.',
+        activities: [],
+      };
+    }
+
+    const now = new Date();
+    const systemPrompt = `Bạn là AI Copilot tài chính của X-Cash AI, chuyên hỗ trợ kế toán SME Việt Nam.
+Bạn có khả năng phân tích dữ liệu giao dịch và định khoản theo chuẩn TT133.
+
+Định dạng: LUÔN bọc phần quan trọng trong dấu markdown in đậm "**...**":
+- Số liệu: số tiền (**1.500.000đ**), phần trăm (**85%**), ngày/tháng (**tháng 7/2026**), số lượng (**12 giao dịch**), mã TK (**Nợ 112**, **Có 511**).
+- Từ khóa nghiệp vụ: **X-Cash AI**, **AI Copilot**, **TT133**, **doanh thu**, **chi phí**, **lãi/lỗ**, **định khoản**, **giao dịch chờ duyệt**.
+
+Quy tắc gọi tool:
+- Khi cần số liệu thu/chi/lãi-lỗ, giao dịch, tài khoản kế toán — HÃY GỌI TOOL phù hợp, không đoán.
+- Khi user hỏi về Casso, Cas Link, liên kết ngân hàng, mất GD từ ngân hàng → gọi get_banking_status trước; nếu cần giải thích luồng → gọi get_cas_integration_help.
+- Tháng/năm: nếu user nói "tháng này" hoặc "hiện tại", dùng tháng ${now.getMonth() + 1} năm ${now.getFullYear()}.
+- Câu xã giao, giới thiệu bản thân → trả lời trực tiếp, không gọi tool.
+
+Bảo mật: Không tiết lộ tên tool kỹ thuật, grantId, accessToken hay JSON thô cho user.
+Không bịa thông tin về sản phẩm Casso (giá, danh sách ngân hàng hỗ trợ) — nếu không có trong FAQ, hướng user vào casso.vn.
+Luôn trả lời tiếng Việt.`;
+
+    const tools = buildCopilotTools(tenantId, toolService);
+    const calledTools: string[] = [];
+
+    try {
+      const runner = this.client.chat.completions.runTools(
+        {
+          model: this.chatModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
+            { role: 'user', content: message },
+          ],
+          // biome-ignore lint/suspicious/noExplicitAny: OpenAI SDK tool type requires cast
+          tools: tools as any,
+          tool_choice: 'auto',
+          temperature: 0.3,
+          max_tokens: 500,
+        },
+        { maxChatCompletions: 5 },
+      );
+
+      runner.on('functionToolCall', (call) => {
+        this.logger.debug(`Copilot tool called: ${call.name}`);
+        calledTools.push(call.name);
+      });
+
+      const reply = (await runner.finalContent()) ?? 'Xin lỗi, tôi không thể trả lời lúc này.';
+      const activities = buildActivities(calledTools);
+      return { reply, activities };
+    } catch (error) {
+      this.logger.error(
+        'Copilot runTools failed',
+        error instanceof Error ? error.message : String(error),
+      );
+      return { reply: 'Xin lỗi, có lỗi xảy ra. Vui lòng thử lại.', activities: [] };
+    }
+  }
+
+  /** @deprecated Dùng chatCopilotWithTools khi COPILOT_USE_FUNCTION_CALLING=1 */
   async classifyTransaction(
     content: string,
     amount: number,

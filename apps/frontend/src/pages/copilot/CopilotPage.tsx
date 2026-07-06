@@ -1,6 +1,8 @@
 import { SubscriptionPlan } from '@xcash/shared-types';
 import { Bot, Send, User } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import type { CopilotActivity } from '@/components/copilot/CopilotSourceChips';
+import { CopilotSourceChips } from '@/components/copilot/CopilotSourceChips';
 import { Header } from '@/components/layout/Header';
 import { HighlightedText } from '@/components/shared/HighlightedText';
 import { PlanGate } from '@/components/shared/PlanGate';
@@ -13,13 +15,15 @@ interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  activities?: CopilotActivity[];
 }
 
 const SUGGESTED_QUESTIONS = [
-  'Tháng này tôi chi nhiều nhất vào đâu?',
   'Doanh thu tháng này là bao nhiêu?',
+  'Tháng này tôi chi nhiều nhất vào đâu?',
   'Có bao nhiêu giao dịch chờ xét duyệt?',
-  'Lãi/lỗ tháng này như thế nào?',
+  'Đã liên kết ngân hàng chưa?',
+  'Sao không thấy giao dịch từ Casso?',
 ];
 
 export default function CopilotPage() {
@@ -28,7 +32,7 @@ export default function CopilotPage() {
       id: 'init',
       role: 'assistant',
       content:
-        'Xin chào! Tôi là **AI Copilot** của **X-Cash AI**. Bạn có thể hỏi tôi về **doanh thu**, **chi phí**, **giao dịch** hoặc **định khoản** theo chuẩn **TT133** của doanh nghiệp.',
+        'Xin chào! Tôi là **AI Copilot** của **X-Cash AI**. Bạn có thể hỏi tôi về **doanh thu**, **chi phí**, **giao dịch**, **định khoản** theo chuẩn **TT133** hoặc **liên kết ngân hàng** của doanh nghiệp.',
     },
   ]);
   const [input, setInput] = useState('');
@@ -50,13 +54,22 @@ export default function CopilotPage() {
     setIsLoading(true);
 
     try {
-      const res = await api.post<{ data: { reply: string } }>('/ai/copilot', {
+      const res = await api.post<{
+        data: { reply: string; meta?: { activities: CopilotActivity[] } };
+      }>('/ai/copilot', {
         message: text,
         history: history.slice(-10).map(({ role, content }) => ({ role, content })),
       });
+
+      const { reply, meta } = res.data.data;
       setMessages((prev) => [
         ...prev,
-        { id: `a-${Date.now()}`, role: 'assistant', content: res.data.data.reply },
+        {
+          id: `a-${Date.now()}`,
+          role: 'assistant',
+          content: reply,
+          activities: meta?.activities ?? [],
+        },
       ]);
     } catch {
       setMessages((prev) => [
@@ -118,7 +131,16 @@ export default function CopilotPage() {
                     : 'bg-primary text-primary-foreground rounded-tr-none',
                 )}
               >
-                {msg.role === 'assistant' ? <HighlightedText text={msg.content} /> : msg.content}
+                {msg.role === 'assistant' ? (
+                  <>
+                    <HighlightedText text={msg.content} />
+                    {msg.activities && msg.activities.length > 0 && (
+                      <CopilotSourceChips activities={msg.activities} />
+                    )}
+                  </>
+                ) : (
+                  msg.content
+                )}
               </div>
             </div>
           ))}
