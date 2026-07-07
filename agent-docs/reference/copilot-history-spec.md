@@ -84,12 +84,13 @@ model CopilotMessage {
 
 | Method | Path | Auth | Mô tả |
 |--------|------|------|-------|
-| `GET` | `/ai/copilot/conversations` | Starter+ | Danh sách cuộc chat (phân trang) |
-| `POST` | `/ai/copilot/conversations` | Starter+ | Tạo cuộc chat mới (trả `{ id, title }`) |
-| `GET` | `/ai/copilot/conversations/:id` | Starter+ | Toàn bộ messages của 1 cuộc chat |
+| `GET` | `/ai/copilot/conversations` | Starter+ | Danh sách cuộc chat (cursor-based, xem 3.3) |
+| `POST` | `/ai/copilot/conversations` | Starter+ | *(reserved — FE không gọi; lazy creation qua chat, xem 7.9)* |
+| `GET` | `/ai/copilot/conversations/:id` | Starter+ | Messages của 1 cuộc chat (cursor-based, xem 3.3) |
 | `PATCH` | `/ai/copilot/conversations/:id` | Starter+ | Đổi tên cuộc chat |
 | `DELETE` | `/ai/copilot/conversations/:id` | Starter+ | Xóa cuộc chat + toàn bộ messages |
-| ~~`GET /ai/copilot/usage`~~ | — | Dùng lại `GET /billing/current-plan` (đã có `copilotUsed`/`copilotQuota`) — xem 9.2 |
+
+**Usage bar (sidebar):** không có endpoint mới — FE dùng `GET /billing/current-plan` (`copilotUsed`, `copilotQuota`, `isUnlimited`). Xem 9.2.
 
 ### 3.2 Sửa endpoint hiện có
 
@@ -122,7 +123,13 @@ class CopilotDto {
 
 #### `GET /ai/copilot/conversations`
 
-Query params: `?page=1&limit=20`
+**Cursor-based** (không dùng `page`/`offset`) — tránh trùng/bỏ sót khi conversation active liên tục nhảy lên đầu list.
+
+Query params:
+- `?limit=20` (default 20, max 50)
+- `?before=<conversationId>` — lấy các conversation cũ hơn (theo `updatedAt DESC`)
+
+Khi không có `before` → trả 20 conversation **mới nhất**.
 
 Response:
 ```json
@@ -134,14 +141,25 @@ Response:
       "createdAt": "2026-07-07T10:30:00Z",
       "updatedAt": "2026-07-07T10:45:00Z",
       "messageCount": 8,
-      "lastMessage": "Tổng doanh thu tháng 7 là 125.000.000đ"  // preview snippet 80 chars
+      "lastMessage": "Tổng doanh thu tháng 7 là 125.000.000đ"
     }
   ],
-  "page": 1,
-  "limit": 20,
-  "total": 45,
-  "totalPages": 3
+  "hasMore": true,
+  "cursorNext": "uuid-of-oldest-item-in-batch"
 }
+```
+
+`lastMessage`: preview snippet tối đa 80 ký tự (ưu tiên message assistant mới nhất nếu có).
+
+**Prisma query** (dùng `cursor` + `skip: 1` — xử lý đúng khi trùng `updatedAt`):
+```typescript
+findMany({
+  where: { tenantId, userId },
+  orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+  ...(before ? { cursor: { id: before }, skip: 1 } : {}),
+  take: limit + 1,
+});
+// hasMore = length > limit; cursorNext = items[limit - 1]?.id
 ```
 
 Scope theo `tenantId` **và** `userId` — user chỉ thấy cuộc chat của chính họ.
@@ -223,21 +241,6 @@ Validate: title không rỗng, tối đa 100 ký tự.
 #### `DELETE /ai/copilot/conversations/:id`
 
 Cascade delete messages (Prisma `onDelete: Cascade` đã có). Trả `204 No Content`.
-
-#### `GET /ai/copilot/usage`
-
-Response:
-```json
-{
-  "copilotUsed": 47,
-  "copilotQuota": 200,
-  "cycleStart": "2026-07-01T00:00:00Z",
-  "cycleEnd": "2026-07-31T23:59:59Z",
-  "isUnlimited": false
-}
-```
-
-Dữ liệu từ `subscription.copilotUsedThisCycle` + `planPricing.copilotQuota`. Tái dùng logic trong `BillingService.getCurrentPlan()`.
 
 ---
 
@@ -456,15 +459,13 @@ export interface CopilotConversationDetail extends CopilotConversationSummary {
   oldestMessageId: string | null;
 }
 
-// CopilotUsageDto không cần — dùng lại fields từ CurrentPlanDto đã có
-
-export interface CopilotUsageDto {
-  copilotUsed: number;
-  copilotQuota: number;
-  cycleStart: string;
-  cycleEnd: string;
-  isUnlimited: boolean;
+export interface CopilotConversationsListResponse {
+  items: CopilotConversationSummary[];
+  hasMore: boolean;
+  cursorNext: string | null;
 }
+
+// Usage bar: dùng lại CurrentPlanDto (copilotUsed, copilotQuota, isUnlimited) — không thêm CopilotUsageDto
 ```
 
 ---
@@ -489,7 +490,8 @@ export interface CopilotUsageDto {
   ```
   Model: `gpt-4o-mini` (cheap), `max_tokens: 20`, `temperature: 0`.
 - Kết quả → `UPDATE copilot_conversations SET title = ? WHERE id = ?`.
-- **Không block** response chat — title được cập nhật ngầm, FE tự invalidate query danh sách sau 1–2s (hoặc nhận qua SSE nếu muốn realtime).
+- **Không block** response chat — title được cập nhật ngầm trên server.
+- FE: sau `done` event (stream) hoặc sau response (JSON), gọi `invalidateQueries(['copilot-conversations', userId])` **ngay** (không `setTimeout`). Title LLM thường xong trong vài trăm ms — lần refetch đầu có thể vẫn thấy "Cuộc chat mới"; lần invalidate tiếp theo (tin nhắn sau, hoặc user mở lại sidebar) sẽ thấy title mới. Chấp nhận được cho MVP.
 - Title được **cố định sau lần sinh đó** — không tự đổi dù có thêm tin nhắn mới.
 - User có thể đổi tên thủ công bất kỳ lúc nào qua `PATCH /ai/copilot/conversations/:id`.
 - Fallback nếu LLM fail: giữ nguyên "Cuộc chat mới" — không retry, không ảnh hưởng UX.
@@ -810,16 +812,16 @@ Ví dụ history gửi lên:
 | Mất kết nối mạng (không phải user abort) | `req.on('close')` cũng fire → behavior giống abort — partial được lưu, quota không tính |
 
 ### 7.12 Pagination conversations
-- Mặc định 20/trang.
+- Mặc định `limit=20`, cursor-based qua `?before=<conversationId>` (xem 3.3).
 - Sắp xếp theo `updatedAt DESC` — conversation có tin nhắn mới nhất lên đầu.
-- FE dùng infinite scroll: khi scroll đến cuối list → load trang tiếp.
+- FE dùng infinite scroll: khi scroll đến cuối sidebar list → gọi tiếp với `cursorNext`.
 
-### 7.12 Xóa conversation
+### 7.13 Xóa conversation
 - Cascade delete messages (Prisma `onDelete: Cascade`).
 - Sau khi xóa conversation đang active → tự động chọn conversation gần nhất hoặc về trạng thái "Chat mới".
 - Hiện `ConfirmDialog` trước khi xóa (pattern giống NotificationBell).
 
-### 7.13 Mobile UX
+### 7.14 Mobile UX
 - Sidebar ẩn mặc định trên màn hình < `md`.
 - Nút hamburger/menu ở header chat area mở ra sidebar dạng Sheet (ShadCN `<Sheet>`).
 - Sau khi chọn conversation trên mobile → đóng sidebar tự động.
@@ -835,7 +837,7 @@ Ví dụ history gửi lên:
 - [ ] Đổi tên conversation → hiển thị ngay trong sidebar
 - [ ] Xóa conversation → khỏi danh sách, messages bị xóa khỏi DB
 - [ ] User A không xem được conversation của User B (cùng tenant)
-- [ ] `GET /ai/copilot/usage` trả đúng `copilotUsed` / `copilotQuota`
+- [ ] Usage bar: `GET /billing/current-plan` trả đúng `copilotUsed` / `copilotQuota`
 - [ ] Sidebar usage bar đúng màu theo ngưỡng (<80% primary, ≥80% orange, ≥100% red)
 - [ ] Mobile: sidebar mở/đóng bằng drawer, chọn conversation đóng drawer
 - [ ] `activities` (function calling sources) được lưu và hiển thị đúng khi load lại
@@ -845,8 +847,9 @@ Ví dụ history gửi lên:
 - [ ] Skeleton loader xuất hiện ở top khi đang tải tin cũ
 - [ ] `hasMore = false` → sentinel không trigger nữa, không có loading indicator
 - [ ] Conversation có < 10 tin → `hasMore = false` ngay từ đầu
-- [ ] Auto-title: sau lượt chat đầu tiên, sidebar cập nhật title từ "Cuộc chat mới" → title LLM sinh ra
-- [ ] Auto-title không block response chat (fire-and-forget)
+- [ ] Auto-title: sau lượt chat đầu tiên, sidebar cập nhật title từ "Cuộc chat mới" → title LLM sinh ra (có thể trễ 1 lần refetch)
+- [ ] Auto-title không block response chat (fire-and-forget trên BE)
+- [ ] FE invalidate `copilot-conversations` ngay sau `done` — không dùng `setTimeout`
 - [ ] Auto-title cố định sau lần sinh — chat thêm không đổi title
 - [ ] Fallback: nếu LLM sinh title fail → giữ "Cuộc chat mới", không crash
 - [ ] Copy button: click icon → clipboard có đúng nội dung, icon chuyển sang Check 1.5s
@@ -861,11 +864,11 @@ Ví dụ history gửi lên:
 - [ ] Sau khi abort, user gửi "tiếp tục" → AI nhận history có partial message, tiếp tục tự nhiên
 - [ ] Mất mạng giữa chừng → behavior giống abort (partial lưu, quota không tính)
 - [ ] Chuyển conversation khi đang stream → abort stream cũ trước rồi mới load conversation mới
-- [ ] `before` cursor có 2 message cùng millisecond → vẫn trả đúng (xem 7.14)
+- [ ] `before` cursor có 2 message cùng millisecond → vẫn trả đúng (xem 7.15)
 - [ ] Auto-title vẫn chạy kể cả khi lượt đầu bị abort (nếu có nội dung partial)
 - [ ] Stop button ẩn / disabled khi fallback sang JSON endpoint (không stream)
 
-### 7.14 Cursor collision — hai message cùng millisecond
+### 7.15 Cursor collision — hai message cùng millisecond
 
 Query `createdAt: { lt: cursor.createdAt }` có thể bỏ sót message nếu hai tin nhắn được ghi vào DB trong cùng 1 millisecond (user message + assistant message ghi liên tiếp, server nhanh).
 
@@ -897,7 +900,7 @@ findMany({
 ```
 Cách này Prisma xử lý đúng ngay cả khi trùng timestamp.
 
-### 7.15 Chuyển conversation khi đang stream
+### 7.16 Chuyển conversation khi đang stream
 
 Khi user click sang conversation khác trong sidebar trong lúc AI đang trả lời:
 
@@ -915,7 +918,7 @@ const handleSelectConversation = (id: string) => {
 
 **Không** chờ abort hoàn thành rồi mới load — set `activeConversationId` ngay để UI phản hồi nhanh. Partial message từ stream cũ sẽ được lưu vào DB trong nền (fire-and-forget).
 
-### 7.16 Auto-title khi lượt đầu bị abort
+### 7.17 Auto-title khi lượt đầu bị abort
 
 Nếu user abort ngay lượt chat đầu tiên (conversation chưa có title), nhưng đã có `accumulatedContent`:
 
@@ -923,7 +926,7 @@ Nếu user abort ngay lượt chat đầu tiên (conversation chưa có title), 
 - `dto.message` luôn có sẵn dù abort → không phụ thuộc vào nội dung assistant.
 - Kết quả: conversation được đặt tên ngay cả khi câu trả lời bị dừng.
 
-### 7.17 React Query key convention
+### 7.18 React Query key convention
 
 Để cache invalidation nhất quán:
 
@@ -934,15 +937,13 @@ Nếu user abort ngay lượt chat đầu tiên (conversation chưa có title), 
 // Chi tiết 1 conversation + messages
 ['copilot-conversation', conversationId]
 
-// Usage stats (usage bar)
-['copilot-usage', tenantId]
+// Usage stats (usage bar) — tái dùng query billing hiện có
+['billing', 'current-plan']   // hoặc key đang dùng trong app cho GET /billing/current-plan
 ```
 
-Sau khi chat xong 1 lượt: chỉ cần `invalidateQueries(['copilot-conversations', userId])` để cập nhật `lastMessage` + `updatedAt` trong sidebar. Không invalidate `['copilot-conversation', conversationId]` — messages được quản lý riêng bằng local state (optimistic update).
+Sau khi chat xong 1 lượt: `invalidateQueries(['copilot-conversations', userId])` để cập nhật `lastMessage` + `updatedAt` (và title nếu auto-title đã xong). Không invalidate `['copilot-conversation', conversationId]` — messages được quản lý riêng bằng local state (optimistic update).
 
-Sau auto-title hoàn thành (backend): invalidate `['copilot-conversations', userId]` một lần nữa sau ~2s để sidebar cập nhật title mới.
-
-### 7.18 Stop button với JSON fallback
+### 7.19 Stop button với JSON fallback
 
 `sendViaJson` (axios) không hỗ trợ `AbortController` theo cùng cách SSE. Khi stream fail và fallback sang JSON:
 
@@ -1219,23 +1220,13 @@ const reply = await callAI(context);
 
 Thực tế: `findOrCreateConversation` và `buildAiContext` (nếu dùng) có thể chạy song song. User message write vẫn cần `conv.id` nên không parallel hoàn toàn được, nhưng **context pre-fetch tiết kiệm đáng kể** vì đây là bước chậm (Redis + DB).
 
-### 9.2 `GET /ai/copilot/usage` — không cần endpoint mới
+### 9.2 Usage bar — tái dùng `GET /billing/current-plan`
 
-`GET /billing/current-plan` đã trả `copilotUsed` và `copilotQuota` (Phase 3 Copilot Quota). Tạo thêm `GET /ai/copilot/usage` sẽ duplicate DB query.
+`GET /billing/current-plan` đã trả `copilotUsed`, `copilotQuota`, `isUnlimited`. Không tạo `GET /ai/copilot/usage` — tránh duplicate query. FE sidebar dùng cùng React Query key với phần billing hiện có (xem 7.18).
 
-**Giải pháp:** FE dùng lại `GET /billing/current-plan` cho usage bar ở sidebar. Không cần endpoint mới — xóa khỏi danh sách endpoint (mục 3.1).
+### 9.3 Conversations list — cursor-based (đã chuẩn hóa ở 3.3)
 
-### 9.3 Conversations list — dùng cursor thay vì page
-
-Danh sách conversations trong sidebar dùng `?page=1&limit=20` (offset-based). Vấn đề: khi user đang chat, conversation active liên tục được update `updatedAt` và nhảy lên đầu list. Nếu user scroll sidebar xuống trang 2, các item đã bị shift → trang 2 trả về item trùng hoặc bỏ sót.
-
-**Dùng cursor-based thay vì offset:**
-```
-GET /ai/copilot/conversations?limit=20                          // trang đầu
-GET /ai/copilot/conversations?limit=20&before=<oldestUpdatedAt>&beforeId=<oldestId>  // trang tiếp
-```
-
-Response thêm `hasMore` và `cursorNext` thay vì `page/totalPages`.
+Offset pagination (`page`/`totalPages`) **không dùng** — conversation active liên tục `updatedAt` nhảy lên đầu → trang sau bị trùng/bỏ sót. Spec chính thức: cursor `?before=<conversationId>` + `hasMore`/`cursorNext` (mục 3.3).
 
 ### 9.4 React Query `staleTime` — giảm refetch thừa
 
@@ -1257,22 +1248,16 @@ useQuery({
 
 `staleTime: Infinity` cho conversation detail vì messages được quản lý hoàn toàn bằng local state (optimistic update). Refetch tự động chỉ gây conflict với local state.
 
-### 9.5 Auto-title invalidation — không dùng setTimeout
+### 9.5 Auto-title — quyết định thống nhất (7.3)
 
-Spec hiện tại: "FE tự invalidate query danh sách sau 1–2s". Dùng `setTimeout` để invalidate là fragile (race condition, sai nếu component unmount trong 2s).
+| Phương án | Quyết định |
+|-----------|------------|
+| Chờ LLM gen title rồi mới trả response (`title` trong body) | **Không dùng** — thêm ~300ms vào lượt chat đầu, xấu với streaming |
+| SSE event riêng khi title xong | **Không dùng** — phức tạp, không cần cho MVP |
+| Fire-and-forget trên BE + FE invalidate ngay sau `done` | **Dùng** — xem 7.3, 7.18 |
+| `setTimeout` 1–2s rồi mới invalidate | **Không dùng** — fragile (unmount, race) |
 
-**Cách tốt hơn:** Backend trả `titleGenerated: false` trong response lần đầu, sau đó emit SSE notification đặc biệt khi title được cập nhật. Nhưng đây phức tạp.
-
-**Cách đơn giản hơn và đủ tốt:** Include `title` trực tiếp trong response của chat endpoint (sau khi auto-title được gen):
-
-```typescript
-// Controller: nếu là message đầu tiên, chờ LLM gen title rồi mới trả
-// → Adds ~300ms latency cho lượt đầu tiên (chấp nhận được vì chỉ xảy ra 1 lần)
-// → FE nhận được title ngay trong response → update sidebar ngay
-return { reply, meta, conversationId, title: conversation.title };
-```
-
-Nếu không muốn block: giữ fire-and-forget nhưng FE invalidate ngay sau khi nhận `done` event (không delay) — react-query sẽ refetch list với `staleTime=30s`, lần này title mới đã có trong DB.
+Response chat **không** chứa `title` — chỉ `conversationId` (+ `reply`/`meta`). Sidebar cập nhật title qua refetch list sau invalidate.
 
 ### 9.6 `activities` JSON — giới hạn kích thước trước khi lưu DB
 
