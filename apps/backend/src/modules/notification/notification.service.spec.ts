@@ -1,10 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from './notification.service';
 import { NotificationDeliveryService } from './notification-delivery.service';
+import { NotificationStreamService } from './notification-stream.service';
 
 describe('NotificationService', () => {
   let service: NotificationService;
@@ -34,7 +34,15 @@ describe('NotificationService', () => {
         NotificationService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationDeliveryService, useValue: deliveryService },
-        { provide: JwtService, useValue: { verify: jest.fn() } },
+        {
+          provide: NotificationStreamService,
+          useValue: {
+            emitNotification: jest.fn(),
+            emitTransactionClassified: jest.fn(),
+            streamForToken: jest.fn(),
+            streamTransactionEventsForToken: jest.fn(),
+          },
+        },
       ],
     }).compile();
 

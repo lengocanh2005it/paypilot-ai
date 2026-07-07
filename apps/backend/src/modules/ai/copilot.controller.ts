@@ -39,18 +39,18 @@ import {
 import { CopilotThrottlerGuard } from '../../common/guards/copilot-throttler.guard';
 import { PlanGuard } from '../../common/guards/plan.guard';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user.type';
-import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
-import { NotificationService } from '../notification/notification.service';
+import { buildActivities, getStreamingActivityMeta } from './copilot-activity.helper';
 import { CopilotContextService } from './copilot-context.service';
 import { CopilotConversationService } from './copilot-conversation.service';
+import { CopilotQuotaService } from './copilot-quota.service';
 import { CopilotToolService } from './copilot-tool.service';
 import {
   GetConversationQueryDto,
   ListConversationsQueryDto,
   RenameConversationDto,
 } from './dto/copilot-conversation.dto';
-import { buildActivities, getStreamingActivityMeta, OpenAiService } from './openai.service';
+import { OpenAiService } from './openai.service';
 
 class ChatMessage {
   @IsIn(['user', 'assistant'])
@@ -87,9 +87,8 @@ export class CopilotController {
     private readonly copilotContextService: CopilotContextService,
     private readonly copilotToolService: CopilotToolService,
     private readonly conversationService: CopilotConversationService,
+    private readonly copilotQuotaService: CopilotQuotaService,
     private readonly configService: ConfigService,
-    private readonly prisma: PrismaService,
-    private readonly notificationService: NotificationService,
     private readonly redisService: RedisService,
   ) {}
 
@@ -195,7 +194,7 @@ export class CopilotController {
       .saveAssistantMessage(conversation.id, reply, activities)
       .catch(() => {});
     if (isNewConv) this.conversationService.triggerAutoTitle(conversation.id, dto.message);
-    void this.incrementAndNotify(tenantId, subMeta);
+    void this.copilotQuotaService.incrementAndNotify(tenantId, subMeta);
 
     return { reply, meta, conversationId: conversation.id };
   }
@@ -304,7 +303,7 @@ export class CopilotController {
             .saveAssistantMessage(conversation.id, reply, [])
             .catch(() => {});
           if (isNewConv) this.conversationService.triggerAutoTitle(conversation.id, dto.message);
-          await this.incrementAndNotify(tenantId, subMeta);
+          await this.copilotQuotaService.incrementAndNotify(tenantId, subMeta);
         }
         return;
       }
@@ -355,7 +354,7 @@ export class CopilotController {
           .saveAssistantMessage(conversation.id, reply, activities)
           .catch(() => {});
         if (isNewConv) this.conversationService.triggerAutoTitle(conversation.id, dto.message);
-        await this.incrementAndNotify(tenantId, subMeta);
+        await this.copilotQuotaService.incrementAndNotify(tenantId, subMeta);
       }
     } catch {
       if (!wasAborted) {
@@ -379,34 +378,5 @@ export class CopilotController {
       }
       if (!res.writableEnded) res.end();
     }
-  }
-
-  private async incrementAndNotify(
-    tenantId: string,
-    subMeta: { id: string } | undefined,
-  ): Promise<void> {
-    if (!subMeta?.id) return;
-
-    const updated = await this.prisma.subscription.update({
-      where: { id: subMeta.id },
-      data: { copilotUsedThisCycle: { increment: 1 } },
-      select: { copilotUsedThisCycle: true, currentCycleStart: true, plan: true },
-    });
-
-    const planPricing = await this.prisma.planPricing.findUnique({
-      where: { plan: updated.plan },
-      select: { copilotQuota: true },
-    });
-
-    const quota = planPricing?.copilotQuota ?? -1;
-
-    void this.notificationService
-      .checkCopilotQuotaNotifications(
-        tenantId,
-        updated.copilotUsedThisCycle,
-        quota,
-        updated.currentCycleStart,
-      )
-      .catch(() => {});
   }
 }

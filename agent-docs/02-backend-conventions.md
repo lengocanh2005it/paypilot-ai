@@ -23,7 +23,7 @@ src/modules/<domain>/
 
 ```
 src/modules/
-├── auth/                 # register (+ confirmPassword), OTP verify, login (rememberMe), forgot/reset password, refresh, logout — JWT
+├── auth/                 # register (+ confirmPassword), OTP verify, login (rememberMe), forgot/reset password, change-password, refresh, logout — JWT; TokenService handles token lifecycle + plan checks
 ├── onboarding/           # Cas Link Grant/Exchange flow
 ├── banking/              # webhook Cas Balance Hook, cas_grants
 ├── transaction/          # CRUD giao dịch
@@ -57,8 +57,12 @@ src/common/
 │   └── public.decorator.ts       # @Public() — bỏ qua JwtAuthGuard (SSE stream)
 ├── guards/
 │   ├── auth.guards.ts             # JwtAuthGuard, RolesGuard, PartnerGuard
-│   ├── plan.guard.ts              # kiểm tra gói subscription từ DB
-│   └── tenant-throttler.guard.ts  # rate limit theo tenantId
+│   ├── plan.guard.ts              # kiểm tra gói subscription từ DB (Redis cache 60s)
+│   ├── copilot-quota.guard.ts     # kiểm tra quota Copilot từ DB (Redis cache 30s, skip=-1 Enterprise)
+│   ├── copilot-throttler.guard.ts # per-user rate limit riêng cho Copilot (30 req/min)
+│   └── tenant-throttler.guard.ts  # rate limit theo tenantId (global APP_GUARD)
+├── constants/
+│   └── quota-policy.ts            # OVERAGE_PLANS, QUOTA_WARNING_RATIO, isOveragePlan() — shared across modules
 ├── filters/
 │   └── all-exceptions.filter.ts   # Global Exception Filter
 ├── interceptors/
@@ -151,12 +155,25 @@ Dùng type `ApiResponse<T>` từ `@xcash/shared-types`, bọc qua 1 global `Resp
 ## AI Module — quy tắc riêng
 
 - Toàn bộ gọi OpenAI đi qua 1 service dùng chung (`OpenAiService`) trong `src/modules/ai/`, không gọi trực tiếp SDK OpenAI rải rác ở module khác.
+- Activity UI helpers (`TOOL_ACTIVITIES`, `getStreamingActivityMeta()`, `buildActivities()`) nằm trong `copilot-activity.helper.ts` — controller import từ đó, không phải từ `openai.service.ts`.
 - Confidence threshold mặc định **85%**, đọc từ `tenants.classification_threshold` (per-tenant, không hardcode).
 - Job BullMQ tên `ai-classify` — output lưu vào `transaction_classifications`.
 
 ## Lint gotcha — không để `useImportType` bật cho backend
 
 Biome rule `useImportType` tự đổi `import { AppService }` thành `import type { AppService }` khi thấy class chỉ xuất hiện ở vị trí type — nhưng NestJS Dependency Injection (constructor parameter property) cần import runtime thật để `reflect-metadata` hoạt động, nếu không Nest báo lỗi `Nest can't resolve dependencies` dù code "nhìn đúng". Rule này đã tắt cho `apps/backend/**` trong `biome.json` (mục `overrides`) — không bật lại, và cẩn thận khi copy code có `import type { XService }` từ nơi khác vào 1 provider/controller.
+
+## Guard caching pattern
+
+Guards đọc từ DB nên cache kết quả Redis để tránh query quá nhiều:
+- `PlanGuard`: cache 60s theo `tenantId`, invalidate khi upgrade/partner đổi gói
+- `CopilotQuotaGuard`: cache 30s theo `tenantId` (shorter vì quota có thể thay đổi giữa các request)
+- Cả hai dùng pattern: check Redis trước → miss thì query DB + set cache → trả kết quả
+- **Không cache** khi cần đọc subscription real-time (race condition risk) — guard đọc DB trực tiếp nếu cần chính xác 100%
+
+## Shared constants pattern
+
+Khi nhiều module dùng cùng 1 giá trị (vd: `OVERAGE_PLANS`), tạo file `common/constants/<tên>.ts` export object/type/hàm helper. Consumer import từ đó, không hardcode lại. Ví dụ: `common/constants/quota-policy.ts` có `OVERAGE_PLANS`, `QUOTA_WARNING_RATIO`, `isOveragePlan()`.
 
 ## Prisma
 

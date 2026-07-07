@@ -10,6 +10,7 @@ import { EmailProcessor } from './email.processor';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from './notification.service';
 import { NotificationDeliveryService } from './notification-delivery.service';
+import { NotificationStreamService } from './notification-stream.service';
 import { ResendEmailService } from './resend-email.service';
 import { SlackService } from './slack.service';
 
@@ -25,6 +26,7 @@ import { SlackService } from './slack.service';
   controllers: [NotificationController],
   providers: [
     NotificationService,
+    NotificationStreamService,
     NotificationDeliveryService,
     ResendEmailService,
     SlackService,

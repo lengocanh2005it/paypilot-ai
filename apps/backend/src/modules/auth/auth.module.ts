@@ -13,6 +13,7 @@ import { ChangePasswordService } from './change-password.service';
 import { EmailVerificationService } from './email-verification.service';
 import { PasswordResetService } from './password-reset.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { TokenService } from './token.service';
 
 @Module({
   imports: [
@@ -39,11 +40,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   controllers: [AuthController],
   providers: [
     AuthService,
+    TokenService,
     ChangePasswordService,
     EmailVerificationService,
     PasswordResetService,
     JwtStrategy,
   ],
-  exports: [AuthService, JwtModule],
+  exports: [AuthService, TokenService, JwtModule],
 })
 export class AuthModule {}

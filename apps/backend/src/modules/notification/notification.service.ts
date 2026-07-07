@@ -1,10 +1,8 @@
-import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { NotificationType, Prisma } from '@prisma/client';
-import { interval, merge, Observable, Subject } from 'rxjs';
-import { filter, map } from 'rxjs/operators';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationDeliveryService } from './notification-delivery.service';
+import { NotificationStreamService } from './notification-stream.service';
 
 export interface NotificationItem {
   id: string;
@@ -31,50 +29,19 @@ export interface TransactionEvent {
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
-  private readonly eventBus = new Subject<{ tenantId: string; notification: NotificationItem }>();
-  private readonly txEventBus = new Subject<{ tenantId: string; event: TransactionEvent }>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly deliveryService: NotificationDeliveryService,
-    private readonly jwtService: JwtService,
+    private readonly streamService: NotificationStreamService,
   ) {}
 
-  streamForToken(token: string): Observable<{ data: NotificationItem }> {
-    let tenantId: string;
-    try {
-      const payload = this.jwtService.verify<{ tenantId?: string }>(token);
-      if (!payload.tenantId) throw new Error('no tenantId');
-      tenantId = payload.tenantId;
-    } catch {
-      throw new UnauthorizedException('Token không hợp lệ');
-    }
-
-    return this.eventBus.pipe(
-      filter((e) => e.tenantId === tenantId),
-      map((e) => ({ data: e.notification })),
-    );
+  streamForToken(token: string) {
+    return this.streamService.streamForToken(token);
   }
 
-  streamTransactionEventsForToken(token: string): Observable<{ data: TransactionEvent }> {
-    let tenantId: string;
-    try {
-      const payload = this.jwtService.verify<{ tenantId?: string }>(token);
-      if (!payload.tenantId) throw new Error('no tenantId');
-      tenantId = payload.tenantId;
-    } catch {
-      throw new UnauthorizedException('Token không hợp lệ');
-    }
-
-    const events$ = this.txEventBus.pipe(
-      filter((e) => e.tenantId === tenantId),
-      map((e) => ({ data: e.event })),
-    );
-    // keepalive mỗi 25s để tránh idle-close của proxy/browser
-    const keepalive$ = interval(25_000).pipe(
-      map(() => ({ data: { type: 'keepalive' } as unknown as TransactionEvent })),
-    );
-    return merge(events$, keepalive$);
+  streamTransactionEventsForToken(token: string) {
+    return this.streamService.streamTransactionEventsForToken(token);
   }
 
   emitTransactionClassified(
@@ -82,10 +49,7 @@ export class NotificationService {
     transactionId: string,
     status: 'classified' | 'review',
   ): void {
-    this.txEventBus.next({
-      tenantId,
-      event: { type: 'transaction_classified', transactionId, status },
-    });
+    this.streamService.emitTransactionClassified(tenantId, transactionId, status);
   }
 
   private userScope(userId: string): Prisma.NotificationWhereInput {
@@ -369,7 +333,7 @@ export class NotificationService {
       },
     });
 
-    this.eventBus.next({ tenantId, notification });
+    this.streamService.emitNotification(tenantId, notification);
 
     void Promise.all([
       this.deliveryService

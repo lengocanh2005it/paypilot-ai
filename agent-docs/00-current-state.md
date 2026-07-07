@@ -2,7 +2,9 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Performance polish** — report SQL aggregations (`getDailyTrend`, `buildAccountSummaries`, `getTopAccounts`); Vite `manualChunks` (recharts/tanstack/radix); Settings tab lazy mount; billing upgrade sync JWT `plan` ngay (optimistic `updateUser` + `refreshSession`). `pnpm verify` pass.
+Cập nhật lần cuối: **Architecture refactoring (#1–#7):** extract `CopilotQuotaService`, `NotificationStreamService`, `ReportService.fetchExportData()`, shared `OVERAGE_PLANS`, rewrite `CopilotQuotaGuard` with Redis cache; extract `TokenService` from AuthService (9→7 deps), extract `copilot-activity.helper.ts` from OpenAiService (570→~310 lines). `pnpm verify` pass.
+
+Trước đó — **Performance polish** — report SQL aggregations (`getDailyTrend`, `buildAccountSummaries`, `getTopAccounts`); Vite `manualChunks` (recharts/tanstack/radix); Settings tab lazy mount; billing upgrade sync JWT `plan` ngay (optimistic `updateUser` + `refreshSession`). `pnpm verify` pass.
 
 Trước đó — **FE/BE alignment + performance hardening** — RBAC UI, lazy routes, partner DB pagination, PlanGuard Redis cache. Branch `feat/copilot-history`.
 
@@ -183,6 +185,17 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - Frontend: `SettingsPage` — chỉ mount tab đang active (`render()` lazy per tab) ✅
 - Frontend: `BillingTab` — `syncPlanFromBilling()` optimistic `updateUser({ plan })` + `await refreshSession()` sau upgrade ✅
 
+**Đã xong (Architecture refactoring — #1–#7):**
+- **#1 Extract CopilotQuotaService:** tách `incrementAndNotify()` + quota check logic ra `copilot-quota.service.ts` — CopilotController deps giảm từ 8 xuống 5 (bỏ PrismaService, NotificationService) ✅
+- **#2 Split AuthService → TokenService:** tạo `token.service.ts` tách token lifecycle (`issueTokens`, `refresh`, `logout`, `revokeAllRefreshTokens`) + plan checks (`getActivePlan`, `assertNotSuspended`) + cookie utils (`setRefreshCookie`, `clearRefreshCookie`) + Redis key builders + `parseDurationToSeconds()` — AuthService deps giảm từ 9 xuống 7 (bỏ JwtService, RedisService, ConfigService); `forgotPassword`/`resendPasswordReset` gộp chung `sendPasswordResetOtp()` private ✅
+- **#3 Split OpenAiService → copilot-activity.helper.ts:** tách `TOOL_ACTIVITIES`, `ACTIVITY_MAP`, `getStreamingActivityMeta()`, `formatSnippet()`, `sectionCategoryLabel()`, `buildActivities()` (~250 lines) ra `copilot-activity.helper.ts` — OpenAiService giảm từ ~570 xuống ~310 lines; `copilot.controller.ts` import từ helper ✅
+- **#4 Deduplicate OVERAGE_PLANS:** tạo `common/constants/quota-policy.ts` với `OVERAGE_PLANS` + `QUOTA_WARNING_RATIO` + `isOveragePlan()` — 3 file consumer (`banking.service`, `billing.service`, `transaction-quota.service`) cập nhật dùng chung ✅
+- **#5 Extract ReportExporter:** thêm `fetchExportData()` method public tách data fetching khỏi Excel generation; `exportExcel()` gọi `fetchExportData()` rồi `buildExportWorkbook()` ✅
+- **#6 Split NotificationService SSE:** tạo `notification-stream.service.ts` với RxJS Subject streaming (`streamForToken`, `streamTransactionEventsForToken`, `emitTransactionClassified`, `emitNotification`); `NotificationService` delegate SSE ops qua stream service ✅
+- **#7 Cache CopilotQuotaGuard:** rewrite guard dùng Redis cache 30s TTL, match pattern `PlanGuard` — inject `RedisService` (available via `@Global()` RedisModule) ✅
+- **Fix `notification.service.spec.ts`:** thay `JwtService` mock bằng `NotificationStreamService` mock trong test providers ✅
+- **Full `pnpm verify` pass:** 10/10 tasks (lint, type-check, test, build all clean) ✅
+
 **Chưa làm (Sprint 4 — còn lại):**
 - Bổ sung env production đầy đủ vào `docker-compose.yml` (OpenAI, Resend, PayOS, v.v.) + deploy lên VPS
 - SSL/HTTPS + nginx config production (domain thật, certbot) — template có tại `deploy/nginx/xcash.conf`
@@ -257,10 +270,12 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │       ├── app.module.ts                  # imports: Auth, Cas, Health, Onboarding, Banking, Ai, AuditLog, ChartOfAccounts, Classification, Report, Transaction, Settings, Team, Billing, Partner, Notification, Profile; StorageModule; + ThrottlerModule + APP_GUARD (TenantThrottlerGuard)
 │   │       ├── config/configuration.ts        # + RATE_LIMIT_PER_MINUTE, AZURE_STORAGE_*, COPILOT_USE_FUNCTION_CALLING, COPILOT_CONTEXT_CACHE_TTL_SECONDS
 │   │       ├── common/
+│   │       │   ├── constants/
+│   │       │   │   └── quota-policy.ts          # OVERAGE_PLANS, QUOTA_WARNING_RATIO, isOveragePlan() — shared across billing/banking ✅
 │   │       │   ├── decorators/                # @Roles, @RequiresPlan, @Public
 │   │       │   ├── guards/auth.guards.ts       # JwtAuthGuard, RolesGuard, PartnerGuard
 │   │       │   ├── guards/plan.guard.ts
-│   │       │   ├── guards/copilot-quota.guard.ts  # CopilotQuotaGuard — đọc DB, skip quota=-1, throw 429, store subscription id ✅
+│   │       │   ├── guards/copilot-quota.guard.ts  # CopilotQuotaGuard — Redis cache 30s TTL, skip quota=-1, throw 429, store subscription id ✅
 │   │       │   ├── guards/copilot-throttler.guard.ts  # CopilotThrottlerGuard — per-user rate limit riêng cho Copilot (Phase 6) ✅
 │   │       │   ├── guards/tenant-throttler.guard.ts
 │   │       │   ├── filters/all-exceptions.filter.ts
@@ -275,12 +290,15 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │       │   └── azure-blob.service.ts
 │   │       └── modules/
 │   │           ├── auth/                      # register + OTP verify, login (rememberMe), forgot/reset password, change-password, refresh, logout, me ✅
+│   │           │   ├── token.service.ts          # token lifecycle (issue/refresh/revoke) + plan checks + cookie utils (extracted from AuthService) ✅
 │   │           │   ├── email-verification.service.ts
 │   │           │   ├── password-reset.service.ts
 │   │           │   └── change-password.service.ts
 │   │           ├── banking/                   # POST /webhook/cas → enqueue ai-classify ✅
 │   │           ├── ai/                        # openai.service, embedding.service, classification.service, classification.processor, copilot.controller ✅
-│   │           │   ├── copilot.controller.ts      # POST /ai/copilot + POST /ai/copilot/stream + 4 conversation CRUD endpoints — CopilotQuotaGuard method-level (chat+stream only); chat() thêm CopilotThrottlerGuard; stream() @SkipThrottle + Redis SSE limit (Phase 6)
+│   │           │   ├── copilot.controller.ts      # POST /ai/copilot + POST /ai/copilot/stream + 4 conversation CRUD endpoints — CopilotQuotaGuard method-level (chat+stream only); chat() thêm CopilotThrottlerGuard; stream() @SkipThrottle + Redis SSE limit (Phase 6); deps reduced 8→5 via CopilotQuotaService
+│   │           │   ├── copilot-quota.service.ts   # incrementAndNotify() — quota check + increment + notify (extracted from controller) ✅
+│   │           │   ├── copilot-activity.helper.ts # TOOL_ACTIVITIES, getStreamingActivityMeta(), buildActivities() — extracted from OpenAiService ✅
 │   │           │   ├── copilot-conversation.service.ts  # CRUD conversations + messages, cursor pagination, auto-title fire-and-forget, deleteMessage() dangling cleanup (Phase 6) ✅
 │   │           │   ├── copilot-context.service.ts # Fallback: preload summary tháng hiện tại (dùng khi flag=0)
 │   │           │   ├── copilot-tool.service.ts    # execute(tenantId, name, args) — 8 tools + Redis cache (+ search_casso_public khi bật)
@@ -301,7 +319,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   └── dto/review.dto.ts
 │   │           ├── report/                    # Tổng hợp + export Excel + so sánh tháng + top accounts ✅
 │   │           │   ├── report.controller.ts   # + GET /reports/comparison, /reports/top-accounts
-│   │           │   ├── report.service.ts       # + getComparison(), getTopAccounts()
+│   │           │   ├── report.service.ts       # + getComparison(), getTopAccounts(), fetchExportData() (extracted for reuse) ✅
 │   │           │   └── report.module.ts
 │   │           ├── settings/                  # Threshold (Prisma) + Notifications (Redis) ✅
 │   │           │   ├── settings.controller.ts
@@ -333,7 +351,8 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   └── dto/plan-pricing.dto.ts
 │   │           ├── notification/              # In-app + email Resend + SSE stream ✅
 │   │           │   ├── notification.controller.ts  # GET list/unread/stream, PATCH read, DELETE 1/nhiều/all
-│   │           │   ├── notification.service.ts
+│   │           │   ├── notification.service.ts      # delegates SSE ops to notification-stream.service ✅
+│   │           │   ├── notification-stream.service.ts  # RxJS Subject SSE streaming (streamForToken, emitTransactionClassified, emitNotification) ✅
 │   │           │   ├── notification-delivery.service.ts  # enqueue email/Slack sau publish
 │   │           │   ├── resend-email.service.ts
 │   │           │   ├── email.processor.ts      # BullMQ queue email-delivery
@@ -692,6 +711,7 @@ postinstall      → prisma generate
 - **`RolesGuard` + `@Public()`:** `RolesGuard.canActivate` kiểm tra `IS_PUBLIC_KEY` trước — nếu route đánh dấu `@Public()` thì bỏ qua toàn bộ auth check (kể cả cas_partner block). Điều này cho phép `/notifications/stream?token=` (đã `@Public()`) hoạt động bình thường dù `request.user` là undefined.
 - **Rate limiting per-tenant:** `TenantThrottlerGuard` override `getTracker()` để dùng `tenantId` (fallback `userId` rồi IP) làm key thay vì mặc định theo IP — vì nhiều user cùng tenant có thể gọi API từ IP khác nhau, và Cas Partner (không có `tenantId`) vẫn cần giới hạn theo user. Áp dụng global qua `APP_GUARD`, bỏ qua `/health`. Giới hạn: `RATE_LIMIT_PER_MINUTE` (default 120 request/phút/tenant).
 - **Tenant suspend chặn login:** `auth.service.ts` → `login()` tra `subscription` mới nhất theo `tenantId`, nếu `status === 'suspended'` thì từ chối đăng nhập luôn (không cho vào hệ thống dù JWT hợp lệ) — khớp edge case đã ghi trong `rbac.md`.
+- **Architecture refactoring (#1–#7):** (1) `CopilotQuotaService` tách quota logic khỏi CopilotController — deps giảm 8→5; (2) `TokenService` tách token lifecycle khỏi AuthService — AuthService deps giảm 9→7; (3) `copilot-activity.helper.ts` tách activity UI helpers khỏi OpenAiService — file giảm ~570→~310 lines; (4) `OVERAGE_PLANS` shared constant trong `common/constants/quota-policy.ts` — 3 consumer files import chung; (5) `ReportService.fetchExportData()` method public tách data fetching khỏi Excel gen; (6) `NotificationStreamService` tách SSE RxJS Subject streaming khỏi `NotificationService`; (7) `CopilotQuotaGuard` rewrite dùng Redis cache 30s TTL (match PlanGuard pattern) — không còn đọc DB mỗi request.
 
 ---
 

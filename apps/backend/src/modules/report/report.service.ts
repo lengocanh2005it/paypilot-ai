@@ -414,7 +414,7 @@ export class ReportService {
     }));
   }
 
-  async exportExcel(tenantId: string, fromDate: string, toDate: string): Promise<StreamableFile> {
+  async fetchExportData(tenantId: string, fromDate: string, toDate: string) {
     const from = new Date(fromDate);
     const to = new Date(toDate);
     to.setHours(23, 59, 59, 999);
@@ -466,11 +466,10 @@ export class ReportService {
 
     const aiAccuracy = totalCount > 0 ? Math.round((classifiedCount / totalCount) * 100) : 0;
 
-    const wb = buildExportWorkbook({
+    return {
       businessName: tenant.businessName,
       fromDate,
       toDate,
-      exportedAt: new Date(),
       summary: {
         totalRevenue,
         totalExpense,
@@ -490,6 +489,20 @@ export class ReportService {
         classificationType: c.classificationType,
         reason: c.reason,
       })),
+    };
+  }
+
+  async exportExcel(tenantId: string, fromDate: string, toDate: string): Promise<StreamableFile> {
+    const data = await this.fetchExportData(tenantId, fromDate, toDate);
+
+    const wb = buildExportWorkbook({
+      businessName: data.businessName,
+      fromDate,
+      toDate,
+      exportedAt: new Date(),
+      summary: data.summary,
+      accounts: data.accounts,
+      details: data.details,
     });
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;

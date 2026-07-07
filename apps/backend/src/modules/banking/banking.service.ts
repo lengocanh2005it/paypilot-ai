@@ -11,15 +11,17 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma, SubscriptionPlan, TransactionDirection, TransactionSource } from '@prisma/client';
 import type { Queue } from 'bullmq';
+import {
+  isOveragePlan,
+  OVERAGE_PLANS,
+  QUOTA_WARNING_RATIO,
+} from '../../common/constants/quota-policy';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WEBHOOK_QUEUE } from '../../queue/queue.module';
 import { RedisService } from '../../redis/redis.service';
 import { AI_CLASSIFY_JOB } from '../ai/classification.processor';
 import { NotificationService } from '../notification/notification.service';
 import type { CasWebhookDto } from './dto/banking.dto';
-
-const OVERAGE_PLANS = [SubscriptionPlan.starter, SubscriptionPlan.pro] as const;
-const QUOTA_WARNING_RATIO = 0.8;
 
 export interface CasWebhookResult {
   duplicate: boolean;
@@ -192,7 +194,7 @@ export class BankingService {
       });
 
       // Chỉ log overage cho Starter/Pro — Free bị chặn ở trên, Enterprise không tính phí vượt
-      if (isOverQuota && (OVERAGE_PLANS as readonly string[]).includes(subscription.plan)) {
+      if (isOverQuota && isOveragePlan(subscription.plan)) {
         await tx.usageLog.create({
           data: {
             tenantId: grant.tenantId,
@@ -259,7 +261,7 @@ export class BankingService {
       await this.notificationService.createQuotaExceeded(tenantId, quota, cycleStart);
     }
 
-    if (isOverQuota && (OVERAGE_PLANS as readonly string[]).includes(subscription.plan)) {
+    if (isOverQuota && isOveragePlan(subscription.plan)) {
       const rawPrice = subscription.overagePricePerTransaction;
       const price =
         rawPrice === null || rawPrice === undefined
