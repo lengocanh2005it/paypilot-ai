@@ -2,7 +2,7 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Copilot History (Phase 1–3 hoàn thành)** — Schema (`copilot_conversations` + `copilot_messages` + `CopilotMessageRole` enum), `CopilotConversationService` CRUD cursor-based + auto-title fire-and-forget, 4 endpoint mới (`GET/GET/:id/PATCH/DELETE /ai/copilot/conversations`), tích hợp lưu messages vào chat + stream flow, security validations DTO, `CopilotActivity` + conversation types vào shared-types. Branch `feat/copilot-history`.
+Cập nhật lần cuối: **Copilot History (Phase 4–5 hoàn thành)** — Phase 4: stop generation backend (`wasAborted` + `req.on('close')` + `runner.abort()`, partial message `isPartial=true`, skip quota increment khi abort); Phase 5: frontend sidebar (`CopilotSidebar.tsx` grouped by date + context menu, `useCopilotConversations.ts` React Query CRUD, `CopilotMessageActions.tsx` copy button), `CopilotPage.tsx` rewrite (2-column layout, mobile Sheet, `localStorage` persistence `activeConversationId`, load history from DB, IntersectionObserver infinite scroll upward, `useLayoutEffect` restore scroll, stop button + "Đã dừng" badge). Branch `feat/copilot-history`.
 
 ---
 
@@ -124,6 +124,15 @@ Cập nhật lần cuối: **Copilot History (Phase 1–3 hoàn thành)** — Sc
 - **Phase 3 — Tích hợp + Security:** `chat()` và `streamChat()` gọi `findOrCreate` + `saveUserMessage` → khi `conversationId` có, dùng history từ DB thay vì FE-provided `history[]` (chặn injection); `saveAssistantMessage` + `triggerAutoTitle` fire-and-forget; response thêm `conversationId`; SSE setup (findOrCreate + saveUserMessage) trước `flushHeaders()` để lỗi 404 trả đúng HTTP code; DTO hardening: `ChatMessage.role` `@IsIn`, `content` `@MaxLength(2000)`, `history` `@ArrayMaxSize(20)`, `conversationId` `@IsOptional @IsUUID`; `CopilotQuotaGuard` chuyển từ controller-level sang method-level (chỉ trên `chat()` và `streamChat()`) để CRUD endpoint không bị chặn bởi quota ✅
 - **shared-types:** thêm `CopilotActivity` (canonical từ `openai.service.ts`), `CopilotConversationSummary`, `CopilotMessageDto`, `CopilotConversationDetail`, `CopilotConversationsListResponse`; `CopilotSourceChips.tsx` import `CopilotActivity` từ `@xcash/shared-types` thay vì định nghĩa local ✅
 - **`openai.service.ts`:** thêm `generateCopilotTitle(firstMessage: string): Promise<string>` — prompt "≤6 từ tiếng Việt", sanitize chars `<>"'\``, fallback `'Cuộc chat mới'` ✅
+
+**Đã xong (Copilot History — Phase 4–5):**
+- **Phase 4 — Stop generation (backend):** `streamChat()` thêm `wasAborted` flag + `req.on('close')` → `runnerInstance?.abort()`; toàn bộ `writeEvent('done')` + `saveAssistantMessage` + `triggerAutoTitle` + `incrementAndNotify` đều bọc `if (!wasAborted)`; `finally` block: nếu `wasAborted && accumulatedContent.trim()` → `saveAssistantMessage(..., true)` (isPartial=true) + `triggerAutoTitle` fire-and-forget; `incrementAndNotify` KHÔNG chạy khi abort (quota không tính) ✅
+- **Phase 4 — Stop generation (frontend):** Stop button (`Square` icon fill-current) thay thế Send khi `isLoading`; `AbortController` trong `sendViaStream()` — `AbortError` → save partial bubble với `isPartial=true` vào state, trả `null` (không fallback JSON); "Đã dừng" badge (`StopCircle` icon) hiện trên partial messages ✅
+- **Phase 5 — `CopilotMessageActions.tsx`:** Copy button hover-reveal trên assistant messages; 1.5s "Đã sao chép" state (Check icon green); `Tooltip` nội bộ đã có `TooltipProvider` ✅
+- **Phase 5 — `useCopilotConversations.ts`:** React Query hook — `useQuery` list conversations (staleTime 30s), `invalidateList`, `deleteConversation`, `renameConversation` (đều invalidate), `loadConversation`, `loadOlderMessages(id, before)` ✅
+- **Phase 5 — `CopilotSidebar.tsx`:** Conversations grouped by date (Hôm nay/Hôm qua/7 ngày qua/Tháng này/Tháng M/YYYY — native Date, không dùng date-fns); `ConversationItem`: outer `<div>` non-interactive + inner `<button>` title click + sibling `<button>` context menu (a11y compliant, no nested buttons); inline rename (input thay title, blur/Enter = commit, Escape = cancel); delete confirm `Dialog`; usage bar Copilot quota (ẩn khi unlimited) ✅
+- **Phase 5 — `CopilotPage.tsx` rewrite:** 2-column layout (`<aside className="hidden md:flex w-64">` + chat area); mobile `<Sheet side="left">` drawer; `activeConversationId` persisted `localStorage` key `xcash_copilot_conv_{userId}`; `handleLoadConversation(id)` fetch full conversation + set messages + scroll to bottom via `requestAnimationFrame`; `IntersectionObserver` on sentinel `<div ref={sentinelRef}>` at top of message list → trigger `handleLoadOlderMessages()`; `useLayoutEffect` capture `prevScrollHeight` before prepend → restore `scrollTop` after DOM update; `conversationId` sent in request body, received from `done` event → `setActiveConversationId` + `persistConversation` + `invalidateList()`; skeleton loading states; `handleNewChat()` abort + clear state; stop button replace send when `isLoading` ✅
+- **Phase 5 — `sheet.tsx` extension:** thêm `side?: 'left' | 'right'` prop + `SHEET_SIDE` map với slide-in/out animations theo hướng ✅
 
 **Đã xong (Copilot Quota — Phase 1–4):**
 - **Phase 1 — Schema:** migration `20260706143059_add_copilot_quota` — thêm `NotificationType.copilot_quota_warning` + `copilot_quota_exceeded`; cột `subscriptions.copilot_used_this_cycle` (Int, default 0); cột `plan_pricing.copilot_quota` (Int, default -1 = unlimited); seed `plan_pricing` copilotQuota (Free=0, Starter=200, Pro=1000, Enterprise=-1) ✅
@@ -321,18 +330,21 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   └── partner.ts               # PartnerTenant, PartnerTenantsResponse ✅
 │           ├── hooks/
 │           │   ├── useReviewCount.ts
-│           │   ├── useSidebarCollapsed.ts   # persist collapse sidebar localStorage ✅
+│           │   ├── useSidebarCollapsed.ts      # persist collapse sidebar localStorage ✅
+│           │   ├── useCopilotConversations.ts  # React Query CRUD conversations + loadConversation + loadOlderMessages (Phase 5) ✅
 │           │   └── useNotifications.ts, useDebouncedValue
 │           ├── components/
 │           │   ├── copilot/
 │           │   │   ├── CopilotSourceChips.tsx    # Chip nguồn tham khảo (internal_data/knowledge/web_search) ✅
-│           │   │   └── CopilotLoadingStatus.tsx  # Loading dots / tool activity indicator khi SSE streaming ✅
+│           │   │   ├── CopilotLoadingStatus.tsx  # Loading dots / tool activity indicator khi SSE streaming ✅
+│           │   │   ├── CopilotMessageActions.tsx # Copy button hover-reveal trên assistant messages (Phase 5) ✅
+│           │   │   └── CopilotSidebar.tsx        # Sidebar conversations grouped by date, rename/delete context menu, usage bar (Phase 5) ✅
 │           │   ├── layout/Sidebar.tsx         # 8 nav item, badge review, NotificationBell, ProfileDialog (click user footer) ✅
 │           │   ├── profile/ProfileDialog.tsx  # Dialog hồ sơ cá nhân + doanh nghiệp + upload avatar + đổi mật khẩu ✅
 │           │   ├── profile/ChangePasswordPanel.tsx  # Form 2 bước đổi mật khẩu (nhúng trong ProfileDialog) ✅
 │           │   ├── dashboard/                 # stat cards, charts (không còn BankStatusCard trên Dashboard) ✅
 │           │   ├── shared/                    # NotificationBell, PlanGate, WelcomeTour, UserAvatar, ErrorBoundary ✅
-│           │   └── ui/                        # + checkbox.tsx, progress, separator, switch, tabs ✅
+│           │   └── ui/                        # + checkbox.tsx, progress, separator, switch, tabs; sheet.tsx mở rộng side='left'|'right' (Phase 5) ✅
 │           ├── pages/
 │           │   ├── auth/                      # LoginPage, RegisterPage, VerifyEmailPage, AcceptInvitePage, ForgotPasswordPage, ResetPasswordPage ✅
 │           │   ├── onboarding/                # OnboardingPage, OnboardingCallbackPage ✅
@@ -342,7 +354,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   ├── review/ReviewPage.tsx      # Human Review queue (confirm/correct/skip) + SwipeableReviewCard mobile ✅
 │           │   ├── reports/ReportsPage.tsx    # Báo cáo tháng + export Excel ✅
 │           │   ├── analytics/AnalyticsPage.tsx # So sánh tháng, BarChart thu/chi, top 5 danh mục ✅
-│           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat, gợi ý câu hỏi ✅
+│           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat — 2-column layout (sidebar+chat), mobile Sheet, localStorage persistence, history from DB, infinite scroll, stop button (Phase 4+5) ✅
 │           │   ├── settings/SettingsPage.tsx  # Tabs: Banking/Threshold/Notifications/Team/Nhật ký/Billing ✅
 │           │   ├── components/audit/AuditLogPanel.tsx  # Bảng nhật ký dùng chung ✅
 │           │   └── partner/
@@ -612,6 +624,11 @@ postinstall      → prisma generate
 - **`search_casso_public` tool (Phase 3):** Tavily `@tavily/core` singleton trong `CopilotToolService`, query thêm `site:casso.vn`, cache 24h theo base64(query) key. Chỉ active khi `COPILOT_CASSO_SEARCH_ENABLED=1` + `TAVILY_API_KEY` set. `buildCopilotTools()` nhận `configService?` để kiểm tra flag — nếu không truyền (backward compat) thì tool không xuất hiện. `TOOL_ACTIVITIES` có entry `web_search` cho tool này.
 - **Copilot tools cache keys:** `copilot:tool:summary:{tenantId}:{y}-{m}` TTL=300s; `copilot:tool:banking:{tenantId}` TTL=60s. Key cũ `copilot:context:{tenantId}:{y}-{m}` còn dùng khi flag=0 (fallback).
 - **Copilot conversation history:** khi `POST /ai/copilot` hoặc `POST /ai/copilot/stream` nhận `conversationId`, backend dùng history từ DB (không dùng FE-provided `history[]`) — chặn injection tấn công qua history. Conversation tự tạo (`findOrCreate`) nếu không có `conversationId`; `saveAssistantMessage` + `triggerAutoTitle` đều fire-and-forget. SSE: setup conversation + saveUserMessage trước `res.flushHeaders()` để lỗi 404 trả đúng HTTP code, không bị nuốt vào SSE stream.
+- **Copilot stop generation (Phase 4):** `wasAborted` flag set bởi `req.on('close')` — track sau `res.flushHeaders()` (pre-flush close không trigger). `runnerInstance?.abort()` dừng OpenAI stream runner. `accumulatedContent` tích lũy delta ngay cả khi runner chạy — nếu abort với content > blank → `saveAssistantMessage(..., isPartial=true)`. `incrementAndNotify` bỏ qua khi abort (quota không tính). FE: `sendViaStream()` trả `null` khi `AbortError` (không throw) → `sendMessage()` nhận null = aborted, không fallback JSON, không retry.
+- **Copilot `isPartial` bubble:** `Message` interface FE thêm `isPartial?: boolean`. Khi `sendViaStream()` catch `AbortError`, push bubble `{ role: 'assistant', content: accumulatedContent, isPartial: true }` vào state. Khi load từ DB, `mapDto(m)` map `m.isPartial` vào Message. Bubble có `isPartial=true` render badge "Đã dừng" (StopCircle icon) dưới content.
+- **Copilot sidebar localStorage key:** `xcash_copilot_conv_{userId}` — lưu `activeConversationId` hiện tại. Khi tải trang, đọc key này để restore conversation cuối. Khi tạo conversation mới (nhận `conversationId` từ server), persist ngay. `handleNewChat()` clear key (persist `null`). Mỗi user có key riêng tránh conflict khi nhiều user trên cùng máy.
+- **Copilot infinite scroll upward:** `IntersectionObserver` trên sentinel `<div ref={sentinelRef}>` đặt đầu danh sách messages. Observer tạo lại khi `hasMoreMessages`/`isLoadingOlder`/`activeConversationId`/`oldestMessageId` thay đổi. Khi visible và `!isLoadingOlder && hasMoreMessages` → `handleLoadOlderMessages()`. Scroll position preserve: capture `prevScrollHeight = chatContainerRef.current.scrollHeight` vào ref trước `setState`, sau render dùng `useLayoutEffect` (synchronous trước paint) restore `scrollTop = newHeight - prevHeight`.
+- **`SheetContent side` prop:** `sheet.tsx` mở rộng hỗ trợ `side?: 'left' | 'right'` (default `right`). `SHEET_SIDE` map định nghĩa class Tailwind cho từng hướng (slide-in-from-right vs slide-in-from-left). Mobile sidebar Copilot dùng `side="left"`.
 - **`CopilotQuotaGuard` method-level:** guard này đặt tại từng method `@UseGuards(CopilotQuotaGuard)` trên `chat()` và `streamChat()`, KHÔNG phải ở controller-level — để 4 CRUD conversation endpoint không bị chặn khi user vượt quota. Controller vẫn có class-level `@UseGuards(JwtAuthGuard, RolesGuard, PlanGuard)`.
 - **Copilot Quota guard chain:** `JwtAuthGuard → RolesGuard → PlanGuard → CopilotQuotaGuard` — thứ tự này quan trọng. `CopilotQuotaGuard` luôn đọc DB (no cache) để tránh race condition khi nhiều request đến cùng lúc. Sentinel `-1` (Enterprise) bypass hoàn toàn check quota. Guard store `{ id: subscription.id }` vào `request[COPILOT_SUBSCRIPTION_KEY]` để controller dùng cho `$increment`. Increment là fire-and-forget sau `writeEvent('done')` — lỗi increment không fail request.
 - **Copilot Quota notification dedup:** `checkCopilotQuotaNotifications()` trong `NotificationService` dùng `createOncePerCycle(tenantId, type, cycleStart)` để chỉ gửi notification 1 lần/chu kỳ per loại (`copilot_quota_warning` ≥80%, `copilot_quota_exceeded` ≥100%). Nếu quota=-1 (unlimited) thì không gửi gì.
