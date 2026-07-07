@@ -1,25 +1,35 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CopilotConversationDetail,
   CopilotConversationsListResponse,
 } from '@xcash/shared-types';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 
 export function useCopilotConversations(userId?: string) {
   const qc = useQueryClient();
 
-  const query = useQuery<CopilotConversationsListResponse>({
+  const infiniteQuery = useInfiniteQuery<CopilotConversationsListResponse>({
     queryKey: ['copilot-conversations', userId],
-    queryFn: async () => {
-      const res = await api.get<{ data: CopilotConversationsListResponse }>(
-        '/ai/copilot/conversations',
-      );
+    queryFn: async ({ pageParam }) => {
+      const before = pageParam as string | undefined;
+      const url = before
+        ? `/ai/copilot/conversations?before=${before}`
+        : '/ai/copilot/conversations';
+      const res = await api.get<{ data: CopilotConversationsListResponse }>(url);
       return res.data.data;
     },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.cursorNext ? lastPage.cursorNext : undefined,
     enabled: !!userId,
     staleTime: 30_000,
   });
+
+  const items = useMemo(
+    () => infiniteQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [infiniteQuery.data],
+  );
 
   const invalidateList = useCallback(() => {
     qc.invalidateQueries({ queryKey: ['copilot-conversations', userId] });
@@ -59,7 +69,8 @@ export function useCopilotConversations(userId?: string) {
   );
 
   return {
-    ...query,
+    ...infiniteQuery,
+    items,
     invalidateList,
     deleteConversation,
     renameConversation,

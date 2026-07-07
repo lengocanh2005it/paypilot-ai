@@ -7,11 +7,15 @@ import type {
 import { PrismaService } from '../../prisma/prisma.service';
 import { OpenAiService } from './openai.service';
 
+function isSafeHttpUrl(url: string): boolean {
+  return url.startsWith('https://') || url.startsWith('http://');
+}
+
 function sanitizeActivities(activities: CopilotActivity[]): CopilotActivity[] {
   return activities.slice(0, 10).map((a) => ({
     ...a,
     snippet: a.snippet?.slice(0, 300),
-    urls: a.urls?.slice(0, 5),
+    urls: a.urls?.filter(isSafeHttpUrl).slice(0, 5),
   }));
 }
 
@@ -105,7 +109,7 @@ export class CopilotConversationService {
         _count: { select: { messages: true } },
         messages: {
           orderBy: { createdAt: 'desc' },
-          take: 1,
+          take: 5,
           select: { content: true, role: true },
         },
       },
@@ -121,7 +125,9 @@ export class CopilotConversationService {
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
         messageCount: c._count.messages,
-        lastMessage: c.messages[0]?.content?.slice(0, 80),
+        lastMessage: (
+          c.messages.find((m) => m.role === 'assistant') ?? c.messages[0]
+        )?.content?.slice(0, 80),
       })),
       hasMore,
       cursorNext: hasMore ? (items[items.length - 1]?.id ?? null) : null,

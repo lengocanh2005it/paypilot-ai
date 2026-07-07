@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { CopilotConversationSummary } from '@xcash/shared-types';
-import { MessageSquarePlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Loader2, MessageSquarePlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -214,8 +214,17 @@ export function CopilotSidebar({
   onNewChat,
   onDeleteConversation,
 }: Props) {
-  const { data, deleteConversation, renameConversation } = useCopilotConversations(userId);
+  const {
+    items,
+    deleteConversation,
+    renameConversation,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useCopilotConversations(userId);
   const [deleteTarget, setDeleteTarget] = useState<CopilotConversationSummary | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const listScrollRef = useRef<HTMLDivElement>(null);
 
   const { data: planData } = useQuery<PlanData>({
     queryKey: ['billing', 'current-plan'],
@@ -224,11 +233,25 @@ export function CopilotSidebar({
     select: (d) => ({ copilotQuota: d.copilotQuota, copilotUsed: d.copilotUsed }),
   });
 
-  const groups = groupByDate(data?.items ?? []);
+  const groups = groupByDate(items);
   const quota = planData?.copilotQuota ?? 0;
   const used = planData?.copilotUsed ?? 0;
   const isUnlimited = quota === -1;
   const pct = isUnlimited ? 0 : quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 100;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-bind observer when list grows
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage || !loadMoreRef.current || !listScrollRef.current)
+      return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void fetchNextPage();
+      },
+      { root: listScrollRef.current, threshold: 0.1 },
+    );
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, items.length]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -253,7 +276,7 @@ export function CopilotSidebar({
       </div>
 
       {/* Conversations list */}
-      <div className="flex-1 overflow-y-auto px-2 pb-2">
+      <div ref={listScrollRef} className="flex-1 overflow-y-auto px-2 pb-2">
         {groups.length === 0 && (
           <p className="px-3 py-4 text-center text-xs text-muted-foreground">
             Chưa có cuộc chat nào
@@ -276,6 +299,16 @@ export function CopilotSidebar({
             ))}
           </div>
         ))}
+        {hasNextPage && (
+          <div ref={loadMoreRef} className="flex justify-center py-2">
+            {isFetchingNextPage && (
+              <Loader2
+                className="size-4 animate-spin text-muted-foreground"
+                aria-label="Đang tải thêm"
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* Usage bar */}

@@ -7,6 +7,7 @@ import {
   Building2,
   ClipboardList,
   HelpCircle,
+  Loader2,
   Menu,
   Send,
   Square,
@@ -104,6 +105,7 @@ export default function CopilotPage() {
   const [streamActivity, setStreamActivity] = useState<StreamActivity | undefined>();
   const [streamingContent, setStreamingContent] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [canAbort, setCanAbort] = useState(false);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(() => {
     if (!user?.id) return null;
     return localStorage.getItem(`xcash_copilot_conv_${user.id}`) ?? null;
@@ -215,8 +217,14 @@ export default function CopilotPage() {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }
 
-  const getHistory = (msgs: Message[]) =>
-    msgs.slice(-10).map(({ role, content }) => ({ role, content }));
+  const getHistory = (msgs: Message[], convId: string | null) => {
+    const slice = msgs.slice(-10);
+    const withoutPendingUser =
+      !convId && slice.length > 0 && slice[slice.length - 1]?.role === 'user'
+        ? slice.slice(0, -1)
+        : slice;
+    return withoutPendingUser.map(({ role, content }) => ({ role, content }));
+  };
 
   // Returns conversationId on success, null on abort, throws on error
   const sendViaStream = async (
@@ -238,7 +246,7 @@ export default function CopilotPage() {
         },
         body: JSON.stringify({
           message: text,
-          history: getHistory(msgs),
+          history: getHistory(msgs, convId),
           ...(convId ? { conversationId: convId } : {}),
         }),
         signal: abortRef.current.signal,
@@ -332,7 +340,7 @@ export default function CopilotPage() {
       data: { reply: string; meta?: { activities: CopilotActivity[] }; conversationId?: string };
     }>('/ai/copilot', {
       message: text,
-      history: getHistory(msgs),
+      history: getHistory(msgs, convId),
       ...(convId ? { conversationId: convId } : {}),
     });
     const { reply, meta, conversationId: newConvId } = res.data.data;
@@ -360,6 +368,7 @@ export default function CopilotPage() {
     setStreamingContent('');
 
     let wasAborted = false;
+    setCanAbort(true);
     try {
       const newConvId = await sendViaStream(text, [...prevMessages, userMsg], activeConversationId);
       if (newConvId === null) {
@@ -372,6 +381,7 @@ export default function CopilotPage() {
       }
       invalidateList();
     } catch {
+      setCanAbort(false);
       try {
         const newConvId = await sendViaJson(text, [...prevMessages, userMsg], activeConversationId);
         if (newConvId && newConvId !== activeConversationId) {
@@ -390,6 +400,7 @@ export default function CopilotPage() {
         ]);
       }
     } finally {
+      setCanAbort(false);
       if (!wasAborted) {
         setIsLoading(false);
         setStreamActivity(undefined);
@@ -578,7 +589,7 @@ export default function CopilotPage() {
                               Đã dừng
                             </span>
                           )}
-                          <div className="mt-1.5 flex opacity-0 group-hover/msg:opacity-100 transition-opacity">
+                          <div className="mt-1.5 flex opacity-100 md:opacity-0 md:group-hover/msg:opacity-100 transition-opacity">
                             <CopilotMessageActions content={msg.content} />
                           </div>
                         </div>
@@ -635,7 +646,7 @@ export default function CopilotPage() {
                     disabled={isLoading}
                     className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50 max-h-[200px] leading-relaxed"
                   />
-                  {isLoading ? (
+                  {isLoading && canAbort ? (
                     <button
                       type="button"
                       onClick={handleStop}
@@ -644,6 +655,14 @@ export default function CopilotPage() {
                     >
                       <Square className="size-3.5 fill-current" />
                     </button>
+                  ) : isLoading ? (
+                    <span
+                      className="flex size-8 shrink-0 items-center justify-center"
+                      role="status"
+                      aria-label="Đang xử lý"
+                    >
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+                    </span>
                   ) : (
                     <button
                       type="button"

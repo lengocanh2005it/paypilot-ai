@@ -18,6 +18,10 @@ const KIND_ICON: Record<CopilotActivityKind, typeof BarChart3> = {
   web_search: Globe,
 };
 
+function safeHttpUrl(url: string): string | null {
+  return url.startsWith('https://') || url.startsWith('http://') ? url : null;
+}
+
 function SnippetPopover({
   activity,
   children,
@@ -65,18 +69,22 @@ function SnippetPopover({
         {/* URLs for web_search */}
         {activity.kind === 'web_search' && activity.urls && activity.urls.length > 0 && (
           <div className="flex flex-col gap-1 border-t pt-2">
-            {activity.urls.map((url) => (
-              <a
-                key={url}
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-primary hover:underline truncate"
-              >
-                <ExternalLink className="size-3 shrink-0" />
-                <span className="truncate">{url}</span>
-              </a>
-            ))}
+            {activity.urls.map((url) => {
+              const href = safeHttpUrl(url);
+              if (!href) return null;
+              return (
+                <a
+                  key={url}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-primary hover:underline truncate"
+                >
+                  <ExternalLink className="size-3 shrink-0" />
+                  <span className="truncate">{url}</span>
+                </a>
+              );
+            })}
           </div>
         )}
       </PopoverContent>
