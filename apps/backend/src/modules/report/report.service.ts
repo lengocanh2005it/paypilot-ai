@@ -116,21 +116,21 @@ export class ReportService {
       SELECT
         to_char(date_trunc('day', t.transaction_date), 'YYYY-MM-DD') AS day_key,
         COUNT(*)::bigint AS activity_count,
-        COUNT(*) FILTER (WHERE t.status = ${TransactionStatus.classified})::bigint AS classified_count,
+        COUNT(*) FILTER (WHERE t.status::text = ${TransactionStatus.classified})::bigint AS classified_count,
         COALESCE(SUM(
-          CASE WHEN t.status = ${TransactionStatus.classified} AND (
-            (t.source = ${TransactionSource.import} AND t.direction = ${TransactionDirection.in})
-            OR (t.source <> ${TransactionSource.import} AND t.amount > 0)
+          CASE WHEN t.status::text = ${TransactionStatus.classified} AND (
+            (t.source::text = ${TransactionSource.import} AND t.direction::text = ${TransactionDirection.in})
+            OR (t.source::text <> ${TransactionSource.import} AND t.amount > 0)
           ) THEN ABS(t.amount) ELSE 0 END
         ), 0) AS revenue_amount,
         COALESCE(SUM(
-          CASE WHEN t.status = ${TransactionStatus.classified} AND (
-            (t.source = ${TransactionSource.import} AND t.direction = ${TransactionDirection.out})
-            OR (t.source <> ${TransactionSource.import} AND t.amount < 0)
+          CASE WHEN t.status::text = ${TransactionStatus.classified} AND (
+            (t.source::text = ${TransactionSource.import} AND t.direction::text = ${TransactionDirection.out})
+            OR (t.source::text <> ${TransactionSource.import} AND t.amount < 0)
           ) THEN ABS(t.amount) ELSE 0 END
         ), 0) AS expense_amount
       FROM transactions t
-      WHERE t.tenant_id = ${tenantId}::uuid
+      WHERE t.tenant_id = ${tenantId}
         AND t.transaction_date >= ${from}
         AND t.transaction_date <= ${to}
       GROUP BY 1
@@ -215,8 +215,8 @@ export class ReportService {
           COUNT(*)::bigint AS tx_count
         FROM transaction_classifications tc
         INNER JOIN transactions t ON t.id = tc.transaction_id
-        WHERE tc.tenant_id = ${tenantId}::uuid
-          AND tc.status = ${TransactionStatus.classified}
+        WHERE tc.tenant_id = ${tenantId}
+          AND tc.status::text = ${TransactionStatus.classified}
           AND t.transaction_date >= ${from}
           AND ${dateEnd}
         GROUP BY tc.debit_account
@@ -228,8 +228,8 @@ export class ReportService {
           COUNT(*)::bigint AS tx_count
         FROM transaction_classifications tc
         INNER JOIN transactions t ON t.id = tc.transaction_id
-        WHERE tc.tenant_id = ${tenantId}::uuid
-          AND tc.status = ${TransactionStatus.classified}
+        WHERE tc.tenant_id = ${tenantId}
+          AND tc.status::text = ${TransactionStatus.classified}
           AND t.transaction_date >= ${from}
           AND ${dateEnd}
         GROUP BY tc.credit_account
