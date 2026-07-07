@@ -229,7 +229,7 @@ export default function CopilotPage() {
   };
 
   return (
-    <div className="relative flex h-full flex-col">
+    <div className="relative flex h-full min-h-full flex-col">
       <div className="absolute top-3 right-4 z-20 sm:right-8">
         <ThemeToggle />
       </div>

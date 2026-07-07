@@ -60,15 +60,15 @@ const TOOL_ACTIVITIES: Record<string, { final: ToolActivityMeta; streaming: Tool
     },
   },
   search_knowledge_base: {
-    final: { kind: 'knowledge', label: 'Tra cứu knowledge base', source: 'X-Cash AI' },
+    final: { kind: 'knowledge', label: 'Tài liệu hướng dẫn', source: 'X-Cash AI' },
     streaming: {
       kind: 'knowledge',
-      label: 'Đang tra cứu knowledge base…',
+      label: 'Đang tra cứu tài liệu hướng dẫn…',
       source: 'X-Cash AI',
     },
   },
   get_cas_integration_help: {
-    final: { kind: 'knowledge', label: 'Tra cứu knowledge base', source: 'X-Cash AI' },
+    final: { kind: 'knowledge', label: 'Hướng dẫn Casso', source: 'X-Cash AI' },
     streaming: {
       kind: 'knowledge',
       label: 'Đang tra cứu hướng dẫn Casso…',
@@ -422,7 +422,7 @@ Từ chối (1 câu lịch sự) khi câu hỏi hoàn toàn ngoài lĩnh vực: 
 ## Quy tắc gọi tool
 - Số liệu thu/chi/lãi-lỗ, báo cáo → gọi get_month_summary / get_month_comparison
 - Câu hỏi về khái niệm, hướng dẫn (TT133, Casso, tính năng X-Cash AI) → gọi search_knowledge_base
-- Liên kết ngân hàng, không thấy GD từ NH → gọi get_banking_status; nếu cần hướng dẫn → search_knowledge_base("cách liên kết ngân hàng")
+- Liên kết ngân hàng, không thấy GD từ NH → chỉ gọi get_banking_status; KHÔNG gọi search_knowledge_base trừ khi user hỏi rõ "cách làm" / hướng dẫn từng bước
 - Tìm GD cụ thể → gọi search_transactions
 ${cassoWebRule}
 - "tháng này" / "hiện tại" → tháng ${now.getMonth() + 1} năm ${now.getFullYear()}

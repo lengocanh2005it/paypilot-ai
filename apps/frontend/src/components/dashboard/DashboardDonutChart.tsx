@@ -114,9 +114,11 @@ export function DashboardDonutChart({
                   <Tooltip content={<DonutTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-lg font-bold tabular-nums leading-none">{total}</span>
-                <span className="mt-0.5 text-[10px] text-muted-foreground">GD</span>
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="text-base font-bold tabular-nums leading-none">
+                  {total}
+                  <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">GD</span>
+                </span>
               </div>
             </div>
             <LegendRows data={data} total={total} />

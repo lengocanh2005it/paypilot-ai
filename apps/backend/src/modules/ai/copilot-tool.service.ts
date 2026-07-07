@@ -120,7 +120,7 @@ export class CopilotToolService {
       case 'search_transactions': {
         const keyword = String(args.keyword ?? '');
         // source: 'cas' = GD từ Casso (grantId not null), 'import' = Excel (grantId null)
-        const sourceArg = args.source ? String(args.source) : undefined;
+        const sourceArg = String(args.source ?? 'all');
         const grantFilter =
           sourceArg === 'cas'
             ? { grantId: { not: null } }

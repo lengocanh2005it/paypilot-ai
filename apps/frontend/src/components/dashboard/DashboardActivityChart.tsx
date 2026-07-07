@@ -50,16 +50,16 @@ export function DashboardActivityChart({
   return (
     <Card className={cn('flex h-full flex-col', className)}>
       <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center justify-between gap-2">
           <div>
             <CardTitle className="text-base">Hoạt động 7 ngày</CardTitle>
             <CardDescription>Số giao dịch mỗi ngày (mọi trạng thái)</CardDescription>
           </div>
           {!isLoading && total > 0 ? (
-            <div className="shrink-0 rounded-lg bg-muted px-2.5 py-1 text-center">
-              <p className="text-lg font-bold tabular-nums leading-none">{total}</p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">GD</p>
-            </div>
+            <span className="shrink-0 rounded-full border bg-muted/50 px-2.5 py-0.5 text-sm tabular-nums">
+              <span className="font-semibold">{total}</span>
+              <span className="ml-1 text-muted-foreground">GD</span>
+            </span>
           ) : null}
         </div>
       </CardHeader>

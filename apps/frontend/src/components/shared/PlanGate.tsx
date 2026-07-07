@@ -27,11 +27,11 @@ export function PlanGate({ minPlan, featureName, children }: PlanGateProps) {
   }
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 select-none blur-sm" aria-hidden>
-        {children}
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden select-none" aria-hidden>
+        <div className="flex h-full min-h-full flex-col blur-sm">{children}</div>
       </div>
-      <div className="absolute inset-0 flex items-center justify-center bg-background/60 p-4">
+      <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 p-4">
         <div className="w-full max-w-md rounded-xl border bg-card p-6 text-center shadow-lg">
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
             <Lock className="size-6 text-primary" />

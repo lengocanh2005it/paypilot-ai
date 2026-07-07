@@ -194,7 +194,7 @@ export function buildCopilotTools(
               description: 'Số kết quả, mặc định 10',
             },
           },
-          required: ['keyword', 'limit'],
+          required: ['keyword', 'source', 'limit'],
           additionalProperties: false,
         },
         parse: JSON.parse,
