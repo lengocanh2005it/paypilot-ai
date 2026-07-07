@@ -14,8 +14,10 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/hooks/useAuth';
 import { getApiData, postApiData } from '@/lib/api';
 import { formatTransactionDateTime } from '@/lib/dashboard-transactions';
+import { canManageTransactions } from '@/lib/rbac';
 import type { TransactionDetail, TransactionSummary } from '@/types/transaction';
 
 interface TransactionDetailSheetProps {
@@ -29,6 +31,8 @@ export function TransactionDetailSheet({
   open,
   onOpenChange,
 }: TransactionDetailSheetProps) {
+  const { user } = useAuth();
+  const canReclassify = canManageTransactions(user?.role);
   const transactionId = transaction?.id;
   const queryClient = useQueryClient();
 
@@ -123,7 +127,7 @@ export function TransactionDetailSheet({
                           ? 'Giao dịch đang chờ AI định khoản. Bấm nút bên dưới để yêu cầu AI xử lý ngay.'
                           : 'Chưa có định khoản cho giao dịch này.'}
                       </p>
-                      {isPending ? (
+                      {isPending && canReclassify ? (
                         <Button
                           size="sm"
                           onClick={() => reclassifyMutation.mutate()}

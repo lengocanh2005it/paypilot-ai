@@ -30,6 +30,8 @@ import type { TransactionListResponse } from '@/types/transaction';
 
 const RECENT_TRANSACTION_LIMIT = 8;
 const DAILY_TREND_DAYS = 7;
+/** Giảm tải server — dashboard không cần realtime từng giây (review count có hook riêng). */
+const DASHBOARD_REFETCH_MS = 30_000;
 
 interface SummaryData {
   period: { year: number; month: number };
@@ -63,7 +65,8 @@ export default function DashboardPage() {
     queryKey: ['reports', 'summary', year, month, 'dashboard'],
     queryFn: () => getApiData<SummaryData>(`/reports/summary?year=${year}&month=${month}`),
     enabled: bankingLinked,
-    refetchInterval: 10_000,
+    refetchInterval: DASHBOARD_REFETCH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const { data: reviewCount, isLoading: loadingReviewCount } = useReviewCount();
@@ -72,7 +75,8 @@ export default function DashboardPage() {
     queryKey: ['transactions', 'dashboard', 'pending-count'],
     queryFn: () => getApiData<TransactionListResponse>('/transactions?status=pending&limit=1'),
     enabled: bankingLinked,
-    refetchInterval: 10_000,
+    refetchInterval: DASHBOARD_REFETCH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const { data: classifiedTodayData, isLoading: loadingClassifiedToday } = useQuery({
@@ -82,7 +86,8 @@ export default function DashboardPage() {
         buildTransactionsCountUrl('classified', todayRange.from, todayRange.to),
       ),
     enabled: bankingLinked,
-    refetchInterval: 10_000,
+    refetchInterval: DASHBOARD_REFETCH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const { data: classifiedYesterdayData } = useQuery({
@@ -92,7 +97,8 @@ export default function DashboardPage() {
         buildTransactionsCountUrl('classified', yesterdayRange.from, yesterdayRange.to),
       ),
     enabled: bankingLinked,
-    refetchInterval: 10_000,
+    refetchInterval: DASHBOARD_REFETCH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const { data: dailyTrendData, isLoading: loadingDailyTrend } = useQuery({
@@ -100,21 +106,24 @@ export default function DashboardPage() {
     queryFn: () =>
       getApiData<DailyTrendApiResponse>(`/reports/daily-trend?days=${DAILY_TREND_DAYS}`),
     enabled: bankingLinked,
-    refetchInterval: 10_000,
+    refetchInterval: DASHBOARD_REFETCH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const { data: statusBreakdownData, isLoading: loadingStatusBreakdown } = useQuery({
     queryKey: ['reports', 'status-breakdown', 'dashboard'],
     queryFn: () => getApiData<StatusBreakdownApiResponse>('/reports/status-breakdown'),
     enabled: bankingLinked,
-    refetchInterval: 10_000,
+    refetchInterval: DASHBOARD_REFETCH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const { data: sourceBreakdownData, isLoading: loadingSourceBreakdown } = useQuery({
     queryKey: ['reports', 'source-breakdown', 'dashboard'],
     queryFn: () => getApiData<SourceBreakdownApiResponse>('/reports/source-breakdown'),
     enabled: bankingLinked,
-    refetchInterval: 10_000,
+    refetchInterval: DASHBOARD_REFETCH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const { data: recentData, isLoading: loadingRecent } = useQuery({
@@ -122,7 +131,8 @@ export default function DashboardPage() {
     queryFn: () =>
       getApiData<TransactionListResponse>(`/transactions?limit=${RECENT_TRANSACTION_LIMIT}`),
     enabled: bankingLinked,
-    refetchInterval: 10_000,
+    refetchInterval: DASHBOARD_REFETCH_MS,
+    refetchIntervalInBackground: false,
   });
 
   const dailyTrend = dailyTrendData ? mapDailyTrendResponse(dailyTrendData) : [];

@@ -60,6 +60,8 @@ export enum NotificationType {
   BILLING_SUCCESS = 'billing_success',
   BILLING_PAYMENT_DUE = 'billing_payment_due',
   TENANT_SUSPENDED = 'tenant_suspended',
+  COPILOT_QUOTA_WARNING = 'copilot_quota_warning',
+  COPILOT_QUOTA_EXCEEDED = 'copilot_quota_exceeded',
 }
 
 export interface AppNotification {

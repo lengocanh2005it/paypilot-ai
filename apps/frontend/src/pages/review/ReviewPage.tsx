@@ -27,9 +27,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useAuth } from '@/hooks/useAuth';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { api } from '@/lib/api';
 import { formatDateVN } from '@/lib/dashboard-transactions';
+import { canManageTransactions } from '@/lib/rbac';
 
 interface ClassificationItem {
   id: string;
@@ -119,16 +121,40 @@ function SwipeableReviewCard({
   onSkip,
   onCorrect,
   disabled,
+  readOnly = false,
 }: {
   item: ClassificationItem;
   onConfirm: () => void;
   onSkip: () => void;
   onCorrect: () => void;
   disabled: boolean;
+  readOnly?: boolean;
 }) {
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const startX = useRef(0);
+
+  if (readOnly) {
+    return (
+      <div className="rounded-lg border p-4 space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 truncate text-sm font-medium">
+            {item.transaction.content ?? '—'}
+          </p>
+          <ConfidenceBadge score={item.confidenceScore} />
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            {formatDate(item.transaction.transactionDate)}
+          </span>
+          <span className="font-mono">{formatAmount(item.transaction.amount)}</span>
+        </div>
+        <p className="font-mono text-sm font-medium">
+          {item.debitAccount} / {item.creditAccount}
+        </p>
+      </div>
+    );
+  }
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (disabled) return;
@@ -211,6 +237,8 @@ function SwipeableReviewCard({
 const ACCOUNT_CODE_PATTERN = /^\d{3,4}$/;
 
 export default function ReviewPage() {
+  const { user } = useAuth();
+  const canReview = canManageTransactions(user?.role);
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [searchText, setSearchText] = useState('');
@@ -391,6 +419,7 @@ export default function ReviewPage() {
                       onSkip={() => setSkipTarget(item)}
                       onCorrect={() => openCorrect(item)}
                       disabled={confirmMutation.isPending || skipMutation.isPending}
+                      readOnly={!canReview}
                     />
                   ))}
                 </div>
@@ -404,7 +433,7 @@ export default function ReviewPage() {
                         <th className="pb-3 pr-4 font-medium">TK Nợ</th>
                         <th className="pb-3 pr-4 font-medium">TK Có</th>
                         <th className="pb-3 pr-4 font-medium">Độ tin cậy</th>
-                        <th className="pb-3 font-medium">Hành động</th>
+                        {canReview ? <th className="pb-3 font-medium">Hành động</th> : null}
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -427,39 +456,41 @@ export default function ReviewPage() {
                           <td className="py-3 pr-4">
                             <ConfidenceBadge score={item.confidenceScore} />
                           </td>
-                          <td className="py-3">
-                            <div className="flex items-center gap-1">
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                title="Xác nhận"
-                                aria-label="Xác nhận định khoản"
-                                onClick={() => setConfirmTarget(item)}
-                                disabled={confirmMutation.isPending}
-                              >
-                                <CheckCircle className="size-4 text-green-600" />
-                              </Button>
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                title="Sửa"
-                                aria-label="Sửa định khoản"
-                                onClick={() => openCorrect(item)}
-                              >
-                                <Pencil className="size-4 text-blue-600" />
-                              </Button>
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                title="Bỏ qua"
-                                aria-label="Bỏ qua giao dịch"
-                                onClick={() => setSkipTarget(item)}
-                                disabled={skipMutation.isPending}
-                              >
-                                <SkipForward className="size-4 text-muted-foreground" />
-                              </Button>
-                            </div>
-                          </td>
+                          {canReview ? (
+                            <td className="py-3">
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost"
+                                  title="Xác nhận"
+                                  aria-label="Xác nhận định khoản"
+                                  onClick={() => setConfirmTarget(item)}
+                                  disabled={confirmMutation.isPending}
+                                >
+                                  <CheckCircle className="size-4 text-green-600" />
+                                </Button>
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost"
+                                  title="Sửa"
+                                  aria-label="Sửa định khoản"
+                                  onClick={() => openCorrect(item)}
+                                >
+                                  <Pencil className="size-4 text-blue-600" />
+                                </Button>
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost"
+                                  title="Bỏ qua"
+                                  aria-label="Bỏ qua giao dịch"
+                                  onClick={() => setSkipTarget(item)}
+                                  disabled={skipMutation.isPending}
+                                >
+                                  <SkipForward className="size-4 text-muted-foreground" />
+                                </Button>
+                              </div>
+                            </td>
+                          ) : null}
                         </tr>
                       ))}
                     </tbody>

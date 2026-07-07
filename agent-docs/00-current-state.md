@@ -2,7 +2,9 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Copilot History (Phase 8 hoàn thành — verify + docs)** — `pnpm verify` pass (lint/type-check/test/build); checklist mục 8 trong `copilot-history-spec.md` đánh dấu xong; `copilot-conversation.service.spec.ts` (7 tests). Branch `feat/copilot-history`.
+Cập nhật lần cuối: **FE/BE alignment + performance hardening** — RBAC UI khớp `rbac.md` (Viewer ẩn action Review/reclassify; Settings tab banking/billing/threshold theo role; Accountant xem-only threshold); fix mobile confidence badge; `shared-types` thêm `copilot_quota_*` notification types; `App.tsx` dùng `lazy-pages` + `Suspense`; Dashboard poll 30s + không poll background; `partner.listTenants` paginate DB-side; `PlanGuard` cache Redis 60s + invalidate khi đổi gói; `GET /onboarding/status` giới hạn admin+accountant; `lib/rbac.ts` helper FE. `pnpm verify` pass.
+
+Trước đó — **Copilot History (Phase 8 hoàn thành — verify + docs)** — checklist mục 8 trong `copilot-history-spec.md` đánh dấu xong; `copilot-conversation.service.spec.ts` (7 tests). Branch `feat/copilot-history`.
 
 Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang server `?page=&limit=&fromDate=&toDate=`; sidebar scroll containment + load-more khi scroll (không prefetch); `ConfirmDialog` xóa conversation; `CopilotQuotaSummary` + copy quota rõ «lượt gửi câu hỏi» vs «tin nhắn bạn+AI»; migration seed `copilot_quota` (`20260707120000`).
 
@@ -50,7 +52,7 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - Backend: `PayosService` — wrapper PayOS v2 SDK (`@payos/node`), mock mode khi keys không có ✅
 - Frontend: Partner refactor sang sidebar layout (logo, collapse/expand, mobile) — 2 route: `/partner/dashboard`, `/partner/plans` ✅
 - Frontend: `SettingsPage` BillingTab — luồng nâng cấp đầy đủ: chọn gói → QR thanh toán + polling → auto-close khi plan đổi; dev-only mock button ✅
-- **Chặn tính năng theo gói (plan gating):** Backend `PlanGuard` + `@RequiresPlan` — Copilot/comparison/top-accounts cần Starter+, export Excel cần Pro+, thông báo Email/Slack validate trong `settings.service`. JWT/session có field `plan`; FE `PlanGate` + icon khóa sidebar + khóa switch thông báo/xuất Excel ✅
+- **PlanGuard** đọc gói từ DB (cache Redis 60s, invalidate khi upgrade/partner đổi gói) — không tin JWT `plan` ✅
 - **Partner đổi gói DN:** `PATCH /partner/tenants/:id/plan` — Cas Partner đặt gói bất kỳ cho bất kỳ tenant (không giới hạn downgrade như user tự nâng cấp); `PartnerTenantsPage.tsx` (page riêng, tách khỏi PartnerPage cũ) với dialog 2 bước (chọn gói → ConfirmDialog) ✅
 - **Overage billing:** `planPricing.overagePricePerTransaction` seed Starter=800đ, Pro=600đ/GD (Partner đổi được qua UI); `banking.service` chỉ log overage cho Starter/Pro; `BillingCycleService` cron 2am — tìm subscription hết cycle → tạo PayOS overage order nếu có → reset `transactionUsedThisCycle`; `billing.controller` thêm 3 endpoint overage; `SettingsPage` BillingTab thêm banner cam + dialog QR riêng cho phí vượt quota ✅
 - **Partner Dashboard planBreakdown card:** card "Phân bố theo gói dịch vụ" — mỗi gói hiện số DN + doanh thu định kỳ + mini progress bar; data từ `/partner/tenants` (không cần API mới) ✅
@@ -163,6 +165,17 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - **Phase 2 — Guard + increment:** `CopilotQuotaGuard` (`common/guards/copilot-quota.guard.ts`) — đọc subscription + planPricing từ DB (no cache), skip nếu quota=-1 (Enterprise), throw 429 nếu đã vượt, store `{ id }` vào `request[COPILOT_SUBSCRIPTION_KEY]`; guard chain trên `CopilotController`: `JwtAuthGuard → RolesGuard → PlanGuard → CopilotQuotaGuard`; `incrementAndNotify()` fire-and-forget sau `writeEvent('done')` — `$increment copilotUsedThisCycle` + gọi `checkCopilotQuotaNotifications()`; `NotificationService.checkCopilotQuotaNotifications()` dedup `copilot_quota_warning` (≥80%) và `copilot_quota_exceeded` (≥100%) mỗi chu kỳ bằng `createOncePerCycle()` ✅
 - **Phase 3 — Billing cycle reset + expose:** `BillingCycleService` reset `copilotUsedThisCycle=0` khi hết cycle; `BillingService.getCurrentPlan()` trả thêm `copilotQuota` + `copilotUsed`; `UpdatePlanPricingDto` thêm optional `copilotQuota` (Min -1); `PartnerService.updatePlanPricing()` + `listPlanPricing()` lưu và trả `copilotQuota` ✅
 - **Phase 4 — Frontend:** `SettingsPage` BillingTab — progress bar "Lượt chat Copilot" (ẩn khi quota=-1, màu primary/<80%, orange/≥80%, destructive/≥100%); `PartnerPlansPage` — hiện `copilotQuota` trong card + bảng tổng hợp, thêm input field trong dialog với helper text "Nhập -1 để không giới hạn" ✅
+
+**Đã xong (FE/BE alignment + performance — post-audit):**
+- Frontend: `lib/rbac.ts` — helper role checks dùng chung ✅
+- Frontend: mobile confidence badge; Review/TransactionDetail ẩn action khi Viewer ✅
+- Frontend: Settings tabs khóa banking/billing/threshold theo `rbac.md`; Accountant xem-only threshold ✅
+- Frontend: `App.tsx` lazy-load qua `routes/lazy-pages.ts` + `Suspense` ✅
+- Frontend: Dashboard poll 30s, không poll background ✅
+- Backend: `GET /onboarding/status` — admin+accountant only ✅
+- Backend: `partner.listTenants` DB-side filter + pagination ✅
+- Backend: `PlanGuard` Redis cache 60s + invalidate khi đổi gói ✅
+- shared-types: `NotificationType` + `copilot_quota_warning` / `copilot_quota_exceeded` ✅
 
 **Chưa làm (Sprint 4 — còn lại):**
 - Bổ sung env production đầy đủ vào `docker-compose.yml` (OpenAI, Resend, PayOS, v.v.) + deploy lên VPS

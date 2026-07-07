@@ -7,7 +7,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type SubscriptionPlan, TransactionSource } from '@prisma/client';
+import { invalidateTenantPlanCache } from '../../common/util/tenant-plan-cache';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../../redis/redis.service';
 import { NotificationService } from '../notification/notification.service';
 import { PayosService } from './payos.service';
 
@@ -22,6 +24,7 @@ export class BillingService {
     private readonly payosService: PayosService,
     private readonly config: ConfigService,
     private readonly notificationService: NotificationService,
+    private readonly redis: RedisService,
   ) {}
 
   async listPlans() {
@@ -244,6 +247,8 @@ export class BillingService {
       .catch((err: unknown) =>
         this.logger.warn(`Billing notification failed for tenant ${tenantId}`, err),
       );
+
+    await invalidateTenantPlanCache(this.redis, tenantId);
 
     return { success: true, alreadyPaid: false };
   }

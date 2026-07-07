@@ -18,7 +18,7 @@ import {
   Users,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { AuditLogPanel } from '@/components/audit/AuditLogPanel';
@@ -56,12 +56,21 @@ import { api } from '@/lib/api';
 import { formatDateVN } from '@/lib/dashboard-transactions';
 import { formatVND } from '@/lib/format-vnd';
 import { formatCopilotQuota, formatTransactionQuota, hasPlanAccess, PLAN_LABEL } from '@/lib/plan';
+import {
+  canViewAuditLogs,
+  canViewBankingSettings,
+  canViewBilling,
+  canViewThreshold,
+  isAdmin,
+} from '@/lib/rbac';
 import { cn } from '@/lib/utils';
 import { CopilotHistoryTab } from '@/pages/settings/CopilotHistoryTab';
 
 // ─── Tab Threshold ────────────────────────────────────────────────
 function ThresholdTab() {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const readOnly = !isAdmin(user?.role);
   const { data, isLoading } = useQuery({
     queryKey: ['settings', 'threshold'],
     queryFn: () =>
@@ -109,15 +118,19 @@ function ThresholdTab() {
             aria-valuemax={99}
             aria-valuenow={threshold}
             aria-describedby="threshold-hint"
+            disabled={readOnly}
           />
           <span className="w-16 text-center text-2xl font-bold text-primary">{threshold}%</span>
         </div>
         <p id="threshold-hint" className="text-xs text-muted-foreground">
           Mặc định: 85% — Khuyến nghị giữ trong khoảng 80–95%
+          {readOnly ? ' Chỉ Admin mới có thể thay đổi ngưỡng này.' : null}
         </p>
-        <Button onClick={() => save()} disabled={isPending}>
-          Lưu thay đổi
-        </Button>
+        {!readOnly ? (
+          <Button onClick={() => save()} disabled={isPending}>
+            Lưu thay đổi
+          </Button>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -838,7 +851,8 @@ function formatPlanQuotaSubtitle(plan: BillingPlan): string {
 function BillingTab() {
   const qc = useQueryClient();
   const { refreshSession, user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const canAccessBilling = canViewBilling(user?.role);
+  const isAdminUser = isAdmin(user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -861,6 +875,7 @@ function BillingTab() {
   const { data, isLoading } = useQuery({
     queryKey: ['billing', 'current-plan'],
     queryFn: () => api.get<{ data: PlanData }>('/billing/current-plan').then((r) => r.data.data),
+    enabled: canAccessBilling,
     // poll mỗi 5s khi dialog thanh toán đang mở để tự động detect khi payment xong
     refetchInterval: paymentOpen ? 5_000 : false,
   });
@@ -868,13 +883,14 @@ function BillingTab() {
   const { data: availablePlans, isLoading: loadingPlans } = useQuery({
     queryKey: ['billing', 'plans'],
     queryFn: () => api.get<{ data: BillingPlan[] }>('/billing/plans').then((r) => r.data.data),
-    enabled: upgradeOpen,
+    enabled: upgradeOpen && canAccessBilling,
   });
 
   const { data: overageOrders } = useQuery({
     queryKey: ['billing', 'overage-orders'],
     queryFn: () =>
       api.get<{ data: OverageOrder[] }>('/billing/overage-orders').then((r) => r.data.data),
+    enabled: canAccessBilling && isAdminUser,
     refetchInterval: overagePaymentOpen ? 5_000 : 30_000,
   });
 
@@ -984,7 +1000,7 @@ function BillingTab() {
                 <Button size="sm" variant="outline" disabled>
                   Đã dùng gói cao nhất
                 </Button>
-              ) : isAdmin ? (
+              ) : isAdminUser ? (
                 <Button size="sm" onClick={() => setUpgradeOpen(true)}>
                   Nâng cấp gói
                 </Button>
@@ -1123,7 +1139,7 @@ function BillingTab() {
               thanh toán để tránh gián đoạn dịch vụ.
             </p>
           </div>
-          {isAdmin ? (
+          {isAdminUser ? (
             <Button
               size="sm"
               variant="outline"
@@ -1761,58 +1777,109 @@ function AuditLogTab() {
 }
 
 // ─── Main ─────────────────────────────────────────────────────────
+type SettingsTabConfig = {
+  value: string;
+  label: string;
+  icon: typeof Building2;
+  component: ReactNode;
+  adminOnly?: boolean;
+  auditOnly?: boolean;
+  bankingOnly?: boolean;
+  billingOnly?: boolean;
+  thresholdOnly?: boolean;
+};
+
+function isSettingsTabLocked(tab: SettingsTabConfig, role?: string | null): boolean {
+  if (tab.adminOnly && !isAdmin(role)) return true;
+  if (tab.auditOnly && !canViewAuditLogs(role)) return true;
+  if (tab.bankingOnly && !canViewBankingSettings(role)) return true;
+  if (tab.billingOnly && !canViewBilling(role)) return true;
+  if (tab.thresholdOnly && !canViewThreshold(role)) return true;
+  return false;
+}
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const isAdmin = user?.role === 'admin';
-  const canViewAudit = user?.role === 'admin' || user?.role === 'accountant';
+  const userRole = user?.role;
   const activeTab = searchParams.get('tab') ?? 'banking';
 
-  const tabs = [
-    { value: 'banking', label: 'Ngân hàng', icon: Building2, component: <BankingTab /> },
-    {
-      value: 'threshold',
-      label: 'Ngưỡng AI',
-      icon: Sliders,
-      adminOnly: true,
-      component: <ThresholdTab />,
-    },
-    {
-      value: 'notifications',
-      label: 'Thông báo',
-      icon: BellRing,
-      adminOnly: true,
-      component: <NotificationsTab />,
-    },
-    { value: 'team', label: 'Thành viên', icon: Users, adminOnly: true, component: <TeamTab /> },
-    {
-      value: 'audit',
-      label: 'Nhật ký',
-      icon: ScrollText,
-      auditOnly: true,
-      component: <AuditLogTab />,
-    },
-    { value: 'billing', label: 'Gói dịch vụ', icon: CreditCard, component: <BillingTab /> },
-    {
-      value: 'copilot-history',
-      label: 'Lịch sử Copilot',
-      icon: MessageSquare,
-      component: <CopilotHistoryTab />,
-    },
-  ];
+  const tabs: SettingsTabConfig[] = useMemo(
+    () => [
+      {
+        value: 'banking',
+        label: 'Ngân hàng',
+        icon: Building2,
+        bankingOnly: true,
+        component: <BankingTab />,
+      },
+      {
+        value: 'threshold',
+        label: 'Ngưỡng AI',
+        icon: Sliders,
+        thresholdOnly: true,
+        component: <ThresholdTab />,
+      },
+      {
+        value: 'notifications',
+        label: 'Thông báo',
+        icon: BellRing,
+        adminOnly: true,
+        component: <NotificationsTab />,
+      },
+      { value: 'team', label: 'Thành viên', icon: Users, adminOnly: true, component: <TeamTab /> },
+      {
+        value: 'audit',
+        label: 'Nhật ký',
+        icon: ScrollText,
+        auditOnly: true,
+        component: <AuditLogTab />,
+      },
+      {
+        value: 'billing',
+        label: 'Gói dịch vụ',
+        icon: CreditCard,
+        billingOnly: true,
+        component: <BillingTab />,
+      },
+      {
+        value: 'copilot-history',
+        label: 'Lịch sử Copilot',
+        icon: MessageSquare,
+        component: <CopilotHistoryTab />,
+      },
+    ],
+    [],
+  );
+
+  const defaultTab = useMemo(
+    () => tabs.find((tab) => !isSettingsTabLocked(tab, userRole))?.value ?? 'copilot-history',
+    [tabs, userRole],
+  );
+
+  useEffect(() => {
+    const current = tabs.find((tab) => tab.value === activeTab);
+    if (current && isSettingsTabLocked(current, userRole)) {
+      setSearchParams({ tab: defaultTab }, { replace: true });
+    }
+  }, [activeTab, defaultTab, setSearchParams, tabs, userRole]);
+
+  const resolvedTab =
+    tabs.find((tab) => tab.value === activeTab && !isSettingsTabLocked(tab, userRole))?.value ??
+    defaultTab;
 
   return (
     <>
       <Header title="Cài đặt" description="Quản lý tài khoản và cấu hình hệ thống" />
       <div className="flex flex-col gap-6 p-4 sm:p-6">
         <Tabs
-          value={activeTab}
+          value={resolvedTab}
           onValueChange={(value) => setSearchParams({ tab: value }, { replace: true })}
         >
           <TabsList className="w-full justify-start gap-1 overflow-x-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon;
-              const locked = (tab.adminOnly && !isAdmin) || (tab.auditOnly && !canViewAudit);
+              const locked = isSettingsTabLocked(tab, userRole);
               return (
                 <TabsTrigger
                   key={tab.value}

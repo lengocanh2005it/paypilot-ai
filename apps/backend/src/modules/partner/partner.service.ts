@@ -1,6 +1,13 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { PaymentOrderStatus, Prisma, SubscriptionPlan } from '@prisma/client';
+import type {
+  PaymentOrderStatus,
+  Prisma,
+  SubscriptionPlan,
+  SubscriptionStatus,
+} from '@prisma/client';
+import { invalidateTenantPlanCache } from '../../common/util/tenant-plan-cache';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../../redis/redis.service';
 import { NotificationService } from '../notification/notification.service';
 import type { UpdatePlanPricingDto } from './dto/plan-pricing.dto';
 
@@ -10,6 +17,7 @@ export class PartnerService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
     private readonly notificationService: NotificationService,
   ) {}
 
@@ -21,60 +29,70 @@ export class PartnerService {
     limit?: number;
   }) {
     const search = params?.search?.trim();
-    const statusFilter = params?.status && params.status !== 'all' ? params.status : undefined;
+    const statusFilter =
+      params?.status && params.status !== 'all' ? (params.status as SubscriptionStatus) : undefined;
     const planFilter =
       params?.plan && params.plan !== 'all' ? (params.plan as SubscriptionPlan) : undefined;
     const page = Math.max(1, Math.trunc(params?.page ?? 1));
     const limit = params?.limit ? Math.min(100, Math.max(1, Math.trunc(params.limit))) : null;
 
-    const tenants = await this.prisma.tenant.findMany({
-      where: {
-        ...(search ? { businessName: { contains: search, mode: 'insensitive' } } : {}),
-      },
-      include: {
-        subscriptions: { orderBy: { startedAt: 'desc' }, take: 1 },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const tenantWhere: Prisma.TenantWhereInput = {
+      ...(search ? { businessName: { contains: search, mode: 'insensitive' } } : {}),
+    };
+
+    if (statusFilter || planFilter) {
+      tenantWhere.subscriptions = {
+        some: {
+          ...(statusFilter ? { status: statusFilter } : {}),
+          ...(planFilter ? { plan: planFilter } : {}),
+        },
+      };
+    }
 
     const monthStart = this.getMonthStart();
-    const transactionCounts = await this.prisma.transaction.groupBy({
-      by: ['tenantId'],
-      where: { createdAt: { gte: monthStart } },
-      _count: { _all: true },
-    });
+
+    const [tenants, total] = await Promise.all([
+      this.prisma.tenant.findMany({
+        where: tenantWhere,
+        include: {
+          subscriptions: { orderBy: { startedAt: 'desc' }, take: 1 },
+        },
+        orderBy: { createdAt: 'desc' },
+        ...(limit ? { skip: (page - 1) * limit, take: limit } : {}),
+      }),
+      this.prisma.tenant.count({ where: tenantWhere }),
+    ]);
+
+    const tenantIds = tenants.map((tenant) => tenant.id);
+    const transactionCounts =
+      tenantIds.length > 0
+        ? await this.prisma.transaction.groupBy({
+            by: ['tenantId'],
+            where: { tenantId: { in: tenantIds }, createdAt: { gte: monthStart } },
+            _count: { _all: true },
+          })
+        : [];
     const countsByTenant = new Map(transactionCounts.map((c) => [c.tenantId, c._count._all]));
 
-    const all = tenants
-      .map((tenant) => {
-        const subscription = tenant.subscriptions[0];
-        return {
-          id: tenant.id,
-          businessName: tenant.businessName,
-          createdAt: tenant.createdAt,
-          plan: subscription?.plan ?? null,
-          status: subscription?.status ?? 'active',
-          transactionsThisMonth: countsByTenant.get(tenant.id) ?? 0,
-          revenuePerMonth: subscription ? Number(subscription.pricePerMonth) : 0,
-        };
-      })
-      .filter((tenant) => {
-        if (statusFilter && tenant.status !== statusFilter) {
-          return false;
-        }
-        if (planFilter && tenant.plan !== planFilter) {
-          return false;
-        }
-        return true;
-      });
+    const items = tenants.map((tenant) => {
+      const subscription = tenant.subscriptions[0];
+      return {
+        id: tenant.id,
+        businessName: tenant.businessName,
+        createdAt: tenant.createdAt,
+        plan: subscription?.plan ?? null,
+        status: subscription?.status ?? 'active',
+        transactionsThisMonth: countsByTenant.get(tenant.id) ?? 0,
+        revenuePerMonth: subscription ? Number(subscription.pricePerMonth) : 0,
+      };
+    });
 
-    const total = all.length;
     if (!limit) {
-      return { items: all, page: 1, limit: total, total, totalPages: 1 };
+      return { items, page: 1, limit: total, total, totalPages: 1 };
     }
 
     return {
-      items: all.slice((page - 1) * limit, page * limit),
+      items,
       page,
       limit,
       total,
@@ -500,6 +518,8 @@ export class PartnerService {
       .catch((err: unknown) =>
         this.logger.warn(`Plan change notification failed for tenant ${tenantId}`, err),
       );
+
+    await invalidateTenantPlanCache(this.redis, tenantId);
 
     return { success: true, plan: targetPlan };
   }

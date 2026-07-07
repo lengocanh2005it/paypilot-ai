@@ -487,7 +487,9 @@ export default function TransactionsPage() {
                             <p className="text-xs text-muted-foreground">
                               {txn.senderAccount ?? 'Không rõ người gửi'}
                             </p>
-                            <ConfidenceBadge score={txn.confidenceScore} />
+                            <ConfidenceBadge
+                              score={txn.classification?.confidenceScore ?? txn.confidenceScore}
+                            />
                           </div>
                         </button>
                       </div>
