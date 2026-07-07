@@ -35,18 +35,26 @@ function SheetOverlay({
   );
 }
 
+const SHEET_SIDE = {
+  right:
+    'inset-y-0 right-0 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-[480px]',
+  left: 'inset-y-0 left-0 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-[480px]',
+};
+
 function SheetContent({
   className,
   children,
+  side = 'right',
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content>) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & { side?: 'left' | 'right' }) {
   return (
     <SheetPortal>
       <SheetOverlay />
       <DialogPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          'fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[calc(100%-3rem)] flex-col gap-4 border-l bg-background p-6 shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=closed]:slide-out-to-right data-[state=open]:animate-in data-[state=open]:duration-300 data-[state=open]:slide-in-from-right sm:max-w-[480px]',
+          'fixed z-50 flex h-full w-full max-w-[calc(100%-3rem)] flex-col gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-300',
+          SHEET_SIDE[side],
           className,
         )}
         {...props}

@@ -227,16 +227,30 @@ export class CopilotController {
       (res as unknown as { flush?: () => void }).flush?.();
     };
 
+    // Phase 4: abort tracking — set up AFTER flushHeaders so pre-flush closes don't trigger
+    let wasAborted = false;
+    let accumulatedContent = '';
+    let runnerInstance: NonNullable<
+      ReturnType<typeof this.openAiService.createCopilotRunner>
+    > | null = null;
+
+    req.on('close', () => {
+      wasAborted = true;
+      runnerInstance?.abort();
+    });
+
     try {
       if (!this.configService.get<boolean>('COPILOT_USE_FUNCTION_CALLING')) {
         const financialContext = await this.copilotContextService.getFinancialContext(tenantId);
         const reply = await this.openAiService.chatCopilot(dto.message, history, financialContext);
-        writeEvent('done', { reply, meta: undefined, conversationId: conversation.id });
-        void this.conversationService
-          .saveAssistantMessage(conversation.id, reply, [])
-          .catch(() => {});
-        if (isNewConv) this.conversationService.triggerAutoTitle(conversation.id, dto.message);
-        await this.incrementAndNotify(tenantId, subMeta);
+        if (!wasAborted) {
+          writeEvent('done', { reply, meta: undefined, conversationId: conversation.id });
+          void this.conversationService
+            .saveAssistantMessage(conversation.id, reply, [])
+            .catch(() => {});
+          if (isNewConv) this.conversationService.triggerAutoTitle(conversation.id, dto.message);
+          await this.incrementAndNotify(tenantId, subMeta);
+        }
         return;
       }
 
@@ -250,14 +264,17 @@ export class CopilotController {
       );
 
       if (!runner) {
-        writeEvent('done', {
-          reply: 'AI Copilot chưa được cấu hình. Vui lòng liên hệ quản trị viên.',
-          meta: undefined,
-          conversationId: conversation.id,
-        });
+        if (!wasAborted) {
+          writeEvent('done', {
+            reply: 'AI Copilot chưa được cấu hình. Vui lòng liên hệ quản trị viên.',
+            meta: undefined,
+            conversationId: conversation.id,
+          });
+        }
         return;
       }
 
+      runnerInstance = runner;
       const calledTools: string[] = [];
 
       runner.on('functionToolCall', (call) => {
@@ -267,28 +284,41 @@ export class CopilotController {
       });
 
       runner.on('content', (delta: string) => {
-        if (delta) writeEvent('delta', { content: delta });
+        if (delta) {
+          accumulatedContent += delta;
+          writeEvent('delta', { content: delta });
+        }
       });
 
       const reply = (await runner.finalContent()) ?? 'Xin lỗi, tôi không thể trả lời lúc này.';
       const activities = buildActivities(calledTools, resultsCapture);
       const meta = activities.length > 0 ? { activities } : undefined;
 
-      writeEvent('done', { reply, meta, conversationId: conversation.id });
-
-      void this.conversationService
-        .saveAssistantMessage(conversation.id, reply, activities)
-        .catch(() => {});
-      if (isNewConv) this.conversationService.triggerAutoTitle(conversation.id, dto.message);
-      await this.incrementAndNotify(tenantId, subMeta);
+      if (!wasAborted) {
+        writeEvent('done', { reply, meta, conversationId: conversation.id });
+        void this.conversationService
+          .saveAssistantMessage(conversation.id, reply, activities)
+          .catch(() => {});
+        if (isNewConv) this.conversationService.triggerAutoTitle(conversation.id, dto.message);
+        await this.incrementAndNotify(tenantId, subMeta);
+      }
     } catch {
-      writeEvent('done', {
-        reply: 'Xin lỗi, có lỗi xảy ra. Vui lòng thử lại.',
-        meta: undefined,
-        conversationId: conversation.id,
-      });
+      if (!wasAborted) {
+        writeEvent('done', {
+          reply: 'Xin lỗi, có lỗi xảy ra. Vui lòng thử lại.',
+          meta: undefined,
+          conversationId: conversation.id,
+        });
+      }
     } finally {
-      res.end();
+      // Save partial assistant message if aborted mid-stream with content
+      if (wasAborted && accumulatedContent.trim()) {
+        void this.conversationService
+          .saveAssistantMessage(conversation.id, accumulatedContent, [], true)
+          .catch(() => {});
+        if (isNewConv) this.conversationService.triggerAutoTitle(conversation.id, dto.message);
+      }
+      if (!res.writableEnded) res.end();
     }
   }
 
