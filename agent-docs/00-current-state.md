@@ -2,7 +2,9 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **feat(partner): AI cost visibility dashboard (issue #21)** — bảng `ai_usage_logs` + `AiCallType` enum; `AiUsageLogService.record()` fire-and-forget; instrument toàn bộ OpenAI call sites (classify/copilot/embedding/title_gen); SQL GROUP BY aggregate; 2 endpoint mới `/partner/ai-costs` + `/partner/ai-costs/detail`; `PartnerAiCostsPage`, stat card trên Dashboard, nav item sidebar. `pnpm verify` pass.
+Cập nhật lần cuối: **Architecture refactoring + FE polish** — Backend: CopilotStreamService (deps 8→3), PartnerService split 4 services + date util. Frontend: typed API helpers (getApiData/postApiData/putApiData/deleteApiData), PaginationBar adoption (9 pages), StatCard unification, CopilotPage split (3 sub-components + SSE utils), shared API types (review/analytics/reports/billing), SettingsPage tabs split, dead code removal. `pnpm verify` pass 10/10.
+
+Trước đó — **feat(partner): AI cost visibility dashboard (issue #21)** — bảng `ai_usage_logs` + `AiCallType` enum; `AiUsageLogService.record()` fire-and-forget; instrument toàn bộ OpenAI call sites (classify/copilot/embedding/title_gen); SQL GROUP BY aggregate; 2 endpoint mới `/partner/ai-costs` + `/partner/ai-costs/detail`; `PartnerAiCostsPage`, stat card trên Dashboard, nav item sidebar. `pnpm verify` pass.
 
 Trước đó — **Performance polish** — report SQL aggregations (`getDailyTrend`, `buildAccountSummaries`, `getTopAccounts`); Vite `manualChunks` (recharts/tanstack/radix); Settings tab lazy mount; billing upgrade sync JWT `plan` ngay (optimistic `updateUser` + `refreshSession`). `pnpm verify` pass.
 
@@ -179,6 +181,15 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - Backend: `PlanGuard` Redis cache 60s + invalidate khi đổi gói ✅
 - shared-types: `NotificationType` + `copilot_quota_warning` / `copilot_quota_exceeded` ✅
 
+**Đã xong (FE polish — architecture review):**
+- **Typed API helpers:** thêm `putApiData<T>(url, data?)` + `deleteApiData<T>(url?)` vào `lib/api.ts`; chuyển 5 page files từ raw `api.get/post/delete/put` sang typed helpers (`ReviewPage`, `AccountsPage`, `ReportsPage`, `TeamTab`, `NotificationsTab`) — 30 inline `{ data: T }` type assertions consolidated ✅
+- **Shared API types:** tạo `types/api/review.ts` (`ClassificationItem`, `ReviewQueueResponse`), `types/api/analytics.ts` (`ComparisonData`, `TopAccountsData`), `types/api/reports.ts` (`SummaryData`, `AccountRow`, `AccountBreakdownData`), `types/api/billing.ts` (`PlanData`, `UpgradeResult`, `OverageOrder`, `OveragePaymentResult`, `BillingPlan`, `PaymentOrder`, `PaymentHistoryResponse`, `CycleTransaction`); mở rộng `types/partner.ts` thêm 13 partner types ✅
+- **PaginationBar:** tạo `components/shared/PaginationBar.tsx` (prev/next + page number + disabled state); thay thế inline copy-pasted pagination trong 9 pages: `TransactionsPage`, `ReviewPage`, `PartnerTenantsPage`, `PartnerPaymentsPage`, `PartnerAiCostsPage`, `CopilotHistoryTab`, `BillingTab` (×2), `ReportsPage` ✅
+- **StatCard unification:** tạo `components/shared/StatCard.tsx` thống nhất `DashboardStatCard` + `SummaryCard` (accept `icon: ElementType` cho Lucide icons); `SummaryCard.tsx` + `DashboardStatCard.tsx` re-export để giữ compat ✅
+- **Dedup date formatters:** thêm `formatDateTimeShort(date: Date | string)` vào `lib/date.ts`; thay inline date formatting trong `AuditLogPanel`, `PartnerPaymentsPage`, `PartnerAuditPage`, `TeamTab`, `SettingsPage` ✅
+- **CopilotPage split:** tạo `lib/copilot-sse.ts` (`parseSseBlock`, `feedSseChunk`, `flushSsePending`); tạo `components/copilot/CopilotChatInput.tsx` (auto-resize textarea + send/stop), `CopilotMessageBubble.tsx` (message rendering + source chips + copy + partial badge), `CopilotWelcomeState.tsx` (welcome screen + suggestions); CopilotPage giảm từ 821 xuống ~650 lines ✅
+- **Dead code removal:** xóa `hooks/useCopilotStream.ts` (457 lines, unused — SSE logic đã chuyển sang `lib/copilot-sse.ts`); xóa import `rangeStart`/`rangeEnd` trong `PartnerPaymentsPage` (không dùng); bỏ `page` destructuring trong `BillingTab` ✅
+
 **Đã xong (Performance polish):**
 - Backend: `report.service` — `getDailyTrend` + account summaries/top accounts dùng `$queryRaw` GROUP BY thay load all rows vào Node ✅
 - Frontend: `vite.config.ts` — `manualChunks` tách `recharts`, `tanstack-query`, `radix-ui` ✅
@@ -199,7 +210,7 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - Frontend: `PartnerAiCostsPage` — date filter, bảng tenant ranked by cost, breakdown badges, click row → Sheet detail (7 cột: Loại/Model/In/Out/Chi phí/Ref/Thời gian) ✅
 - Frontend: "Chi phí AI" nav item trong `PartnerLayout` sidebar ✅
 
-**Đã xong (Architecture refactoring — #1–#7):**
+**Đã xong (Architecture refactoring — #1–#9 + FE polish):**
 - **#1 Extract CopilotQuotaService:** tách `incrementAndNotify()` + quota check logic ra `copilot-quota.service.ts` — CopilotController deps giảm từ 8 xuống 5 (bỏ PrismaService, NotificationService) ✅
 - **#2 Split AuthService → TokenService:** tạo `token.service.ts` tách token lifecycle (`issueTokens`, `refresh`, `logout`, `revokeAllRefreshTokens`) + plan checks (`getActivePlan`, `assertNotSuspended`) + cookie utils (`setRefreshCookie`, `clearRefreshCookie`) + Redis key builders + `parseDurationToSeconds()` — AuthService deps giảm từ 9 xuống 7 (bỏ JwtService, RedisService, ConfigService); `forgotPassword`/`resendPasswordReset` gộp chung `sendPasswordResetOtp()` private ✅
 - **#3 Split OpenAiService → copilot-activity.helper.ts:** tách `TOOL_ACTIVITIES`, `ACTIVITY_MAP`, `getStreamingActivityMeta()`, `formatSnippet()`, `sectionCategoryLabel()`, `buildActivities()` (~250 lines) ra `copilot-activity.helper.ts` — OpenAiService giảm từ ~570 xuống ~310 lines; `copilot.controller.ts` import từ helper ✅
@@ -211,6 +222,13 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - **#9 Split PartnerService:** tách 826-line god service thành 4 services: `TenantManagementService` (list, detail, suspend, activate), `RevenueAnalyticsService` (stats, revenue trend, payments), `PlanPricingService` (CRUD pricing, set tenant plan), `AiCostService` (SQL aggregation, detail logs); date helpers extract vào `partner/utils/date.util.ts`; PartnerController dispatch 4 services ✅
 - **Fix `notification.service.spec.ts`:** thay `JwtService` mock bằng `NotificationStreamService` mock trong test providers ✅
 - **Full `pnpm verify` pass:** 10/10 tasks (lint, type-check, test, build all clean) ✅
+- **FE Typed API helpers:** thêm `putApiData<T>()` + `deleteApiData<T>()` vào `lib/api.ts`, chuyển 5 page files từ raw `api.get/post/delete/put` sang typed helpers ✅
+- **FE Shared API types:** tạo `types/api/review.ts`, `analytics.ts`, `reports.ts`, `billing.ts` — 30 inline type assertions consolidated ✅
+- **FE PaginationBar:** tạo `components/shared/PaginationBar.tsx`, adopted trong 9 pages (bỏ inline copy-pasted prev/next) ✅
+- **FE StatCard unification:** tạo `components/shared/StatCard.tsx` thống nhất `DashboardStatCard` + `SummaryCard`, re-exports giữ compat ✅
+- **FE Dedup date formatters:** thêm `formatDateTimeShort` vào `lib/date.ts`, thay inline formatting trong 5 pages ✅
+- **FE CopilotPage split:** tạo `lib/copilot-sse.ts` + 3 sub-components (`CopilotChatInput`, `CopilotMessageBubble`, `CopilotWelcomeState`); CopilotPage giảm từ 821 xuống ~650 lines ✅
+- **FE Dead code removal:** xóa `hooks/useCopilotStream.ts` (457 lines, unused) ✅
 
 **Chưa làm (Sprint 4 — còn lại):**
 - Bổ sung env production đầy đủ vào `docker-compose.yml` (OpenAI, Resend, PayOS, v.v.) + deploy lên VPS
@@ -409,16 +427,23 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           ├── contexts/theme-context.tsx
 │           ├── routes/ProtectedRoute.tsx
 │           ├── lib/
-│           │   ├── api.ts                     # export: api, getApiData, postApiData, patchApiData, deleteApiData
+│           │   ├── api.ts                     # export: api, getApiData, postApiData, putApiData, patchApiData, deleteApiData
+│           │   ├── copilot-sse.ts             # parseSseBlock, feedSseChunk, flushSsePending — SSE buffer utils ✅
 │           │   ├── remember-me.ts             # localStorage rememberMe + email
 │           │   ├── plan-labels.ts           # PLAN_LABELS + PLAN_ORDER dùng chung Partner pages ✅
 │           │   ├── plan.ts                  # formatCopilotQuota, resolveCopilotQuota ✅
+│           │   ├── date.ts                  # formatDateShort, formatDateTimeShort — shared date formatters ✅
 │           │   ├── date-range.ts            # dayIsoRange() cho query theo ngày ✅
 │           │   ├── dashboard-transactions.ts  # chart helpers (status breakdown, revenue trend 7 ngày)
 │           │   └── ...
 │           ├── types/
 │           │   ├── transaction.ts
-│           │   └── partner.ts               # PartnerTenant, PartnerTenantsResponse ✅
+│           │   ├── partner.ts               # PartnerTenant, PartnerTenantsResponse + 13 partner types ✅
+│           │   └── api/
+│           │       ├── review.ts            # ClassificationItem, ReviewQueueResponse ✅
+│           │       ├── analytics.ts         # ComparisonData, TopAccountsData ✅
+│           │       ├── reports.ts           # SummaryData, AccountRow, AccountBreakdownData ✅
+│           │       └── billing.ts           # PlanData, UpgradeResult, OverageOrder, OveragePaymentResult, BillingPlan, PaymentOrder, PaymentHistoryResponse, CycleTransaction ✅
 │           ├── hooks/
 │           │   ├── useReviewCount.ts
 │           │   ├── useSidebarCollapsed.ts      # persist collapse sidebar localStorage ✅
@@ -427,6 +452,9 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   └── useNotifications.ts, useDebouncedValue
 │           ├── components/
 │           │   ├── copilot/
+│           │   │   ├── CopilotChatInput.tsx       # Chat input + auto-resize textarea + send/stop buttons ✅
+│           │   │   ├── CopilotMessageBubble.tsx  # Message rendering + source chips + copy button + partial badge ✅
+│           │   │   ├── CopilotWelcomeState.tsx   # Welcome screen + suggestion chips ✅
 │           │   │   ├── CopilotSourceChips.tsx    # Chip nguồn tham khảo (internal_data/knowledge/web_search) ✅
 │           │   │   ├── CopilotLoadingStatus.tsx  # Loading dots / tool activity indicator khi SSE streaming ✅
 │           │   │   ├── CopilotMessageActions.tsx # Copy button hover-reveal trên assistant messages (Phase 5) ✅
@@ -436,7 +464,16 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   ├── profile/ProfileDialog.tsx  # Dialog hồ sơ cá nhân + doanh nghiệp + upload avatar + đổi mật khẩu ✅
 │           │   ├── profile/ChangePasswordPanel.tsx  # Form 2 bước đổi mật khẩu (nhúng trong ProfileDialog) ✅
 │           │   ├── dashboard/                 # stat cards, charts (không còn BankStatusCard trên Dashboard) ✅
-│           │   ├── shared/                    # NotificationBell, PlanGate, WelcomeTour, UserAvatar, ErrorBoundary ✅
+│           │   ├── shared/
+│           │   │   ├── NotificationBell.tsx    # In-app notification bell + dropdown + SSE/poll ✅
+│           │   │   ├── PlanGate.tsx            # Plan upgrade gate ✅
+│           │   │   ├── WelcomeTour.tsx         # 4-step welcome dialog ✅
+│           │   │   ├── UserAvatar.tsx          # User avatar component ✅
+│           │   │   ├── ErrorBoundary.tsx       # React error boundary ✅
+│           │   │   ├── PaginationBar.tsx       # Shared prev/next pagination + page number ✅
+│           │   │   ├── StatCard.tsx            # Unified stat card (DashboardStatCard + SummaryCard merged) ✅
+│           │   │   ├── SummaryCard.tsx         # Re-exports StatCard for compat ✅
+│           │   │   └── DashboardStatCard.tsx   # Re-exports StatCard for compat ✅
 │           │   └── ui/                        # + checkbox.tsx, progress, separator, switch, tabs; sheet.tsx mở rộng side='left'|'right' (Phase 5) ✅
 │           ├── pages/
 │           │   ├── auth/                      # LoginPage, RegisterPage, VerifyEmailPage, AcceptInvitePage, ForgotPasswordPage, ResetPasswordPage ✅
@@ -447,7 +484,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   ├── review/ReviewPage.tsx      # Human Review queue (confirm/correct/skip) + SwipeableReviewCard mobile ✅
 │           │   ├── reports/ReportsPage.tsx    # Báo cáo tháng + export Excel ✅
 │           │   ├── analytics/AnalyticsPage.tsx # So sánh tháng, BarChart thu/chi, top 5 danh mục ✅
-│           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat — 2-column layout (sidebar+chat), mobile Sheet, localStorage persistence, history from DB, infinite scroll, stop button (Phase 4+5) ✅
+│           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat — 2-column layout (sidebar+chat), mobile Sheet, localStorage persistence, history from DB, infinite scroll, stop button (Phase 4+5); ~650 lines after split ✅
 │           │   ├── settings/SettingsPage.tsx  # Tabs: Banking/Threshold/Notifications/Team/Nhật ký/Billing/Lịch sử Copilot ✅
 │           │   ├── settings/CopilotHistoryTab.tsx  # Phase 7 — bảng lịch sử Copilot trong Settings ✅
 │           │   ├── components/audit/AuditLogPanel.tsx  # Bảng nhật ký dùng chung ✅
@@ -713,7 +750,7 @@ postinstall      → prisma generate
 
 ## Lưu ý kỹ thuật quan trọng
 
-- **`api` export từ `@/lib/api`** — axios instance tên `api` (không phải `apiClient`). Dùng `api.get()`, `api.post()` trong các page mới.
+- **`api` export từ `@/lib/api`** — axios instance tên `api` (không phải `apiClient`). Có `getApiData<T>()`, `postApiData<T>()`, `putApiData<T>()`, `patchApiData<T>()`, `deleteApiData<T>()` typed helpers — dùng thay vì `api.get()`/`api.post()` trong các page mới.
 - **`TableSkeleton` props:** `rows` và `columns` (không phải `cols`).
 - **`@Roles()` decorator:** nhận `Role` từ `@xcash/shared-types`, enum value là `Role.ADMIN`, `Role.ACCOUNTANT` (UPPERCASE) — không phải `Role.admin`.
 - **AI job name:** `ai-classify` (không còn `ai-matching`). Constant `AI_CLASSIFY_JOB` export từ `classification.processor.ts`.
@@ -752,7 +789,7 @@ postinstall      → prisma generate
 - **Rate limiting per-tenant:** `TenantThrottlerGuard` override `getTracker()` để dùng `tenantId` (fallback `userId` rồi IP) làm key thay vì mặc định theo IP — vì nhiều user cùng tenant có thể gọi API từ IP khác nhau, và Cas Partner (không có `tenantId`) vẫn cần giới hạn theo user. Áp dụng global qua `APP_GUARD`, bỏ qua `/health`. Giới hạn: `RATE_LIMIT_PER_MINUTE` (default 120 request/phút/tenant).
 - **Tenant suspend chặn login:** `auth.service.ts` → `login()` tra `subscription` mới nhất theo `tenantId`, nếu `status === 'suspended'` thì từ chối đăng nhập luôn (không cho vào hệ thống dù JWT hợp lệ) — khớp edge case đã ghi trong `rbac.md`.
 - **AI cost tracking pattern:** `AiUsageLogService.record()` là seam duy nhất — void (không async), dùng `.catch(logger.warn)` để không block calling path. `calcCostUsd(model, tokensIn, tokensOut)` tính chi phí on-the-fly từ `AI_PRICING` hardcode (`ai-pricing.ts`). `getAiCosts()` dùng `$queryRaw GROUP BY tenant_id, call_type, model` (không load all rows). `embedding.service.ts` nhận `tenantId?` — truyền qua toàn bộ call chain `embedAndStoreClassification(id, content, tenantId?)` và `findSimilarClassifications(tenantId, ...)`.
-- **Architecture refactoring (#1–#9):** (1) `CopilotQuotaService` tách quota logic khỏi CopilotController — deps giảm 8→5; (2) `TokenService` tách token lifecycle khỏi AuthService — AuthService deps giảm 9→7; (3) `copilot-activity.helper.ts` tách activity UI helpers khỏi OpenAiService — file giảm ~570→~310 lines; (4) `OVERAGE_PLANS` shared constant trong `common/constants/quota-policy.ts` — 3 consumer files import chung; (5) `ReportService.fetchExportData()` method public tách data fetching khỏi Excel gen; (6) `NotificationStreamService` tách SSE RxJS Subject streaming khỏi `NotificationService`; (7) `CopilotQuotaGuard` rewrite dùng Redis cache 30s TTL (match PlanGuard pattern) — không còn đọc DB mỗi request; (8) `CopilotStreamService` tách chat() + streamChatInternal() khỏi controller — controller deps 8→3; (9) `PartnerService` split thành 4 services (TenantManagement, RevenueAnalytics, PlanPricing, AiCost) + date util extract — controller dispatch 4 services.
+- **Architecture refactoring (#1–#9 + FE):** (1) `CopilotQuotaService` tách quota logic khỏi CopilotController — deps giảm 8→5; (2) `TokenService` tách token lifecycle khỏi AuthService — AuthService deps giảm 9→7; (3) `copilot-activity.helper.ts` tách activity UI helpers khỏi OpenAiService — file giảm ~570→~310 lines; (4) `OVERAGE_PLANS` shared constant trong `common/constants/quota-policy.ts` — 3 consumer files import chung; (5) `ReportService.fetchExportData()` method public tách data fetching khỏi Excel gen; (6) `NotificationStreamService` tách SSE RxJS Subject streaming khỏi `NotificationService`; (7) `CopilotQuotaGuard` rewrite dùng Redis cache 30s TTL (match PlanGuard pattern) — không còn đọc DB mỗi request; (8) `CopilotStreamService` tách chat() + streamChatInternal() khỏi controller — controller deps 8→3; (9) `PartnerService` split thành 4 services (TenantManagement, RevenueAnalytics, PlanPricing, AiCost) + date util extract — controller dispatch 4 services. **FE architecture:** `StatCard` unified component thay thế 2 component trùng lặp; `PaginationBar` shared component adopted 9 pages; `CopilotPage` split 3 sub-components + SSE utils; typed API helpers + shared API types consolidated 30 inline types; dead code `useCopilotStream` xóa 457 lines.
 
 ---
 
