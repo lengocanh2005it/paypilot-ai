@@ -174,7 +174,6 @@ function PartnerSidebarContent({
             ) : null}
           </button>
           <div className={cn('flex gap-2', collapsed ? 'flex-col items-center' : 'items-center')}>
-            <ThemeToggle />
             <Button
               type="button"
               variant="outline"
@@ -263,6 +262,9 @@ export function PartnerLayout() {
           </Button>
           <LogoMark size={28} className="rounded-lg" />
           <p className="truncate font-semibold text-primary">X-Cash AI</p>
+          <div className="ml-auto">
+            <ThemeToggle />
+          </div>
         </div>
 
         <main className="min-w-0 flex-1 overflow-y-auto">

@@ -1,12 +1,13 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Pencil, SkipForward } from 'lucide-react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { useCallback, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { ConfidenceBadge } from '@/components/shared/ConfidenceBadge';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { PaginationBar } from '@/components/shared/PaginationBar';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,33 +29,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { api } from '@/lib/api';
-import { formatDateVN } from '@/lib/dashboard-transactions';
+import { useFilteredPagination } from '@/hooks/useFilteredPagination';
+import { getApiData, postApiData } from '@/lib/api';
+import { formatDateVN } from '@/lib/date';
 import { canManageTransactions } from '@/lib/rbac';
-
-interface ClassificationItem {
-  id: string;
-  debitAccount: string;
-  creditAccount: string;
-  confidenceScore: number;
-  reason: string | null;
-  transaction: {
-    content: string | null;
-    amount: string;
-    transactionDate: string;
-    grantId: string;
-  };
-}
-
-interface ReviewQueueResponse {
-  data: {
-    items: ClassificationItem[];
-    total: number;
-    page: number;
-    limit: number;
-  };
-}
+import type { ClassificationItem, ReviewQueueResponse } from '@/types/api/review';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 350;
@@ -89,28 +68,23 @@ function buildReviewQueueUrl(params: { page: number; search: string; confidence:
 }
 
 async function fetchReviewQueue(url: string): Promise<ReviewQueueResponse['data']> {
-  const res = await api.get(url);
-  return res.data.data;
+  return getApiData<ReviewQueueResponse['data']>(url);
 }
 
 async function confirmReview(id: string) {
-  await api.post(`/review/${id}/confirm`);
+  await postApiData<void>(`/review/${id}/confirm`);
 }
 
 async function correctReview(id: string, debitAccount: string, creditAccount: string) {
-  await api.post(`/review/${id}/correct`, { debitAccount, creditAccount });
+  await postApiData<void>(`/review/${id}/correct`, { debitAccount, creditAccount });
 }
 
 async function skipReview(id: string) {
-  await api.post(`/review/${id}/skip`);
+  await postApiData<void>(`/review/${id}/skip`);
 }
 
 function formatAmount(amount: string | number) {
   return Number(amount).toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
-}
-
-function formatDate(dateStr: string) {
-  return formatDateVN(dateStr);
 }
 
 const SWIPE_THRESHOLD = 80;
@@ -145,7 +119,7 @@ function SwipeableReviewCard({
         </div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            {formatDate(item.transaction.transactionDate)}
+            {formatDateVN(item.transaction.transactionDate)}
           </span>
           <span className="font-mono">{formatAmount(item.transaction.amount)}</span>
         </div>
@@ -208,7 +182,7 @@ function SwipeableReviewCard({
         </div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            {formatDate(item.transaction.transactionDate)}
+            {formatDateVN(item.transaction.transactionDate)}
           </span>
           <span className="font-mono">{formatAmount(item.transaction.amount)}</span>
         </div>
@@ -240,40 +214,32 @@ export default function ReviewPage() {
   const { user } = useAuth();
   const canReview = canManageTransactions(user?.role);
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [searchText, setSearchText] = useState('');
-  const [confidence, setConfidence] = useState('all');
-  const debouncedSearch = useDebouncedValue(
-    searchText,
-    SEARCH_DEBOUNCE_MS,
-    useCallback(() => {
-      setPage(1);
-    }, []),
-  );
   const [correctDialog, setCorrectDialog] = useState<ClassificationItem | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<ClassificationItem | null>(null);
   const [skipTarget, setSkipTarget] = useState<ClassificationItem | null>(null);
   const [debitAccount, setDebitAccount] = useState('');
   const [creditAccount, setCreditAccount] = useState('');
 
-  const queryUrl = buildReviewQueueUrl({ page, search: debouncedSearch, confidence });
-  const hasActiveFilters = Boolean(debouncedSearch.trim() || confidence !== 'all');
-  const isSearchPending = searchText !== debouncedSearch;
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['review-queue', page, debouncedSearch, confidence],
-    queryFn: () => fetchReviewQueue(queryUrl),
-    placeholderData: keepPreviousData,
-    refetchInterval: 15_000,
-  });
+  const { data, filters, debouncedFilters, setFilter, resetFilters, page, setPage, isLoading } =
+    useFilteredPagination({
+      queryKey: ['review-queue'],
+      queryFn: ({ filters, page }) =>
+        fetchReviewQueue(
+          buildReviewQueueUrl({ page, search: filters.search, confidence: filters.confidence }),
+        ),
+      defaultFilters: { search: '', confidence: 'all' },
+      debounceMs: SEARCH_DEBOUNCE_MS,
+      keepPrevious: true,
+      refetchInterval: 15_000,
+    });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const hasActiveFilters = Boolean(
+    debouncedFilters.search.trim() || debouncedFilters.confidence !== 'all',
+  );
+  const isSearchPending = filters.search !== debouncedFilters.search;
 
-  const clearFilters = () => {
-    setSearchText('');
-    setConfidence('all');
-    setPage(1);
-  };
+  const clearFilters = () => resetFilters();
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['review-queue'] });
@@ -339,18 +305,15 @@ export default function ReviewPage() {
                 <Input
                   id="review-search"
                   placeholder="Tìm theo nội dung giao dịch..."
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
+                  value={filters.search}
+                  onChange={(e) => setFilter('search', e.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="review-confidence">Độ tin cậy</Label>
                 <Select
-                  value={confidence}
-                  onValueChange={(v) => {
-                    setConfidence(v);
-                    setPage(1);
-                  }}
+                  value={filters.confidence}
+                  onValueChange={(v) => setFilter('confidence', v)}
                 >
                   <SelectTrigger id="review-confidence" className="w-full">
                     <SelectValue />
@@ -368,12 +331,12 @@ export default function ReviewPage() {
             {hasActiveFilters ? (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground">Đang lọc:</span>
-                {debouncedSearch.trim() ? (
-                  <Badge variant="secondary">"{debouncedSearch.trim()}"</Badge>
+                {debouncedFilters.search.trim() ? (
+                  <Badge variant="secondary">"{debouncedFilters.search.trim()}"</Badge>
                 ) : null}
-                {confidence !== 'all' ? (
+                {debouncedFilters.confidence !== 'all' ? (
                   <Badge variant="secondary">
-                    {CONFIDENCE_OPTIONS.find((o) => o.value === confidence)?.label}
+                    {CONFIDENCE_OPTIONS.find((o) => o.value === debouncedFilters.confidence)?.label}
                   </Badge>
                 ) : null}
                 {isSearchPending ? (
@@ -440,7 +403,7 @@ export default function ReviewPage() {
                       {data.items.map((item) => (
                         <tr key={item.id} className="hover:bg-muted/30">
                           <td className="py-3 pr-4 text-muted-foreground">
-                            {formatDate(item.transaction.transactionDate)}
+                            {formatDateVN(item.transaction.transactionDate)}
                           </td>
                           <td
                             className="max-w-[250px] truncate py-3 pr-4"
@@ -498,33 +461,19 @@ export default function ReviewPage() {
                 </div>
 
                 {data ? (
-                  <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t pt-4 sm:flex-row">
-                    <p className="text-sm text-muted-foreground">
-                      Hiển thị {data.items.length} / {data.total} mục
-                    </p>
-                    {data.total > PAGE_SIZE ? (
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={page <= 1}
-                          onClick={() => setPage((current) => Math.max(1, current - 1))}
-                        >
-                          Trước
-                        </Button>
-                        <span className="text-sm text-muted-foreground">
-                          Trang {page} / {totalPages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={page >= totalPages}
-                          onClick={() => setPage((current) => current + 1)}
-                        >
-                          Sau
-                        </Button>
-                      </div>
-                    ) : null}
+                  <div className="mt-4 border-t pt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm text-muted-foreground">
+                        Hiển thị {data.items.length} / {data.total} mục
+                      </p>
+                      {data.total > PAGE_SIZE ? (
+                        <PaginationBar
+                          page={page}
+                          totalPages={totalPages}
+                          onPageChange={(p) => setPage(p)}
+                        />
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </>

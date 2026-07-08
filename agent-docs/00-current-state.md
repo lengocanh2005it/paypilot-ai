@@ -207,6 +207,8 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - **#5 Extract ReportExporter:** thêm `fetchExportData()` method public tách data fetching khỏi Excel generation; `exportExcel()` gọi `fetchExportData()` rồi `buildExportWorkbook()` ✅
 - **#6 Split NotificationService SSE:** tạo `notification-stream.service.ts` với RxJS Subject streaming (`streamForToken`, `streamTransactionEventsForToken`, `emitTransactionClassified`, `emitNotification`); `NotificationService` delegate SSE ops qua stream service ✅
 - **#7 Cache CopilotQuotaGuard:** rewrite guard dùng Redis cache 30s TTL, match pattern `PlanGuard` — inject `RedisService` (available via `@Global()` RedisModule) ✅
+- **#8 Extract CopilotStreamService:** tách `chat()` + `streamChatInternal()` (toàn bộ streaming pipeline: conversation setup, tool calling, abort/partial, quota) ra `copilot-stream.service.ts` — CopilotController deps 8→3 (CopilotStreamService, CopilotConversationService, RedisService); controller chỉ giữ HTTP concerns (SSE headers, Redis connection limiting) ✅
+- **#9 Split PartnerService:** tách 826-line god service thành 4 services: `TenantManagementService` (list, detail, suspend, activate), `RevenueAnalyticsService` (stats, revenue trend, payments), `PlanPricingService` (CRUD pricing, set tenant plan), `AiCostService` (SQL aggregation, detail logs); date helpers extract vào `partner/utils/date.util.ts`; PartnerController dispatch 4 services ✅
 - **Fix `notification.service.spec.ts`:** thay `JwtService` mock bằng `NotificationStreamService` mock trong test providers ✅
 - **Full `pnpm verify` pass:** 10/10 tasks (lint, type-check, test, build all clean) ✅
 
@@ -314,7 +316,8 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           ├── ai/                        # openai.service, embedding.service, classification.service, classification.processor, copilot.controller ✅
 │   │           │   ├── ai-usage-log.service.ts    # AiUsageLogService.record() — fire-and-forget AI token logging (seam duy nhất) ✅
 │   │           │   ├── ai-usage-log.service.spec.ts  # 4 tests: classify/embedding/copilot/error-swallow ✅
-│   │           │   ├── copilot.controller.ts      # POST /ai/copilot + POST /ai/copilot/stream + 4 conversation CRUD endpoints — CopilotQuotaGuard method-level (chat+stream only); chat() thêm CopilotThrottlerGuard; stream() @SkipThrottle + Redis SSE limit (Phase 6); deps reduced 8→5 via CopilotQuotaService
+│   │           │   ├── copilot.controller.ts      # POST /ai/copilot + POST /ai/copilot/stream + 4 conversation CRUD endpoints — CopilotQuotaGuard method-level (chat+stream only); controller deps 3 (CopilotStreamService, CopilotConversationService, RedisService) ✅
+│   │           │   ├── copilot-stream.service.ts  # chat() + streamChat() — toàn bộ streaming pipeline, tool calling, abort/partial, quota (extracted from controller) ✅
 │   │           │   ├── copilot-quota.service.ts   # incrementAndNotify() — quota check + increment + notify (extracted from controller) ✅
 │   │           │   ├── copilot-activity.helper.ts # TOOL_ACTIVITIES, getStreamingActivityMeta(), buildActivities() — extracted from OpenAiService ✅
 │   │           │   ├── copilot-conversation.service.ts  # CRUD conversations + messages, cursor pagination, auto-title fire-and-forget, deleteMessage() dangling cleanup (Phase 6) ✅
@@ -363,10 +366,14 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   ├── payos-webhook.controller.ts  # POST /webhook/payos-billing
 │   │           │   └── dto/upgrade-billing.dto.ts
 │   │           ├── partner/                   # /partner/* — chỉ Cas Partner ✅
-│   │           │   ├── partner.controller.ts
-│   │           │   ├── partner.service.ts
+│   │           │   ├── partner.controller.ts     # dispatch đến 4 services + AuditLogService ✅
+│   │           │   ├── tenant-management.service.ts  # listTenants, getTenantDetail, suspendTenant, activateTenant ✅
+│   │           │   ├── revenue-analytics.service.ts  # getStats, getRevenueTrend, listPayments ✅
+│   │           │   ├── plan-pricing.service.ts   # listPlanPricing, updatePlanPricing, setTenantPlan ✅
+│   │           │   ├── ai-cost.service.ts        # getAiCosts (SQL aggregate), getAiCostDetail ✅
 │   │           │   ├── partner.module.ts
-│   │           │   └── dto/plan-pricing.dto.ts
+│   │           │   ├── dto/plan-pricing.dto.ts
+│   │           │   └── utils/date.util.ts        # getMonthStart, parseDateRange, buildMonthBuckets, resolveStatsPeriod, resolveTrendMonths, parseFilterStartDate, parseFilterEndDate ✅
 │   │           ├── notification/              # In-app + email Resend + SSE stream ✅
 │   │           │   ├── notification.controller.ts  # GET list/unread/stream, PATCH read, DELETE 1/nhiều/all
 │   │           │   ├── notification.service.ts      # delegates SSE ops to notification-stream.service ✅
@@ -745,7 +752,7 @@ postinstall      → prisma generate
 - **Rate limiting per-tenant:** `TenantThrottlerGuard` override `getTracker()` để dùng `tenantId` (fallback `userId` rồi IP) làm key thay vì mặc định theo IP — vì nhiều user cùng tenant có thể gọi API từ IP khác nhau, và Cas Partner (không có `tenantId`) vẫn cần giới hạn theo user. Áp dụng global qua `APP_GUARD`, bỏ qua `/health`. Giới hạn: `RATE_LIMIT_PER_MINUTE` (default 120 request/phút/tenant).
 - **Tenant suspend chặn login:** `auth.service.ts` → `login()` tra `subscription` mới nhất theo `tenantId`, nếu `status === 'suspended'` thì từ chối đăng nhập luôn (không cho vào hệ thống dù JWT hợp lệ) — khớp edge case đã ghi trong `rbac.md`.
 - **AI cost tracking pattern:** `AiUsageLogService.record()` là seam duy nhất — void (không async), dùng `.catch(logger.warn)` để không block calling path. `calcCostUsd(model, tokensIn, tokensOut)` tính chi phí on-the-fly từ `AI_PRICING` hardcode (`ai-pricing.ts`). `getAiCosts()` dùng `$queryRaw GROUP BY tenant_id, call_type, model` (không load all rows). `embedding.service.ts` nhận `tenantId?` — truyền qua toàn bộ call chain `embedAndStoreClassification(id, content, tenantId?)` và `findSimilarClassifications(tenantId, ...)`.
-- **Architecture refactoring (#1–#7):** (1) `CopilotQuotaService` tách quota logic khỏi CopilotController — deps giảm 8→5; (2) `TokenService` tách token lifecycle khỏi AuthService — AuthService deps giảm 9→7; (3) `copilot-activity.helper.ts` tách activity UI helpers khỏi OpenAiService — file giảm ~570→~310 lines; (4) `OVERAGE_PLANS` shared constant trong `common/constants/quota-policy.ts` — 3 consumer files import chung; (5) `ReportService.fetchExportData()` method public tách data fetching khỏi Excel gen; (6) `NotificationStreamService` tách SSE RxJS Subject streaming khỏi `NotificationService`; (7) `CopilotQuotaGuard` rewrite dùng Redis cache 30s TTL (match PlanGuard pattern) — không còn đọc DB mỗi request.
+- **Architecture refactoring (#1–#9):** (1) `CopilotQuotaService` tách quota logic khỏi CopilotController — deps giảm 8→5; (2) `TokenService` tách token lifecycle khỏi AuthService — AuthService deps giảm 9→7; (3) `copilot-activity.helper.ts` tách activity UI helpers khỏi OpenAiService — file giảm ~570→~310 lines; (4) `OVERAGE_PLANS` shared constant trong `common/constants/quota-policy.ts` — 3 consumer files import chung; (5) `ReportService.fetchExportData()` method public tách data fetching khỏi Excel gen; (6) `NotificationStreamService` tách SSE RxJS Subject streaming khỏi `NotificationService`; (7) `CopilotQuotaGuard` rewrite dùng Redis cache 30s TTL (match PlanGuard pattern) — không còn đọc DB mỗi request; (8) `CopilotStreamService` tách chat() + streamChatInternal() khỏi controller — controller deps 8→3; (9) `PartnerService` split thành 4 services (TenantManagement, RevenueAnalytics, PlanPricing, AiCost) + date util extract — controller dispatch 4 services.
 
 ---
 

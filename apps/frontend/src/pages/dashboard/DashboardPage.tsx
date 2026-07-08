@@ -25,19 +25,14 @@ import {
   type SourceBreakdownApiResponse,
   type StatusBreakdownApiResponse,
 } from '@/lib/dashboard-transactions';
-import { dayIsoRange } from '@/lib/date-range';
+import { dayIsoRange } from '@/lib/date';
+import type { SummaryData } from '@/types/api/reports';
 import type { TransactionListResponse } from '@/types/transaction';
 
 const RECENT_TRANSACTION_LIMIT = 8;
 const DAILY_TREND_DAYS = 7;
 /** Giảm tải server — dashboard không cần realtime từng giây (review count có hook riêng). */
 const DASHBOARD_REFETCH_MS = 30_000;
-
-interface SummaryData {
-  period: { year: number; month: number };
-  summary: { totalRevenue: number; totalExpense: number; net: number };
-  stats: { totalCount: number; classifiedCount: number; reviewCount: number; aiAccuracy: number };
-}
 
 function buildTransactionsCountUrl(status: string, from: string, to: string) {
   const params = new URLSearchParams({

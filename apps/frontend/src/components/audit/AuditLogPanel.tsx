@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { api } from '@/lib/api';
-import { formatDateVN } from '@/lib/dashboard-transactions';
+import { formatDateVN } from '@/lib/date';
 
 export interface AuditLogItem {
   id: string;

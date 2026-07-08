@@ -6,7 +6,7 @@ import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { api } from '@/lib/api';
+import { getApiData } from '@/lib/api';
 
 interface Account {
   id: string;
@@ -18,8 +18,7 @@ interface Account {
 }
 
 async function fetchAccounts(): Promise<Account[]> {
-  const res = await api.get('/accounts');
-  return res.data.data;
+  return getApiData<Account[]>('/accounts');
 }
 
 const ACCOUNT_TYPE_LABELS: Record<string, { label: string; className: string }> = {

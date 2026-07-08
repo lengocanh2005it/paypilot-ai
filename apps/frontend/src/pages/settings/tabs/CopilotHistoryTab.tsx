@@ -1,9 +1,10 @@
+import type { CopilotConversationsListResponse } from '@xcash/shared-types';
 import { SubscriptionPlan } from '@xcash/shared-types';
-import { Bot, ChevronLeft, ChevronRight, ExternalLink, MessageSquare, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { Bot, ExternalLink, MessageSquare, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CopilotQuotaSummary } from '@/components/copilot/CopilotQuotaSummary';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { PaginationBar } from '@/components/shared/PaginationBar';
 import { PlanGate } from '@/components/shared/PlanGate';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Button } from '@/components/ui/button';
@@ -19,23 +20,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAuth } from '@/hooks/useAuth';
-import { useCopilotHistoryPage } from '@/hooks/useCopilotHistoryPage';
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { formatDateVN } from '@/lib/dashboard-transactions';
+import { useFilteredPagination } from '@/hooks/useFilteredPagination';
+import { api } from '@/lib/api';
+import { formatDateVN, formatTransactionDateTime } from '@/lib/date';
 
 const STORAGE_KEY_PREFIX = 'xcash_copilot_conv_';
 const PAGE_LIMIT = 10;
-
-function formatDateTimeVN(iso: string) {
-  const date = new Date(iso);
-  return date.toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 const PREVIEW_MAX_LENGTH = 100;
 
@@ -66,26 +56,24 @@ function formatMessagePreview(text: string) {
 function CopilotHistoryTable() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [page, setPage] = useState(1);
-  const debouncedFrom = useDebouncedValue(fromDate, 400);
-  const debouncedTo = useDebouncedValue(toDate, 400);
-  const hasDateFilter = Boolean(debouncedFrom || debouncedTo);
 
-  const resetPage = useCallback(() => setPage(1), []);
-  useEffect(() => {
-    resetPage();
-  }, [debouncedFrom, debouncedTo, resetPage]);
+  const { data, filters, setFilter, resetFilters, page, setPage, isLoading, isError, refetch } =
+    useFilteredPagination({
+      queryKey: ['copilot-history', user?.id],
+      queryFn: ({ filters, page }) => {
+        const params = new URLSearchParams({ page: String(page), limit: String(PAGE_LIMIT) });
+        if (filters.fromDate) params.set('fromDate', filters.fromDate);
+        if (filters.toDate) params.set('toDate', filters.toDate);
+        return api
+          .get<{ data: CopilotConversationsListResponse }>(`/ai/copilot/conversations?${params}`)
+          .then((r) => r.data.data);
+      },
+      defaultFilters: { fromDate: '', toDate: '' },
+      debounceMs: 400,
+      enabled: !!user?.id,
+    });
 
-  const { data, isLoading, isError, refetch } = useCopilotHistoryPage({
-    userId: user?.id,
-    page,
-    fromDate: debouncedFrom || undefined,
-    toDate: debouncedTo || undefined,
-    limit: PAGE_LIMIT,
-  });
-
+  const hasDateFilter = Boolean(filters.fromDate || filters.toDate);
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = data?.totalPages ?? 1;
@@ -96,10 +84,7 @@ function CopilotHistoryTable() {
     navigate('/copilot');
   };
 
-  const clearFilters = () => {
-    setFromDate('');
-    setToDate('');
-  };
+  const clearFilters = () => resetFilters();
 
   if (isLoading) {
     return (
@@ -156,8 +141,8 @@ function CopilotHistoryTable() {
             <Input
               id="copilot-history-from"
               type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              value={filters.fromDate}
+              onChange={(e) => setFilter('fromDate', e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
@@ -165,8 +150,8 @@ function CopilotHistoryTable() {
             <Input
               id="copilot-history-to"
               type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              value={filters.toDate}
+              onChange={(e) => setFilter('toDate', e.target.value)}
             />
           </div>
         </div>
@@ -208,7 +193,9 @@ function CopilotHistoryTable() {
                   onClick={() => openConversation(item.id)}
                 >
                   <TableCell className="whitespace-nowrap text-muted-foreground">
-                    <span className="hidden sm:inline">{formatDateTimeVN(item.updatedAt)}</span>
+                    <span className="hidden sm:inline">
+                      {formatTransactionDateTime(item.updatedAt)}
+                    </span>
                     <span className="sm:hidden">{formatDateVN(item.updatedAt)}</span>
                   </TableCell>
                   <TableCell>
@@ -234,32 +221,13 @@ function CopilotHistoryTable() {
 
       {total > 0 && (
         <div className="flex items-center justify-between pt-1">
-          <p className="text-xs text-muted-foreground">
-            {total} kết quả
-            {totalPages > 1 ? ` · Trang ${page}/${totalPages}` : null}
-          </p>
-          {totalPages > 1 && (
-            <div className="flex gap-1">
-              <Button
-                size="icon"
-                variant="outline"
-                className="size-7"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                <ChevronLeft className="size-3.5" />
-              </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                className="size-7"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                <ChevronRight className="size-3.5" />
-              </Button>
-            </div>
-          )}
+          <p className="text-xs text-muted-foreground">{total} kết quả</p>
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            compact
+            onPageChange={(p) => setPage(p)}
+          />
         </div>
       )}
     </div>

@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge';
+import { TRANSACTION_SOURCE_LABELS } from '@/lib/dashboard-transactions';
 import { cn } from '@/lib/utils';
 
 type TransactionSource = 'cas' | 'import';
@@ -15,6 +16,7 @@ export function TransactionSourceBadge({
   size = 'sm',
 }: TransactionSourceBadgeProps) {
   const isImport = source === 'import';
+  const label = TRANSACTION_SOURCE_LABELS[source ?? 'cas'] ?? source ?? 'Ngân hàng';
 
   return (
     <Badge
@@ -27,7 +29,7 @@ export function TransactionSourceBadge({
         className,
       )}
     >
-      {isImport ? 'Import Excel' : 'Ngân hàng'}
+      {label}
     </Badge>
   );
 }

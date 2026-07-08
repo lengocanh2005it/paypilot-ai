@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfidenceBadge } from '@/components/shared/ConfidenceBadge';
-import { SignedTransactionAmount } from '@/components/shared/SignedTransactionAmount';
 import { TransactionSourceBadge } from '@/components/shared/TransactionSourceBadge';
 import { TransactionStatusBadge } from '@/components/shared/TransactionStatusBadge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +15,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
 import { getApiData, postApiData } from '@/lib/api';
-import { formatTransactionDateTime } from '@/lib/dashboard-transactions';
+import { formatSignedTransactionAmount } from '@/lib/dashboard-transactions';
+import { formatTransactionDateTime } from '@/lib/date';
 import { canManageTransactions } from '@/lib/rbac';
 import type { TransactionDetail, TransactionSummary } from '@/types/transaction';
 
@@ -86,7 +86,7 @@ export function TransactionDetailSheet({
           <div className="mt-4 space-y-6">
             <div>
               <p className="text-2xl font-bold">
-                <SignedTransactionAmount amount={Number(displayTxn.amount)} />
+                {formatSignedTransactionAmount(Number(displayTxn.amount))}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {formatTransactionDateTime(displayTxn.transactionDate)}

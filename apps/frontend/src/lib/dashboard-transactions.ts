@@ -323,32 +323,3 @@ export function buildDashboardOverviewStats(items: TransactionSummary[]): Dashbo
     aiAccuracyPercent,
   };
 }
-
-export function formatTransactionDateTime(iso: string) {
-  const date = new Date(iso);
-  return date.toLocaleString('vi-VN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-}
-
-export function formatTransactionTime(iso: string) {
-  const date = new Date(iso);
-  const time = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${time} ${day}/${month}`;
-}
-
-/** Ngày tháng kiểu Việt Nam: DD/MM/YYYY (vd 03/07/2026). */
-export function formatDateVN(iso: string) {
-  const date = new Date(iso);
-  return date.toLocaleDateString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-}

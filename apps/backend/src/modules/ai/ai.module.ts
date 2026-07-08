@@ -15,6 +15,7 @@ import { CopilotController } from './copilot.controller';
 import { CopilotContextService } from './copilot-context.service';
 import { CopilotConversationService } from './copilot-conversation.service';
 import { CopilotQuotaService } from './copilot-quota.service';
+import { CopilotStreamService } from './copilot-stream.service';
 import { CopilotToolService } from './copilot-tool.service';
 import { EmbeddingService } from './embedding.service';
 import { OpenAiService } from './openai.service';
@@ -37,6 +38,7 @@ import { OpenAiService } from './openai.service';
     CopilotContextService,
     CopilotConversationService,
     CopilotQuotaService,
+    CopilotStreamService,
     CopilotToolService,
     PlanGuard,
     CopilotQuotaGuard,

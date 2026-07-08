@@ -20,24 +20,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 import { formatVND, formatVNDAxis } from '@/lib/format-vnd';
 import { hasPlanAccess } from '@/lib/plan';
-
-interface ComparisonData {
-  current: { totalRevenue: number; totalExpense: number; net: number };
-  previous: { totalRevenue: number; totalExpense: number; net: number };
-  currentStats: {
-    totalCount: number;
-    classifiedCount: number;
-    reviewCount: number;
-    aiAccuracy: number;
-  };
-  previousStats: { aiAccuracy: number };
-  changes: { revenue: number; expense: number; net: number; aiAccuracy: number };
-}
-
-interface TopAccountsData {
-  topExpense: Array<{ accountCode: string; accountName: string; total: number }>;
-  topRevenue: Array<{ accountCode: string; accountName: string; total: number }>;
-}
+import type { ComparisonData, TopAccountsData } from '@/types/api/analytics';
 
 const COLORS = ['#16AB64', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6'];
 

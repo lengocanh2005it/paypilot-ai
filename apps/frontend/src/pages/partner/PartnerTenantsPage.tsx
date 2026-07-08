@@ -1,10 +1,12 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Eye, Search, Settings2 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Building2, CheckCircle, Eye, Search, Settings2, Wallet, XCircle } from 'lucide-react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { PaginationBar } from '@/components/shared/PaginationBar';
+import { SummaryCard } from '@/components/shared/SummaryCard';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,45 +27,29 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { useFilteredPagination } from '@/hooks/useFilteredPagination';
 import { api } from '@/lib/api';
+import { formatDateVN } from '@/lib/date';
 import { formatVND } from '@/lib/format-vnd';
-import { PLAN_LABELS } from '@/lib/plan-labels';
-import type { PartnerTenant, PartnerTenantsResponse } from '@/types/partner';
+import { PLAN_LABELS } from '@/lib/plans';
+import type {
+  PartnerTenant,
+  PartnerTenantsResponse,
+  PlanPricingItem,
+  TenantDetail,
+  TenantStats,
+} from '@/types/partner';
 
 const SEARCH_DEBOUNCE_MS = 350;
 const PAGE_SIZE = 20;
-
-interface TenantMember {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  createdAt: string;
-}
-
-interface PlanPricingItem {
-  plan: string;
-  pricePerMonth: number;
-  transactionQuota: number;
-}
-
-interface TenantDetail {
-  id: string;
-  businessName: string;
-  ownerName: string | null;
-  createdAt: string;
-  classificationThreshold: number;
-  plan: string | null;
-  status: string;
-  pricePerMonth: number;
-  transactionQuota: number;
-  transactionUsedThisCycle: number;
-  transactionsThisMonth: number;
-  totalTransactions: number;
-  aiAccuracy: number;
-  members: TenantMember[];
-}
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
@@ -74,17 +60,6 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function PartnerTenantsPage() {
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [searchInput, setSearchInput] = useState('');
-  const debouncedSearch = useDebouncedValue(
-    searchInput,
-    SEARCH_DEBOUNCE_MS,
-    useCallback(() => {
-      setPage(1);
-    }, []),
-  );
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
-  const [planFilter, setPlanFilter] = useState<'all' | string>('all');
   const [viewingTenantId, setViewingTenantId] = useState<string | null>(null);
   const [tenantAction, setTenantAction] = useState<{
     type: 'suspend' | 'activate';
@@ -94,26 +69,39 @@ export default function PartnerTenantsPage() {
   const [selectedNewPlan, setSelectedNewPlan] = useState<string>('');
   const [confirmSetPlan, setConfirmSetPlan] = useState(false);
 
+  const { data: stats, isLoading: loadingStats } = useQuery({
+    queryKey: ['partner', 'stats'],
+    queryFn: () => api.get<{ data: TenantStats }>('/partner/stats').then((r) => r.data.data),
+  });
+
   const {
     data: tenantsData,
+    filters,
+    debouncedFilters,
+    setFilter,
+    resetFilters,
+    page,
+    setPage,
     isLoading: loadingTenants,
     isError: tenantsError,
     refetch: refetchTenants,
-  } = useQuery({
-    queryKey: ['partner', 'tenants', page, debouncedSearch, statusFilter, planFilter],
-    queryFn: () =>
+  } = useFilteredPagination({
+    queryKey: ['partner', 'tenants'],
+    queryFn: ({ filters, page }) =>
       api
         .get<{ data: PartnerTenantsResponse }>('/partner/tenants', {
           params: {
             page,
             limit: PAGE_SIZE,
-            search: debouncedSearch.trim() || undefined,
-            status: statusFilter,
-            plan: planFilter,
+            search: filters.search.trim() || undefined,
+            status: filters.status,
+            plan: filters.plan,
           },
         })
         .then((r) => r.data.data),
-    placeholderData: keepPreviousData,
+    defaultFilters: { search: '', status: 'all', plan: 'all' },
+    debounceMs: SEARCH_DEBOUNCE_MS,
+    keepPrevious: true,
   });
 
   const filteredTenants = tenantsData?.items ?? [];
@@ -176,25 +164,48 @@ export default function PartnerTenantsPage() {
   });
 
   const hasActiveFilters =
-    debouncedSearch.trim() !== '' || statusFilter !== 'all' || planFilter !== 'all';
-  const isSearchPending = searchInput !== debouncedSearch;
+    debouncedFilters.search.trim() !== '' ||
+    debouncedFilters.status !== 'all' ||
+    debouncedFilters.plan !== 'all';
+  const isSearchPending = filters.search !== debouncedFilters.search;
 
-  const clearFilters = useCallback(() => {
-    setSearchInput('');
-    setStatusFilter('all');
-    setPlanFilter('all');
-    setPage(1);
-  }, []);
+  const clearFilters = () => resetFilters();
 
   return (
     <>
       <Header
         title="Doanh nghiệp"
         description="Quản lý toàn bộ doanh nghiệp đang sử dụng X-Cash AI"
-        hideThemeToggle
       />
 
       <div className="space-y-6 p-4 sm:p-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SummaryCard
+            icon={Building2}
+            label="Tổng doanh nghiệp"
+            value={String(stats?.totalTenants ?? 0)}
+            isLoading={loadingStats}
+          />
+          <SummaryCard
+            icon={CheckCircle}
+            label="Đang hoạt động"
+            value={String(stats?.activeTenants ?? 0)}
+            isLoading={loadingStats}
+          />
+          <SummaryCard
+            icon={XCircle}
+            label="Đã khóa"
+            value={String(stats?.suspendedTenants ?? 0)}
+            isLoading={loadingStats}
+          />
+          <SummaryCard
+            icon={Wallet}
+            label="Độ chính xác AI"
+            value={`${stats?.aiAccuracy ?? 0}%`}
+            isLoading={loadingStats}
+          />
+        </div>
+
         <Card>
           <CardHeader>
             <CardTitle>Danh sách doanh nghiệp</CardTitle>
@@ -203,18 +214,12 @@ export default function PartnerTenantsPage() {
                 <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Tìm theo tên doanh nghiệp..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
+                  value={filters.search}
+                  onChange={(e) => setFilter('search', e.target.value)}
                   className="pl-8"
                 />
               </div>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => {
-                  setStatusFilter(v as typeof statusFilter);
-                  setPage(1);
-                }}
-              >
+              <Select value={filters.status} onValueChange={(v) => setFilter('status', v)}>
                 <SelectTrigger className="whitespace-nowrap sm:w-44">
                   <SelectValue placeholder="Trạng thái" />
                 </SelectTrigger>
@@ -224,13 +229,7 @@ export default function PartnerTenantsPage() {
                   <SelectItem value="suspended">Đã khóa</SelectItem>
                 </SelectContent>
               </Select>
-              <Select
-                value={planFilter}
-                onValueChange={(v) => {
-                  setPlanFilter(v);
-                  setPage(1);
-                }}
-              >
+              <Select value={filters.plan} onValueChange={(v) => setFilter('plan', v)}>
                 <SelectTrigger className="whitespace-nowrap sm:w-40">
                   <SelectValue placeholder="Gói" />
                 </SelectTrigger>
@@ -246,8 +245,8 @@ export default function PartnerTenantsPage() {
             </div>
             {hasActiveFilters ? (
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                {debouncedSearch.trim() ? (
-                  <Badge variant="secondary">"{debouncedSearch.trim()}"</Badge>
+                {debouncedFilters.search.trim() ? (
+                  <Badge variant="secondary">"{debouncedFilters.search.trim()}"</Badge>
                 ) : null}
                 {isSearchPending ? (
                   <span className="text-xs text-muted-foreground">Đang tìm...</span>
@@ -363,28 +362,30 @@ export default function PartnerTenantsPage() {
                   ))}
                 </div>
 
-                <div className="hidden overflow-x-auto lg:block">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-muted-foreground">
-                        <th className="pb-2 pr-4 font-medium">Doanh nghiệp</th>
-                        <th className="pb-2 pr-4 font-medium">Gói</th>
-                        <th className="pb-2 pr-4 font-medium">Trạng thái</th>
-                        <th className="pb-2 pr-4 font-medium">GD/tháng</th>
-                        <th className="pb-2 pr-4 font-medium">Doanh thu</th>
-                        <th className="pb-2 font-medium">Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
+                <div className="hidden lg:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Doanh nghiệp</TableHead>
+                        <TableHead>Gói</TableHead>
+                        <TableHead>Trạng thái</TableHead>
+                        <TableHead>GD/tháng</TableHead>
+                        <TableHead>Doanh thu</TableHead>
+                        <TableHead className="w-0 text-center whitespace-normal">
+                          Thao tác
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {filteredTenants.map((t) => (
-                        <tr key={t.id} className="hover:bg-muted/30">
-                          <td className="py-2 pr-4 font-medium">{t.businessName}</td>
-                          <td className="py-2 pr-4">
+                        <TableRow key={t.id}>
+                          <TableCell className="font-medium">{t.businessName}</TableCell>
+                          <TableCell>
                             <Badge variant="secondary">
                               {t.plan ? (PLAN_LABELS[t.plan] ?? t.plan) : '—'}
                             </Badge>
-                          </td>
-                          <td className="py-2 pr-4">
+                          </TableCell>
+                          <TableCell>
                             {t.status === 'suspended' ? (
                               <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
                                 Đã khóa
@@ -394,11 +395,11 @@ export default function PartnerTenantsPage() {
                                 Hoạt động
                               </Badge>
                             )}
-                          </td>
-                          <td className="py-2 pr-4">{t.transactionsThisMonth}</td>
-                          <td className="py-2 pr-4">{formatVND(t.revenuePerMonth)}</td>
-                          <td className="py-2">
-                            <div className="flex items-center gap-2">
+                          </TableCell>
+                          <TableCell>{t.transactionsThisMonth}</TableCell>
+                          <TableCell>{formatVND(t.revenuePerMonth)}</TableCell>
+                          <TableCell className="w-0">
+                            <div className="flex items-center justify-center gap-2">
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -438,41 +439,22 @@ export default function PartnerTenantsPage() {
                                 </Button>
                               )}
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
 
                 {totalPages > 1 ? (
-                  <div className="mt-4 flex items-center justify-between gap-2 border-t pt-4">
-                    <p className="text-sm text-muted-foreground">
-                      Trang {page}/{totalPages}
-                      {tenantsData ? ` · ${tenantsData.total} doanh nghiệp` : ''}
-                    </p>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={page <= 1}
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      >
-                        <ChevronLeft className="size-4" />
-                        Trước
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={page >= totalPages}
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      >
-                        Sau
-                        <ChevronRight className="size-4" />
-                      </Button>
-                    </div>
+                  <div className="mt-4 border-t pt-4">
+                    <PaginationBar
+                      page={page}
+                      totalPages={totalPages}
+                      total={tenantsData?.total}
+                      label="{total} doanh nghiệp"
+                      onPageChange={(p) => setPage(p)}
+                    />
                   </div>
                 ) : null}
               </>
@@ -547,13 +529,7 @@ export default function PartnerTenantsPage() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Ngày tạo</p>
-                    <p className="font-medium">
-                      {new Date(tenantDetail.createdAt).toLocaleDateString('vi-VN', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                      })}
-                    </p>
+                    <p className="font-medium">{formatDateVN(tenantDetail.createdAt)}</p>
                   </div>
                 </div>
 

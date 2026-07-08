@@ -14,7 +14,7 @@ import {
   useMarkNotificationRead,
   useNotifications,
 } from '@/hooks/useNotifications';
-import { formatRelativeTime } from '@/lib/format-relative-time';
+import { formatRelativeTime } from '@/lib/date';
 import { cn } from '@/lib/utils';
 
 const DROPDOWN_WIDTH = 352; // 22rem

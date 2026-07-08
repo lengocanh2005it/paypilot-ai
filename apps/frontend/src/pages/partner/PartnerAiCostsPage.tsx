@@ -1,12 +1,14 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Bot, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { type ElementType, useState } from 'react';
+import { Bot, Building2, ChevronLeft, ChevronRight, Coins, Sparkles } from 'lucide-react';
+import { type ElementType, useMemo, useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { PaginationBar } from '@/components/shared/PaginationBar';
+import { SummaryCard } from '@/components/shared/SummaryCard';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -25,13 +27,36 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useFilteredPagination } from '@/hooks/useFilteredPagination';
 import { api } from '@/lib/api';
+import { formatDateTimeShort } from '@/lib/date';
+import { formatUsdCost, formatUsdWithVnd, USD_TO_VND_RATE, usdToVnd } from '@/lib/format-ai-cost';
+import type {
+  AiCostBreakdownItem,
+  AiCostDetailResponse,
+  AiCostRow,
+  AiCostsResponse,
+} from '@/types/partner';
 
 const CALL_TYPE_LABELS: Record<string, string> = {
   classify: 'Định khoản',
   copilot: 'Copilot',
   embedding: 'Embedding',
   title_gen: 'Tiêu đề',
+};
+
+const CALL_TYPE_DESCRIPTIONS: Record<string, string> = {
+  classify: 'Mỗi giao dịch được AI định khoản tự động (gpt-4o-mini)',
+  copilot: 'Chat Copilot — có thể gồm nhiều tool call mỗi lượt',
+  embedding: 'Vector hóa nội dung cho few-shot & knowledge base',
+  title_gen: 'Tự sinh tiêu đề cuộc hội thoại Copilot',
+};
+
+const CALL_TYPE_ICONS: Record<string, ElementType> = {
+  classify: Sparkles,
+  copilot: Sparkles,
+  embedding: Sparkles,
+  title_gen: Sparkles,
 };
 
 const CALL_TYPE_COLORS: Record<string, string> = {
@@ -41,118 +66,106 @@ const CALL_TYPE_COLORS: Record<string, string> = {
   title_gen: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
 };
 
-interface BreakdownItem {
-  tokensIn: number;
-  tokensOut: number;
-  costUsd: number;
-  callCount: number;
-}
-
-interface AiCostRow {
-  tenantId: string;
-  tenantName: string;
-  totalTokensIn: number;
-  totalTokensOut: number;
-  totalCostUsd: number;
-  breakdown: Record<string, BreakdownItem>;
-}
-
-interface AiCostsResponse {
-  items: AiCostRow[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-  grandTotalCostUsd: number;
-}
-
-interface DetailLog {
-  id: string;
-  callType: string;
-  model: string;
-  tokensIn: number;
-  tokensOut: number;
-  costUsd: number;
-  transactionId: string | null;
-  conversationId: string | null;
-  createdAt: string;
-}
-
-interface DetailResponse {
-  items: DetailLog[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
+const CALL_TYPE_ORDER = ['classify', 'copilot', 'embedding', 'title_gen'] as const;
 
 function getDefaultFromDate() {
   const d = new Date();
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
 }
 
-interface StatCardProps {
-  icon: ElementType;
-  label: string;
-  value: string;
-  isLoading?: boolean;
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return value.toLocaleString('vi-VN');
 }
 
-function StatCard({ icon: Icon, label, value, isLoading }: StatCardProps) {
+function CallTypeCard({
+  callType,
+  summary,
+  isLoading,
+}: {
+  callType: string;
+  summary?: AiCostBreakdownItem;
+  isLoading?: boolean;
+}) {
+  const Icon = CALL_TYPE_ICONS[callType] ?? Sparkles;
+  const colorClass = CALL_TYPE_COLORS[callType] ?? '';
+
   return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-4">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="size-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{label}</p>
+    <Card className="overflow-hidden">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div
+            className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${colorClass}`}
+          >
+            <Icon className="size-4" />
+          </div>
           {isLoading ? (
-            <Skeleton className="mt-1 h-5 w-24" />
+            <Skeleton className="h-5 w-16 rounded" />
           ) : (
-            <p className="truncate text-base font-semibold">{value}</p>
+            <div className="text-right">
+              <p className="text-sm font-semibold tabular-nums">
+                {formatUsdCost(summary?.costUsd ?? 0)}
+              </p>
+              <p className="text-xs text-muted-foreground tabular-nums">
+                ~{usdToVnd(summary?.costUsd ?? 0).toLocaleString('vi-VN')}đ
+              </p>
+            </div>
           )}
         </div>
+        <p className="mt-3 text-sm font-medium">{CALL_TYPE_LABELS[callType] ?? callType}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+          {CALL_TYPE_DESCRIPTIONS[callType] ?? ''}
+        </p>
+        {isLoading ? (
+          <Skeleton className="mt-3 h-4 w-full rounded" />
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{summary?.callCount ?? 0}</span> lượt gọi
+            {' · '}
+            {formatTokenCount((summary?.tokensIn ?? 0) + (summary?.tokensOut ?? 0))} tokens
+          </p>
+        )}
       </CardContent>
     </Card>
   );
 }
 
 export default function PartnerAiCostsPage() {
-  const [fromDate, setFromDate] = useState(getDefaultFromDate);
-  const [toDate, setToDate] = useState('');
-  const [page, setPage] = useState(1);
-
   const [detailTenant, setDetailTenant] = useState<AiCostRow | null>(null);
   const [detailCallType, setDetailCallType] = useState<string>('all');
   const [detailPage, setDetailPage] = useState(1);
 
-  const { data, isLoading } = useQuery<AiCostsResponse>({
-    queryKey: ['partner', 'ai-costs', fromDate, toDate, page],
-    queryFn: () =>
+  const { data, filters, setFilter, page, setPage, isLoading } = useFilteredPagination({
+    queryKey: ['partner', 'ai-costs'],
+    queryFn: ({ filters, page }) =>
       api
         .get<{ data: AiCostsResponse }>('/partner/ai-costs', {
           params: {
-            ...(fromDate ? { fromDate } : {}),
-            ...(toDate ? { toDate } : {}),
+            ...(filters.fromDate ? { fromDate: filters.fromDate } : {}),
+            ...(filters.toDate ? { toDate: filters.toDate } : {}),
             page,
             limit: 20,
           },
         })
         .then((r) => r.data.data),
-    placeholderData: keepPreviousData,
+    defaultFilters: { fromDate: getDefaultFromDate(), toDate: '' },
+    debounceMs: 400,
+    keepPrevious: true,
   });
 
-  const { data: detail, isLoading: loadingDetail } = useQuery<DetailResponse>({
+  const hasDateFilter = filters.toDate !== '';
+
+  const { data: detail, isLoading: loadingDetail } = useQuery<AiCostDetailResponse>({
     queryKey: ['partner', 'ai-cost-detail', detailTenant?.tenantId, detailCallType, detailPage],
     queryFn: () =>
       api
-        .get<{ data: DetailResponse }>('/partner/ai-costs/detail', {
+        .get<{ data: AiCostDetailResponse }>('/partner/ai-costs/detail', {
           params: {
             tenantId: detailTenant!.tenantId,
             ...(detailCallType !== 'all' ? { callType: detailCallType } : {}),
-            ...(fromDate ? { fromDate } : {}),
-            ...(toDate ? { toDate } : {}),
+            ...(filters.fromDate ? { fromDate: filters.fromDate } : {}),
+            ...(filters.toDate ? { toDate: filters.toDate } : {}),
             page: detailPage,
             limit: 20,
           },
@@ -162,10 +175,19 @@ export default function PartnerAiCostsPage() {
     placeholderData: keepPreviousData,
   });
 
+  const periodHint = useMemo(() => {
+    if (hasDateFilter) return 'Trong kỳ đã chọn';
+    return 'Từ đầu tháng đến hôm nay';
+  }, [hasDateFilter]);
+
   const handleDateChange = (field: 'from' | 'to', value: string) => {
-    setPage(1);
-    if (field === 'from') setFromDate(value);
-    else setToDate(value);
+    if (field === 'from') setFilter('fromDate', value);
+    else setFilter('toDate', value);
+  };
+
+  const clearDateFilter = () => {
+    setFilter('fromDate', getDefaultFromDate());
+    setFilter('toDate', '');
   };
 
   const openDetail = (row: AiCostRow) => {
@@ -179,150 +201,177 @@ export default function PartnerAiCostsPage() {
   const totalPages = data?.totalPages ?? 1;
 
   return (
-    <div className="flex flex-col">
+    <>
       <Header title="Chi phí AI" description="Theo dõi chi phí OpenAI API theo từng doanh nghiệp" />
 
-      <div className="space-y-4 p-4 lg:p-6">
-        {/* Summary stat */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
+      <div className="space-y-6 p-4 sm:p-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryCard
+            icon={Coins}
+            label="Tổng chi phí OpenAI"
+            value={formatUsdCost(data?.grandTotalCostUsd ?? 0)}
+            subValue={
+              (data?.grandTotalCostUsd ?? 0) > 0
+                ? `~${usdToVnd(data?.grandTotalCostUsd ?? 0).toLocaleString('vi-VN')}đ`
+                : undefined
+            }
+            hint={`${periodHint} · 1 USD ≈ ${USD_TO_VND_RATE.toLocaleString('vi-VN')}đ`}
+            isLoading={isLoading}
+          />
+          <SummaryCard
             icon={Bot}
-            label="Tổng chi phí AI (kỳ đã chọn)"
-            value={`$${(data?.grandTotalCostUsd ?? 0).toFixed(6)}`}
+            label="Lượt gọi API"
+            value={(data?.grandTotalCalls ?? 0).toLocaleString('vi-VN')}
+            hint="Tổng số request tới OpenAI trong kỳ"
+            isLoading={isLoading}
+          />
+          <SummaryCard
+            icon={Sparkles}
+            label="Tổng tokens"
+            value={formatTokenCount(
+              (data?.grandTotalTokensIn ?? 0) + (data?.grandTotalTokensOut ?? 0),
+            )}
+            hint={`In: ${formatTokenCount(data?.grandTotalTokensIn ?? 0)} · Out: ${formatTokenCount(data?.grandTotalTokensOut ?? 0)}`}
+            isLoading={isLoading}
+          />
+          <SummaryCard
+            icon={Building2}
+            label="Doanh nghiệp có phát sinh"
+            value={String(data?.tenantCount ?? 0)}
+            hint="Số DN có ít nhất 1 lượt gọi AI trong kỳ"
             isLoading={isLoading}
           />
         </div>
 
-        {/* Filters */}
+        <div>
+          <h2 className="mb-3 text-sm font-medium text-foreground">Phân loại theo loại cuộc gọi</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {CALL_TYPE_ORDER.map((callType) => (
+              <CallTypeCard
+                key={callType}
+                callType={callType}
+                summary={data?.callTypeSummary?.[callType]}
+                isLoading={isLoading}
+              />
+            ))}
+          </div>
+        </div>
+
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Lọc theo kỳ</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-3">
+          <CardHeader>
+            <CardTitle>Chi phí theo doanh nghiệp</CardTitle>
+            <CardDescription>
+              Xếp hạng theo chi phí cao nhất · click một dòng để xem từng lượt gọi
+            </CardDescription>
+            <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Từ</span>
+                <span className="text-sm text-muted-foreground whitespace-nowrap">Từ</span>
                 <Input
                   type="date"
-                  value={fromDate}
+                  value={filters.fromDate}
                   onChange={(e) => handleDateChange('from', e.target.value)}
                   className="w-40"
                 />
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Đến</span>
+                <span className="text-sm text-muted-foreground whitespace-nowrap">Đến</span>
                 <Input
                   type="date"
-                  value={toDate}
+                  value={filters.toDate}
                   onChange={(e) => handleDateChange('to', e.target.value)}
                   className="w-40"
                 />
               </div>
+              {hasDateFilter ? (
+                <Button variant="link" size="sm" className="h-auto px-1" onClick={clearDateFilter}>
+                  Đặt lại kỳ
+                </Button>
+              ) : null}
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Main table */}
-        <Card>
-          <CardContent className="p-0">
+          </CardHeader>
+          <CardContent>
             {isLoading ? (
               <TableSkeleton columns={5} rows={8} />
             ) : !data?.items.length ? (
               <EmptyState
                 icon={Bot}
-                title="Không có dữ liệu"
-                description="Chưa có giao dịch AI nào trong kỳ đã chọn."
+                title="Không có dữ liệu trong kỳ đã chọn"
+                description="Thử đổi khoảng ngày lọc để xem chi phí AI theo doanh nghiệp."
               />
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Doanh nghiệp</TableHead>
-                    <TableHead className="text-right">Tokens đầu vào</TableHead>
-                    <TableHead className="text-right">Tokens đầu ra</TableHead>
-                    <TableHead>Phân loại cuộc gọi</TableHead>
-                    <TableHead className="text-right">Chi phí (USD)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.items.map((row) => (
-                    <TableRow
-                      key={row.tenantId}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => openDetail(row)}
-                    >
-                      <TableCell className="font-medium">{row.tenantName}</TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
-                        {row.totalTokensIn.toLocaleString('vi-VN')}
-                      </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
-                        {row.totalTokensOut.toLocaleString('vi-VN')}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {Object.entries(row.breakdown).map(([ct, b]) => (
-                            <Badge
-                              key={ct}
-                              variant="outline"
-                              className={`text-[11px] ${CALL_TYPE_COLORS[ct] ?? ''}`}
-                            >
-                              {CALL_TYPE_LABELS[ct] ?? ct} ×{b.callCount}
-                            </Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        ${row.totalCostUsd.toFixed(6)}
-                      </TableCell>
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Doanh nghiệp</TableHead>
+                      <TableHead className="text-right">Tokens vào</TableHead>
+                      <TableHead className="text-right">Tokens ra</TableHead>
+                      <TableHead>Loại cuộc gọi</TableHead>
+                      <TableHead className="text-right">Chi phí (USD)</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {data.items.map((row) => (
+                      <TableRow
+                        key={row.tenantId}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => openDetail(row)}
+                      >
+                        <TableCell className="font-medium">{row.tenantName}</TableCell>
+                        <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
+                          {row.totalTokensIn.toLocaleString('vi-VN')}
+                        </TableCell>
+                        <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
+                          {row.totalTokensOut.toLocaleString('vi-VN')}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {Object.entries(row.breakdown).map(([ct, b]) => (
+                              <Badge
+                                key={ct}
+                                variant="outline"
+                                className={`text-[11px] ${CALL_TYPE_COLORS[ct] ?? ''}`}
+                              >
+                                {CALL_TYPE_LABELS[ct] ?? ct} ×{b.callCount}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">
+                          <div>{formatUsdCost(row.totalCostUsd)}</div>
+                          <div className="text-xs font-normal text-muted-foreground">
+                            ~{usdToVnd(row.totalCostUsd).toLocaleString('vi-VN')}đ
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+
+                {totalPages > 1 ? (
+                  <div className="mt-4 border-t pt-4">
+                    <PaginationBar
+                      page={page}
+                      totalPages={totalPages}
+                      total={data?.total}
+                      label="{total} doanh nghiệp"
+                      onPageChange={(p) => setPage(p)}
+                    />
+                  </div>
+                ) : null}
+              </>
             )}
           </CardContent>
         </Card>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-end gap-2">
-            <span className="text-sm text-muted-foreground">
-              Trang {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        )}
       </div>
 
-      {/* Detail Sheet */}
       <Sheet open={!!detailTenant} onOpenChange={(open) => !open && closeDetail()}>
-        <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl">
-          <SheetHeader className="border-b px-6 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <SheetTitle className="text-base">{detailTenant?.tenantName}</SheetTitle>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Chi tiết cuộc gọi AI · ${detailTenant?.totalCostUsd.toFixed(6)} tổng
-                </p>
-              </div>
-              <Button variant="ghost" size="icon-sm" onClick={closeDetail} aria-label="Đóng">
-                <X className="size-4" />
-              </Button>
-            </div>
+        <SheetContent className="flex h-full w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <SheetHeader className="shrink-0 border-b px-6 py-4">
+            <SheetTitle className="text-base">{detailTenant?.tenantName}</SheetTitle>
+            <p className="text-xs text-muted-foreground">
+              Chi tiết cuộc gọi AI · {formatUsdWithVnd(detailTenant?.totalCostUsd ?? 0)} tổng
+            </p>
             <div className="mt-3">
               <Select
                 value={detailCallType}
@@ -346,15 +395,19 @@ export default function PartnerAiCostsPage() {
             </div>
           </SheetHeader>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-auto [&_[data-slot=table-container]]:overflow-visible">
             {loadingDetail ? (
-              <TableSkeleton columns={7} rows={10} />
+              <div className="p-4">
+                <TableSkeleton columns={7} rows={10} />
+              </div>
             ) : !detail?.items.length ? (
-              <EmptyState
-                icon={Bot}
-                title="Không có dữ liệu"
-                description="Không có cuộc gọi AI nào cho bộ lọc này."
-              />
+              <div className="p-4">
+                <EmptyState
+                  icon={Bot}
+                  title="Không có dữ liệu"
+                  description="Không có cuộc gọi AI nào cho bộ lọc này."
+                />
+              </div>
             ) : (
               <Table>
                 <TableHeader>
@@ -380,14 +433,17 @@ export default function PartnerAiCostsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{log.model}</TableCell>
-                      <TableCell className="text-right text-xs">
+                      <TableCell className="text-right text-xs tabular-nums">
                         {log.tokensIn.toLocaleString('vi-VN')}
                       </TableCell>
-                      <TableCell className="text-right text-xs">
+                      <TableCell className="text-right text-xs tabular-nums">
                         {log.tokensOut.toLocaleString('vi-VN')}
                       </TableCell>
-                      <TableCell className="text-right text-xs font-medium">
-                        ${log.costUsd.toFixed(6)}
+                      <TableCell className="text-right text-xs font-medium tabular-nums">
+                        <div>{formatUsdCost(log.costUsd)}</div>
+                        <div className="font-normal text-muted-foreground">
+                          ~{usdToVnd(log.costUsd).toLocaleString('vi-VN')}đ
+                        </div>
                       </TableCell>
                       <TableCell className="max-w-[140px] text-xs text-muted-foreground">
                         {log.transactionId ? (
@@ -403,12 +459,7 @@ export default function PartnerAiCostsPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {new Date(log.createdAt).toLocaleString('vi-VN', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {formatDateTimeShort(log.createdAt)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -417,8 +468,8 @@ export default function PartnerAiCostsPage() {
             )}
           </div>
 
-          {(detail?.totalPages ?? 0) > 1 && (
-            <div className="flex items-center justify-end gap-2 border-t px-6 py-3">
+          {(detail?.totalPages ?? 0) > 1 ? (
+            <div className="flex shrink-0 items-center justify-end gap-2 border-t px-6 py-3">
               <span className="text-sm text-muted-foreground">
                 Trang {detailPage} / {detail!.totalPages}
               </span>
@@ -439,9 +490,9 @@ export default function PartnerAiCostsPage() {
                 <ChevronRight className="size-4" />
               </Button>
             </div>
-          )}
+          ) : null}
         </SheetContent>
       </Sheet>
-    </div>
+    </>
   );
 }
