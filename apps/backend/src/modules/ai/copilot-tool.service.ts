@@ -137,6 +137,84 @@ export class CopilotToolService {
     return { ...base, canConfirm: true };
   }
 
+  async proposeCorrectTransactionClassification(
+    tenantId: string,
+    transactionId: string,
+    debitAccount: string,
+    creditAccount: string,
+    role: Role,
+  ) {
+    const classification = await this.prisma.transactionClassification.findFirst({
+      where: { tenantId, transactionId },
+      include: { transaction: { select: { content: true } } },
+    });
+
+    if (!classification) {
+      return {
+        transactionId,
+        classificationId: '',
+        debitAccount: '',
+        creditAccount: '',
+        proposedDebitAccount: debitAccount,
+        proposedCreditAccount: creditAccount,
+        confidence: 0,
+        status: 'not_found',
+        content: '',
+        amount: 0,
+        canCorrect: false,
+        reason: 'Không tìm thấy định khoản cho giao dịch này',
+      };
+    }
+
+    const base = {
+      transactionId,
+      classificationId: classification.id,
+      debitAccount: classification.debitAccount,
+      creditAccount: classification.creditAccount,
+      proposedDebitAccount: debitAccount,
+      proposedCreditAccount: creditAccount,
+      confidence: classification.confidenceScore,
+      status: classification.status,
+      content: classification.transaction.content,
+      amount: Number(classification.amount),
+    };
+
+    if (!CONFIRMABLE_ROLES.has(role)) {
+      return {
+        ...base,
+        canCorrect: false,
+        reason: 'Bạn không có quyền sửa định khoản giao dịch này (chỉ admin/kế toán)',
+      };
+    }
+
+    if (classification.status !== 'review') {
+      return {
+        ...base,
+        canCorrect: false,
+        reason: 'Giao dịch này đã được xử lý, không còn ở trạng thái chờ duyệt',
+      };
+    }
+
+    const validAccounts = await this.prisma.chartOfAccount.findMany({
+      where: { tenantId, accountCode: { in: [debitAccount, creditAccount] }, isActive: true },
+      select: { accountCode: true },
+    });
+    const validCodes = new Set(validAccounts.map((a) => a.accountCode));
+    const debitValid = validCodes.has(debitAccount);
+    const creditValid = validCodes.has(creditAccount);
+
+    if (!debitValid || !creditValid) {
+      const invalidCode = !debitValid ? debitAccount : creditAccount;
+      return {
+        ...base,
+        canCorrect: false,
+        reason: `Mã tài khoản ${invalidCode} không tồn tại hoặc không còn hoạt động trong hệ thống TT133`,
+      };
+    }
+
+    return { ...base, canCorrect: true };
+  }
+
   async execute(
     tenantId: string,
     name: string,
@@ -148,6 +226,15 @@ export class CopilotToolService {
         return this.proposeConfirmTransactionClassification(
           tenantId,
           String(args.transactionId),
+          role ?? Role.VIEWER,
+        );
+
+      case 'propose_correct_transaction_classification':
+        return this.proposeCorrectTransactionClassification(
+          tenantId,
+          String(args.transactionId),
+          String(args.debitAccount),
+          String(args.creditAccount),
           role ?? Role.VIEWER,
         );
 

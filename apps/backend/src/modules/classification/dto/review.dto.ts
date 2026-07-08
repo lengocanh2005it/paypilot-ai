@@ -8,6 +8,10 @@ export class CorrectClassificationDto {
   @IsString()
   @MinLength(2)
   creditAccount!: string;
+
+  @IsOptional()
+  @IsIn(['copilot'])
+  source?: 'copilot';
 }
 
 export class ConfirmClassificationDto {

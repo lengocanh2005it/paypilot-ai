@@ -228,6 +228,36 @@ export function buildCopilotTools(
               function: bind('propose_confirm_transaction_classification'),
             },
           },
+          {
+            type: 'function' as const,
+            function: {
+              name: 'propose_correct_transaction_classification',
+              description:
+                'Chỉ dùng khi user tự nêu rõ muốn sửa một giao dịch cụ thể thành cặp tài khoản Nợ/Có nào (đã có transactionId, debitAccount, creditAccount do user cung cấp). KHÔNG tự đề xuất định khoản mới thay user, KHÔNG tự ý gợi ý sửa khi user chỉ hỏi thông tin chung. Tool này CHỈ đọc dữ liệu, validate mã tài khoản và đề xuất — không tự ghi sửa, người dùng phải bấm nút trên giao diện.',
+              strict: true,
+              parameters: {
+                type: 'object',
+                properties: {
+                  transactionId: {
+                    type: 'string',
+                    description: 'ID giao dịch cần đề xuất sửa định khoản',
+                  },
+                  debitAccount: {
+                    type: 'string',
+                    description: 'Mã tài khoản Nợ mới do user chỉ định, vd "641"',
+                  },
+                  creditAccount: {
+                    type: 'string',
+                    description: 'Mã tài khoản Có mới do user chỉ định, vd "111"',
+                  },
+                },
+                required: ['transactionId', 'debitAccount', 'creditAccount'],
+                additionalProperties: false,
+              },
+              parse: JSON.parse,
+              function: bind('propose_correct_transaction_classification'),
+            },
+          },
         ]
       : []),
     ...(cassoSearchEnabled

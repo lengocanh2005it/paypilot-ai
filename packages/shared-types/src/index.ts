@@ -133,7 +133,7 @@ export interface ImportHistoryItem {
   createdAt: string;
 }
 
-export interface CopilotActionCardData {
+export interface CopilotConfirmActionCardData {
   tool: 'propose_confirm_transaction_classification';
   transactionId: string;
   classificationId: string;
@@ -146,6 +146,24 @@ export interface CopilotActionCardData {
   canConfirm: boolean;
   reason?: string;
 }
+
+export interface CopilotCorrectActionCardData {
+  tool: 'propose_correct_transaction_classification';
+  transactionId: string;
+  classificationId: string;
+  debitAccount: string;
+  creditAccount: string;
+  proposedDebitAccount: string;
+  proposedCreditAccount: string;
+  confidence: number;
+  status: string;
+  content: string;
+  amount: number;
+  canCorrect: boolean;
+  reason?: string;
+}
+
+export type CopilotActionCardData = CopilotConfirmActionCardData | CopilotCorrectActionCardData;
 
 export interface CopilotActivity {
   kind: 'internal_data' | 'knowledge' | 'web_search' | 'action_card';

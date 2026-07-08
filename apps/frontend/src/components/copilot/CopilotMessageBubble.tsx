@@ -1,5 +1,6 @@
 import { Bot, StopCircle } from 'lucide-react';
 import { CopilotActionCard } from '@/components/copilot/CopilotActionCard';
+import { CopilotCorrectionCard } from '@/components/copilot/CopilotCorrectionCard';
 import { CopilotMessageActions } from '@/components/copilot/CopilotMessageActions';
 import type { CopilotActivity } from '@/components/copilot/CopilotSourceChips';
 import { CopilotSourceChips } from '@/components/copilot/CopilotSourceChips';
@@ -40,10 +41,15 @@ export function CopilotMessageBubble({ msg }: { msg: Message }) {
             />
             {msg.activities
               .filter((a) => a.kind === 'action_card' && a.actionCard)
-              .map((a) => (
-                // biome-ignore lint/style/noNonNullAssertion: filtered above
-                <CopilotActionCard key={a.actionCard!.transactionId} actionCard={a.actionCard!} />
-              ))}
+              .map((a) => {
+                const card = a.actionCard;
+                if (!card) return null;
+                return card.tool === 'propose_correct_transaction_classification' ? (
+                  <CopilotCorrectionCard key={card.transactionId} actionCard={card} />
+                ) : (
+                  <CopilotActionCard key={card.transactionId} actionCard={card} />
+                );
+              })}
           </>
         )}
         {msg.isPartial && (
