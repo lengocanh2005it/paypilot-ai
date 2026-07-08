@@ -1,14 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Role } from '@xcash/shared-types';
 import { FileSpreadsheet, Loader2, Receipt, Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { ConfidenceBadge } from '@/components/shared/ConfidenceBadge';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { SignedTransactionAmount } from '@/components/shared/SignedTransactionAmount';
+import { PaginationBar } from '@/components/shared/PaginationBar';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { TransactionSourceBadge } from '@/components/shared/TransactionSourceBadge';
 import { TransactionStatusBadge } from '@/components/shared/TransactionStatusBadge';
@@ -34,10 +34,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAuth } from '@/hooks/useAuth';
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { useFilteredPagination } from '@/hooks/useFilteredPagination';
 import { useTransactionEvents } from '@/hooks/useTransactionEvents';
 import { getApiData, postApiData } from '@/lib/api';
-import { formatTransactionTime } from '@/lib/dashboard-transactions';
+import { formatSignedTransactionAmount } from '@/lib/dashboard-transactions';
+import { formatTransactionTime } from '@/lib/date';
 import { getErrorMessage } from '@/lib/errors';
 import type { TransactionListResponse, TransactionSummary } from '@/types/transaction';
 import { ImportTransactionsDialog } from './ImportTransactionsDialog';
@@ -110,49 +111,55 @@ export default function TransactionsPage() {
   useTransactionEvents();
   const canBulkReclassify = user?.role === Role.ADMIN || user?.role === Role.ACCOUNTANT;
   const canImport = user?.role === Role.ADMIN || user?.role === Role.ACCOUNTANT;
-  const [page, setPage] = useState(1);
-  const [status, setStatus] = useState(() => searchParams.get('status') ?? '');
-  const [source, setSource] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [searchText, setSearchText] = useState('');
+  const [statusInit] = useState(() => searchParams.get('status') ?? '');
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const debouncedSearch = useDebouncedValue(
-    searchText,
-    SEARCH_DEBOUNCE_MS,
-    useCallback(() => {
-      setPage(1);
-    }, []),
-  );
   const [selectedTxn, setSelectedTxn] = useState<TransactionSummary | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
 
-  const queryUrl = buildTransactionsUrl({
+  const {
+    data,
+    filters,
+    debouncedFilters,
+    setFilter,
+    resetFilters,
     page,
-    status,
-    source,
-    fromDate,
-    toDate,
-    search: debouncedSearch,
-  });
-  const hasActiveFilters = Boolean(
-    status || source || fromDate || toDate || debouncedSearch.trim(),
-  );
-  const statusLabel = STATUS_OPTIONS.find((option) => option.value === status)?.label;
-
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['transactions', page, status, source, fromDate, toDate, debouncedSearch],
-    queryFn: () => getApiData<TransactionListResponse>(queryUrl),
+    setPage,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useFilteredPagination({
+    queryKey: ['transactions'],
+    queryFn: ({ filters, page }) =>
+      getApiData<TransactionListResponse>(
+        buildTransactionsUrl({
+          page,
+          status: filters.status,
+          source: filters.source,
+          fromDate: filters.fromDate,
+          toDate: filters.toDate,
+          search: filters.search,
+        }),
+      ),
+    defaultFilters: { status: statusInit, source: '', fromDate: '', toDate: '', search: '' },
+    debounceMs: SEARCH_DEBOUNCE_MS,
     // Fallback polling nếu SSE disconnect; SSE thường invalidate trước 30s này
     refetchInterval: 30_000,
-    refetchIntervalInBackground: false,
   });
 
   const items = data?.items ?? [];
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
-  const isSearchPending = searchText !== debouncedSearch;
+  const hasActiveFilters = Boolean(
+    filters.status ||
+      filters.source ||
+      filters.fromDate ||
+      filters.toDate ||
+      debouncedFilters.search.trim(),
+  );
+  const statusLabel = STATUS_OPTIONS.find((option) => option.value === filters.status)?.label;
+  const isSearchPending = filters.search !== debouncedFilters.search;
 
   const pendingOnPage = useMemo(
     () => items.filter((txn) => isPendingTransaction(txn.status)),
@@ -165,9 +172,11 @@ export default function TransactionsPage() {
   const allPendingOnPageSelected =
     pendingOnPage.length > 0 && selectedPendingCount === pendingOnPage.length;
 
+  const { status, source, fromDate, toDate, search } = debouncedFilters;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally clear selection whenever page or any debounced filter changes
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [page, status, source, fromDate, toDate, debouncedSearch]);
+  }, [page, status, source, fromDate, toDate, search]);
 
   const bulkReclassifyMutation = useMutation({
     mutationFn: (ids: string[]) =>
@@ -233,12 +242,7 @@ export default function TransactionsPage() {
   }
 
   function clearFilters() {
-    setStatus('');
-    setSource('');
-    setFromDate('');
-    setToDate('');
-    setSearchText('');
-    setPage(1);
+    resetFilters();
   }
 
   return (
@@ -270,18 +274,15 @@ export default function TransactionsPage() {
                 <Input
                   id="txn-search"
                   placeholder="Tìm theo nội dung, mã GD, người gửi..."
-                  value={searchText}
-                  onChange={(event) => setSearchText(event.target.value)}
+                  value={filters.search}
+                  onChange={(event) => setFilter('search', event.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="txn-status">Trạng thái</Label>
                 <Select
-                  value={status || 'all'}
-                  onValueChange={(value) => {
-                    setStatus(value === 'all' ? '' : value);
-                    setPage(1);
-                  }}
+                  value={filters.status || 'all'}
+                  onValueChange={(value) => setFilter('status', value === 'all' ? '' : value)}
                 >
                   <SelectTrigger id="txn-status" className="w-full">
                     <SelectValue placeholder="Tất cả trạng thái" />
@@ -298,11 +299,8 @@ export default function TransactionsPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="txn-source">Nguồn</Label>
                 <Select
-                  value={source || 'all'}
-                  onValueChange={(value) => {
-                    setSource(value === 'all' ? '' : value);
-                    setPage(1);
-                  }}
+                  value={filters.source || 'all'}
+                  onValueChange={(value) => setFilter('source', value === 'all' ? '' : value)}
                 >
                   <SelectTrigger id="txn-source" className="w-full">
                     <SelectValue placeholder="Tất cả nguồn" />
@@ -322,11 +320,8 @@ export default function TransactionsPage() {
                   <Input
                     id="txn-from"
                     type="date"
-                    value={fromDate}
-                    onChange={(event) => {
-                      setFromDate(event.target.value);
-                      setPage(1);
-                    }}
+                    value={filters.fromDate}
+                    onChange={(event) => setFilter('fromDate', event.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -334,11 +329,8 @@ export default function TransactionsPage() {
                   <Input
                     id="txn-to"
                     type="date"
-                    value={toDate}
-                    onChange={(event) => {
-                      setToDate(event.target.value);
-                      setPage(1);
-                    }}
+                    value={filters.toDate}
+                    onChange={(event) => setFilter('toDate', event.target.value)}
                   />
                 </div>
               </div>
@@ -347,17 +339,17 @@ export default function TransactionsPage() {
             {hasActiveFilters ? (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground">Đang lọc:</span>
-                {status ? (
-                  <Badge variant="secondary">Trạng thái: {statusLabel ?? status}</Badge>
+                {filters.status ? (
+                  <Badge variant="secondary">Trạng thái: {statusLabel ?? filters.status}</Badge>
                 ) : null}
-                {source ? (
+                {filters.source ? (
                   <Badge variant="secondary">
-                    Nguồn: {source === 'cas' ? 'Ngân hàng' : 'Import Excel'}
+                    Nguồn: {filters.source === 'cas' ? 'Ngân hàng' : 'Import Excel'}
                   </Badge>
                 ) : null}
-                {fromDate ? <Badge variant="secondary">Từ {fromDate}</Badge> : null}
-                {toDate ? <Badge variant="secondary">Đến {toDate}</Badge> : null}
-                {searchText ? <Badge variant="secondary">"{searchText}"</Badge> : null}
+                {filters.fromDate ? <Badge variant="secondary">Từ {filters.fromDate}</Badge> : null}
+                {filters.toDate ? <Badge variant="secondary">Đến {filters.toDate}</Badge> : null}
+                {filters.search ? <Badge variant="secondary">"{filters.search}"</Badge> : null}
                 {isSearchPending ? (
                   <span className="text-xs text-muted-foreground">Đang tìm...</span>
                 ) : null}
@@ -480,14 +472,16 @@ export default function TransactionsPage() {
                             <TransactionStatusBadge status={txn.status} />
                           </div>
                           <p className="mt-2 font-semibold">
-                            <SignedTransactionAmount amount={Number(txn.amount)} />
+                            <span>{formatSignedTransactionAmount(Number(txn.amount))}</span>
                           </p>
                           <p className="mt-1 text-muted-foreground">{txn.content ?? '—'}</p>
                           <div className="mt-2 flex items-center justify-between">
                             <p className="text-xs text-muted-foreground">
                               {txn.senderAccount ?? 'Không rõ người gửi'}
                             </p>
-                            <ConfidenceBadge score={txn.confidenceScore} />
+                            <ConfidenceBadge
+                              score={txn.classification?.confidenceScore ?? txn.confidenceScore}
+                            />
                           </div>
                         </button>
                       </div>
@@ -551,7 +545,7 @@ export default function TransactionsPage() {
                           className="text-right font-semibold"
                           onClick={() => openDetail(txn)}
                         >
-                          <SignedTransactionAmount amount={Number(txn.amount)} />
+                          {formatSignedTransactionAmount(Number(txn.amount))}
                         </TableCell>
                         <TableCell
                           className="max-w-[260px] truncate text-sm"
@@ -597,27 +591,11 @@ export default function TransactionsPage() {
                   Hiển thị {items.length} / {data.total} giao dịch
                 </p>
                 {data.total > PAGE_SIZE ? (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page <= 1}
-                      onClick={() => setPage((current) => Math.max(1, current - 1))}
-                    >
-                      Trước
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                      Trang {page} / {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((current) => current + 1)}
-                    >
-                      Sau
-                    </Button>
-                  </div>
+                  <PaginationBar
+                    page={page}
+                    totalPages={totalPages}
+                    onPageChange={(p) => setPage(p)}
+                  />
                 ) : null}
               </div>
             ) : null}
@@ -638,8 +616,7 @@ export default function TransactionsPage() {
           if (!open) refetch();
         }}
         onImported={() => {
-          setSource('import');
-          setPage(1);
+          setFilter('source', 'import');
         }}
       />
 

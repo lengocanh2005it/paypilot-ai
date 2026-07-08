@@ -8,11 +8,14 @@ import { WEBHOOK_QUEUE } from '../../queue/queue.module';
 import { NotificationModule } from '../notification/notification.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { ReportModule } from '../report/report.module';
+import { AiUsageLogService } from './ai-usage-log.service';
 import { ClassificationProcessor } from './classification.processor';
 import { ClassificationService } from './classification.service';
 import { CopilotController } from './copilot.controller';
 import { CopilotContextService } from './copilot-context.service';
 import { CopilotConversationService } from './copilot-conversation.service';
+import { CopilotQuotaService } from './copilot-quota.service';
+import { CopilotStreamService } from './copilot-stream.service';
 import { CopilotToolService } from './copilot-tool.service';
 import { EmbeddingService } from './embedding.service';
 import { OpenAiService } from './openai.service';
@@ -27,17 +30,20 @@ import { OpenAiService } from './openai.service';
   ],
   controllers: [CopilotController],
   providers: [
+    AiUsageLogService,
     OpenAiService,
     EmbeddingService,
     ClassificationService,
     ClassificationProcessor,
     CopilotContextService,
     CopilotConversationService,
+    CopilotQuotaService,
+    CopilotStreamService,
     CopilotToolService,
     PlanGuard,
     CopilotQuotaGuard,
     CopilotThrottlerGuard,
   ],
-  exports: [OpenAiService, EmbeddingService, ClassificationService],
+  exports: [AiUsageLogService, OpenAiService, EmbeddingService, ClassificationService],
 })
 export class AiModule {}

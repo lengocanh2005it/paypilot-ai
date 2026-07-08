@@ -10,6 +10,6 @@ export function useReviewCount() {
     queryFn: () => getApiData<number>('/review/count'),
     enabled: !!user && !!user.tenantId,
     refetchInterval: 20_000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 }

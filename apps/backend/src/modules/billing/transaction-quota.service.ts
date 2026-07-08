@@ -1,10 +1,12 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, SubscriptionPlan } from '@prisma/client';
+import {
+  isOveragePlan,
+  OVERAGE_PLANS,
+  QUOTA_WARNING_RATIO,
+} from '../../common/constants/quota-policy';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
-
-const OVERAGE_PLANS = [SubscriptionPlan.starter, SubscriptionPlan.pro] as const;
-const QUOTA_WARNING_RATIO = 0.8;
 
 @Injectable()
 export class TransactionQuotaService {
@@ -83,7 +85,7 @@ export class TransactionQuotaService {
       data: { transactionUsedThisCycle: { increment: count } },
     });
 
-    if ((OVERAGE_PLANS as readonly string[]).includes(subscription.plan)) {
+    if (isOveragePlan(subscription.plan)) {
       const overCount = Math.max(0, oldUsed + count - quota);
       if (overCount > 0) {
         await tx.usageLog.create({
@@ -125,7 +127,7 @@ export class TransactionQuotaService {
       if (oldUsed < quota && newUsed >= quota) {
         await this.notificationService.createQuotaExceeded(tenantId, quota, cycleStart);
       }
-      if (newUsed > quota && (OVERAGE_PLANS as readonly string[]).includes(subscription.plan)) {
+      if (newUsed > quota && isOveragePlan(subscription.plan)) {
         const price = subscription.overagePricePerTransaction
           ? Number(subscription.overagePricePerTransaction)
           : 0;

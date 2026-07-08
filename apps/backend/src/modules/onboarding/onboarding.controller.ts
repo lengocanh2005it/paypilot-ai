@@ -35,6 +35,7 @@ export class OnboardingController {
   }
 
   @Get('status')
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
   @ApiOperation({ summary: 'Trạng thái onboarding của tenant hiện tại' })
   getStatus(@CurrentUser() user: AuthenticatedUser) {
     return this.onboardingService.getStatus(user.tenantId as string);

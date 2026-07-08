@@ -167,6 +167,11 @@ export async function patchApiData<T, B = unknown>(url: string, body?: B): Promi
   return response.data.data as T;
 }
 
+export async function putApiData<T, B = unknown>(url: string, body?: B): Promise<T> {
+  const response = await api.put<ApiResponse<T>>(url, body);
+  return response.data.data as T;
+}
+
 export async function deleteApiData<T, B = unknown>(url: string, body?: B): Promise<T> {
   const response = await api.delete<ApiResponse<T>>(url, body ? { data: body } : undefined);
   return response.data.data as T;

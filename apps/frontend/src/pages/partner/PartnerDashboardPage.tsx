@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { Building2, Percent, ShieldCheck, Wallet } from 'lucide-react';
-import { type ElementType, useMemo, useState } from 'react';
+import { Bot, Building2, Percent, ShieldCheck, Wallet } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Bar,
   BarChart,
@@ -16,35 +17,16 @@ import {
   YAxis,
 } from 'recharts';
 import { Header } from '@/components/layout/Header';
+import { SummaryCard } from '@/components/shared/SummaryCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
+import { formatUsdCost, USD_TO_VND_RATE, usdToVnd } from '@/lib/format-ai-cost';
 import { formatVND, formatVNDAxis } from '@/lib/format-vnd';
-import { PLAN_LABELS, PLAN_ORDER } from '@/lib/plan-labels';
-import type { PartnerTenant } from '@/types/partner';
-
-interface PartnerStats {
-  totalTenants: number;
-  activeTenants: number;
-  suspendedTenants: number;
-  transactionsThisMonth: number;
-  /** Tổng giá gói/tháng của DN đang hoạt động (MRR). */
-  recurringRevenuePerMonth: number;
-  /** Tiền nâng cấp gói PayOS xác nhận trong tháng hiện tại. */
-  paidRevenueThisMonth: number;
-  aiAccuracy: number;
-}
-
-interface RevenueTrendPoint {
-  month: string;
-  revenue: number;
-  free: number;
-  starter: number;
-  pro: number;
-  enterprise: number;
-}
+import { PLAN_LABELS, PLAN_ORDER } from '@/lib/plans';
+import type { DashboardStats, PartnerTenant, RevenueTrendPoint } from '@/types/partner';
 
 const PLAN_COLORS: Record<string, string> = {
   free: 'var(--chart-4)',
@@ -124,38 +106,8 @@ function TopRevenueTooltip({ active, payload }: { active?: boolean; payload?: To
   );
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: ElementType;
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <Card className="h-full py-0">
-      <CardContent className="px-5 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Icon className="size-4" />
-          </div>
-        </div>
-        <p className="mt-2 text-2xl font-semibold tabular-nums leading-tight sm:text-3xl">
-          {value}
-        </p>
-        {hint ? (
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{hint}</p>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function PartnerDashboardPage() {
+  const navigate = useNavigate();
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const hasDateFilter = fromDate !== '' || toDate !== '';
@@ -169,7 +121,7 @@ export default function PartnerDashboardPage() {
     queryKey: ['partner', 'stats', dateParams],
     queryFn: () =>
       api
-        .get<{ data: PartnerStats }>('/partner/stats', { params: dateParams })
+        .get<{ data: DashboardStats }>('/partner/stats', { params: dateParams })
         .then((r) => r.data.data),
   });
 
@@ -186,6 +138,19 @@ export default function PartnerDashboardPage() {
     queryFn: () =>
       api
         .get<{ data: RevenueTrendPoint[] }>('/partner/revenue-trend', { params: dateParams })
+        .then((r) => r.data.data),
+  });
+
+  const currentMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    .toISOString()
+    .slice(0, 10);
+  const { data: aiCosts, isLoading: loadingAiCosts } = useQuery({
+    queryKey: ['partner', 'ai-costs', currentMonthStart],
+    queryFn: () =>
+      api
+        .get<{ data: { grandTotalCostUsd: number } }>('/partner/ai-costs', {
+          params: { fromDate: currentMonthStart },
+        })
         .then((r) => r.data.data),
   });
 
@@ -250,7 +215,6 @@ export default function PartnerDashboardPage() {
       <Header
         title="Dashboard"
         description="Tổng quan toàn hệ thống X-Cash AI"
-        hideThemeToggle
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Input
@@ -287,40 +251,55 @@ export default function PartnerDashboardPage() {
       />
 
       <div className="space-y-6 p-4 sm:p-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <SummaryCard
             icon={Building2}
             label="Tổng doanh nghiệp"
-            value={loadingStats ? '—' : String(stats?.totalTenants ?? 0)}
+            value={String(stats?.totalTenants ?? 0)}
+            isLoading={loadingStats}
             hint="Tổng số DN đã đăng ký toàn hệ thống (mọi gói, mọi trạng thái)"
           />
-          <StatCard
+          <SummaryCard
             icon={ShieldCheck}
             label="Hoạt động / Đã khóa"
-            value={
-              loadingStats ? '—' : `${stats?.activeTenants ?? 0} / ${stats?.suspendedTenants ?? 0}`
-            }
+            value={`${stats?.activeTenants ?? 0} / ${stats?.suspendedTenants ?? 0}`}
+            isLoading={loadingStats}
             hint="DN đang dùng dịch vụ · DN bị khóa (subscription suspended)"
           />
-          <StatCard
+          <SummaryCard
             icon={Wallet}
             label="Doanh thu định kỳ (MRR)"
-            value={loadingTenants ? '—' : formatVND(mrr)}
+            value={formatVND(mrr)}
+            isLoading={loadingTenants}
             hint={
               hasDateFilter
                 ? 'Tính tại thời điểm hiện tại — không theo kỳ lọc ngày'
                 : 'Giá gói/tháng của DN đang hoạt động · số dự kiến, chưa gồm phí vượt'
             }
           />
-          <StatCard
+          <SummaryCard
             icon={Percent}
             label="Độ chính xác AI"
-            value={loadingStats ? '—' : `${stats?.aiAccuracy ?? 0}%`}
+            value={`${stats?.aiAccuracy ?? 0}%`}
+            isLoading={loadingStats}
             hint={
               hasDateFilter
                 ? 'Tỷ lệ giao dịch AI tự định khoản (auto) trong kỳ đã chọn'
                 : 'Tỷ lệ giao dịch AI tự định khoản (auto) trên tổng đã định khoản trong tháng'
             }
+          />
+          <SummaryCard
+            icon={Bot}
+            label="Chi phí AI tháng này"
+            value={formatUsdCost(aiCosts?.grandTotalCostUsd ?? 0)}
+            subValue={
+              (aiCosts?.grandTotalCostUsd ?? 0) > 0
+                ? `~${formatVND(usdToVnd(aiCosts?.grandTotalCostUsd ?? 0))}`
+                : undefined
+            }
+            isLoading={loadingAiCosts}
+            hint={`Tổng OpenAI API tháng hiện tại · 1 USD ≈ ${USD_TO_VND_RATE.toLocaleString('vi-VN')}đ · click xem chi tiết`}
+            onClick={() => navigate('/partner/ai-costs')}
           />
         </div>
 

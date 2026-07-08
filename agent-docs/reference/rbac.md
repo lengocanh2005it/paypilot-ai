@@ -100,6 +100,8 @@ PATCH  /api/v1/partner/tenants/:id/plan     # Đặt gói bất kỳ cho tenant 
 GET    /api/v1/partner/plan-pricing         # Xem giá/quota/phí vượt từng gói
 PATCH  /api/v1/partner/plan-pricing/:plan   # Sửa giá/quota Starter+ (Free cố định)
 GET    /api/v1/partner/audit-logs           # Audit log toàn hệ thống — phân trang, lọc tenantId/action
+GET    /api/v1/partner/ai-costs            # Chi phí AI (ai_usage_logs) tổng hợp theo tenant — ?fromDate=&toDate=&page=&limit=; GROUP BY tenant+callType+model; trả grandTotalCostUsd
+GET    /api/v1/partner/ai-costs/detail     # Chi tiết từng lượt gọi AI của 1 tenant — ?tenantId=&callType=&fromDate=&toDate=&page=&limit=
 
 # ─── CHƯA LÀM (spec gốc, không chặn go-live) ───
 GET    /api/v1/partner/revenue              # Tổng quan doanh thu (một phần đã có trong /stats và /revenue-trend)

@@ -1,18 +1,16 @@
 import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { Role } from '@xcash/shared-types';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../prisma/prisma.service';
-import { RedisService } from '../../redis/redis.service';
 import { ChartOfAccountsService } from '../chart-of-accounts/chart-of-accounts.service';
 import { TeamInviteService } from '../team/team-invite.service';
 import { AuthService } from './auth.service';
 import { ChangePasswordService } from './change-password.service';
 import { EmailVerificationService } from './email-verification.service';
 import { PasswordResetService } from './password-reset.service';
+import { TokenService } from './token.service';
 
 jest.mock('bcryptjs', () => ({
   compare: jest.fn(),
@@ -31,25 +29,6 @@ describe('AuthService', () => {
       findFirst: jest.fn(),
     },
     $transaction: jest.fn(),
-  };
-
-  const redisClient = {
-    set: jest.fn(),
-    get: jest.fn(),
-    del: jest.fn(),
-    sadd: jest.fn(),
-    srem: jest.fn(),
-    smembers: jest.fn().mockResolvedValue([]),
-    expire: jest.fn(),
-    pipeline: jest.fn(() => ({
-      del: jest.fn().mockReturnThis(),
-      exec: jest.fn().mockResolvedValue([]),
-    })),
-  };
-
-  const jwtService = {
-    signAsync: jest.fn().mockResolvedValue('signed-token'),
-    verifyAsync: jest.fn(),
   };
 
   const emailVerificationService = {
@@ -73,6 +52,43 @@ describe('AuthService', () => {
     consumeToken: jest.fn(),
   };
 
+  const tokenService = {
+    issueTokens: jest.fn().mockImplementation((_user: unknown, rememberMe = true) =>
+      Promise.resolve({
+        accessToken: 'signed-token',
+        refreshToken: 'refresh-token',
+        user: {
+          id: 'user-1',
+          email: 'admin@abc.edu.vn',
+          name: 'ABC',
+          role: Role.ADMIN,
+          tenantId: 'tenant-1',
+          businessName: 'ABC',
+          plan: 'free',
+          avatarUrl: null,
+        },
+        rememberMe,
+      }),
+    ),
+    refresh: jest.fn(),
+    logout: jest.fn().mockResolvedValue({ message: 'Đăng xuất thành công' }),
+    revokeAllRefreshTokens: jest.fn().mockResolvedValue(undefined),
+    getActivePlan: jest.fn().mockResolvedValue('free'),
+    assertNotSuspended: jest.fn().mockResolvedValue(undefined),
+    toAuthenticatedUser: jest.fn().mockImplementation((user, businessName, plan) => ({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      avatarUrl: user.avatarUrl ?? null,
+      role: user.role,
+      tenantId: user.tenantId,
+      businessName,
+      plan,
+    })),
+    createRefreshTokenCookie: jest.fn().mockReturnValue('refresh_token=token; HttpOnly'),
+    getClearRefreshTokenCookie: jest.fn().mockReturnValue('refresh_token=; Max-Age=0'),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -80,31 +96,6 @@ describe('AuthService', () => {
       providers: [
         AuthService,
         { provide: PrismaService, useValue: prisma },
-        { provide: JwtService, useValue: jwtService },
-        {
-          provide: ConfigService,
-          useValue: {
-            get: (key: string, defaultValue?: string) => {
-              const values: Record<string, string> = {
-                JWT_ACCESS_SECRET: 'access-secret',
-                JWT_REFRESH_SECRET: 'refresh-secret',
-                JWT_ACCESS_EXPIRES_IN: '15m',
-                JWT_REFRESH_EXPIRES_IN: '7d',
-                JWT_REFRESH_SESSION_EXPIRES_IN: '12h',
-                NODE_ENV: 'test',
-              };
-              return values[key] ?? defaultValue;
-            },
-            getOrThrow: (key: string) => {
-              const values: Record<string, string> = {
-                JWT_ACCESS_SECRET: 'access-secret',
-                JWT_REFRESH_SECRET: 'refresh-secret',
-              };
-              return values[key];
-            },
-          },
-        },
-        { provide: RedisService, useValue: { client: redisClient } },
         {
           provide: ChartOfAccountsService,
           useValue: { seedTt133: jest.fn().mockResolvedValue(undefined) },
@@ -113,6 +104,7 @@ describe('AuthService', () => {
         { provide: PasswordResetService, useValue: passwordResetService },
         { provide: ChangePasswordService, useValue: changePasswordService },
         { provide: TeamInviteService, useValue: teamInviteService },
+        { provide: TokenService, useValue: tokenService },
       ],
     }).compile();
 
@@ -150,7 +142,7 @@ describe('AuthService', () => {
 
     expect(result.email).toBe('admin@abc.edu.vn');
     expect(emailVerificationService.sendOtp).toHaveBeenCalled();
-    expect(jwtService.signAsync).not.toHaveBeenCalled();
+    expect(tokenService.issueTokens).not.toHaveBeenCalled();
   });
 
   it('rejects register when email already verified', async () => {
@@ -221,7 +213,6 @@ describe('AuthService', () => {
       email: 'admin@abc.edu.vn',
     });
     prisma.user.update.mockResolvedValue({});
-    redisClient.smembers.mockResolvedValue(['jti-1']);
 
     const result = await service.resetPassword({
       email: 'admin@abc.edu.vn',
@@ -231,7 +222,7 @@ describe('AuthService', () => {
     });
 
     expect(prisma.user.update).toHaveBeenCalled();
-    expect(redisClient.smembers).toHaveBeenCalledWith('user_sessions:user-1');
+    expect(tokenService.revokeAllRefreshTokens).toHaveBeenCalledWith('user-1');
     expect(result.message).toContain('thành công');
   });
 
@@ -298,7 +289,6 @@ describe('AuthService', () => {
 
   it('confirms change password and revokes refresh sessions', async () => {
     prisma.user.update.mockResolvedValue({});
-    redisClient.smembers.mockResolvedValue(['jti-1']);
 
     const result = await service.confirmChangePassword(
       {
@@ -316,7 +306,7 @@ describe('AuthService', () => {
 
     expect(changePasswordService.verifyAndConsume).toHaveBeenCalledWith('user-1', '123456');
     expect(prisma.user.update).toHaveBeenCalled();
-    expect(redisClient.smembers).toHaveBeenCalledWith('user_sessions:user-1');
+    expect(tokenService.revokeAllRefreshTokens).toHaveBeenCalledWith('user-1');
     expect(result.message).toContain('thành công');
   });
 
@@ -343,7 +333,7 @@ describe('AuthService', () => {
     expect(session.accessToken).toBe('signed-token');
     expect(session.user.role).toBe(Role.ADMIN);
     expect(session.rememberMe).toBe(true);
-    expect(redisClient.set).toHaveBeenCalled();
+    expect(tokenService.issueTokens).toHaveBeenCalled();
   });
 
   it('issues session-scoped tokens when rememberMe is false', async () => {
@@ -368,18 +358,13 @@ describe('AuthService', () => {
     });
 
     expect(session.rememberMe).toBe(false);
-    expect(redisClient.set).toHaveBeenCalledWith(
-      expect.stringContaining('refresh_remember:'),
-      '0',
-      'EX',
-      12 * 60 * 60,
-    );
+    expect(tokenService.issueTokens).toHaveBeenCalledWith(expect.any(Object), false);
   });
 
   it('creates session cookie without Max-Age when rememberMe is false', () => {
     const cookie = service.createRefreshTokenCookie('token-abc', false);
-    expect(cookie).toContain('refresh_token=token-abc');
-    expect(cookie).not.toContain('Max-Age');
+    expect(cookie).toBe('refresh_token=token; HttpOnly');
+    expect(tokenService.createRefreshTokenCookie).toHaveBeenCalledWith('token-abc', false);
   });
 
   it('rejects login when email is not verified', async () => {
@@ -465,7 +450,9 @@ describe('AuthService', () => {
     });
 
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-    prisma.subscription.findFirst.mockResolvedValue({ status: 'suspended' });
+    tokenService.assertNotSuspended.mockRejectedValueOnce(
+      new UnauthorizedException('Tài khoản doanh nghiệp đã bị tạm khóa. Vui lòng liên hệ hỗ trợ.'),
+    );
 
     await expect(
       service.login({ email: 'admin@abc.edu.vn', password: 'password123' }),
@@ -484,7 +471,9 @@ describe('AuthService', () => {
       tenant: { businessName: 'ABC' },
     });
     prisma.user.update.mockResolvedValue({});
-    prisma.subscription.findFirst.mockResolvedValue({ status: 'suspended' });
+    tokenService.assertNotSuspended.mockRejectedValueOnce(
+      new UnauthorizedException('Tài khoản doanh nghiệp đã bị tạm khóa. Vui lòng liên hệ hỗ trợ.'),
+    );
 
     await expect(
       service.verifyEmail({ email: 'admin@abc.edu.vn', otp: '123456' }),

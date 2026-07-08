@@ -351,6 +351,7 @@ async function seedTenant(config: TenantSeedConfig): Promise<void> {
     await prisma.transaction.deleteMany({ where: { tenantId } });
     await prisma.paymentOrder.deleteMany({ where: { tenantId } });
     await prisma.subscription.deleteMany({ where: { tenantId } });
+    await prisma.aiUsageLog.deleteMany({ where: { tenantId } });
   } else {
     const passwordHash = await bcrypt.hash(PASSWORD, 12);
     const tenant = await prisma.tenant.create({
@@ -458,6 +459,16 @@ async function seedTenant(config: TenantSeedConfig): Promise<void> {
       data: chunk.map(({ _debit, _credit, _amount, ...rest }) => rest),
     });
 
+    const aiUsageBatch: {
+      tenantId: string;
+      callType: 'classify' | 'embedding';
+      model: string;
+      tokensIn: number;
+      tokensOut: number;
+      transactionId: string;
+      createdAt: Date;
+    }[] = [];
+
     const classifications = created.map((tx, idx) => {
       const meta = chunk[idx];
       const highConfidence = Math.random() * 100 < config.aiAccuracyTarget;
@@ -468,6 +479,29 @@ async function seedTenant(config: TenantSeedConfig): Promise<void> {
             ? randomInt(85, 99)
             : randomInt(60, 84);
       const isManual = tx.status === 'classified' && Math.random() < 0.08;
+
+      if (!isManual) {
+        aiUsageBatch.push({
+          tenantId,
+          callType: 'classify',
+          model: 'gpt-4o-mini',
+          tokensIn: randomInt(700, 1_400),
+          tokensOut: randomInt(60, 180),
+          transactionId: tx.id,
+          createdAt: tx.createdAt,
+        });
+        if (Math.random() < 0.35) {
+          aiUsageBatch.push({
+            tenantId,
+            callType: 'embedding',
+            model: 'text-embedding-3-small',
+            tokensIn: randomInt(80, 250),
+            tokensOut: 0,
+            transactionId: tx.id,
+            createdAt: tx.createdAt,
+          });
+        }
+      }
 
       return {
         tenantId,
@@ -485,7 +519,28 @@ async function seedTenant(config: TenantSeedConfig): Promise<void> {
     });
 
     await prisma.transactionClassification.createMany({ data: classifications });
+    if (aiUsageBatch.length > 0) {
+      await prisma.aiUsageLog.createMany({ data: aiUsageBatch });
+    }
   }
+
+  const copilotLogs = Array.from({ length: randomInt(4, 12) }).map(() => ({
+    tenantId,
+    callType: 'copilot' as const,
+    model: 'gpt-4o-mini',
+    tokensIn: randomInt(1_200, 4_500),
+    tokensOut: randomInt(200, 800),
+    createdAt: randomDayThisMonth(),
+  }));
+  const titleLogs = Array.from({ length: randomInt(1, 4) }).map(() => ({
+    tenantId,
+    callType: 'title_gen' as const,
+    model: 'gpt-4o-mini',
+    tokensIn: randomInt(40, 120),
+    tokensOut: randomInt(8, 20),
+    createdAt: randomDayThisMonth(),
+  }));
+  await prisma.aiUsageLog.createMany({ data: [...copilotLogs, ...titleLogs] });
 
   console.log(
     `  → ${config.monthlyTxCount} giao dịch, gói ${config.plan} (${config.status}), ${config.paymentHistory.length} kỳ thanh toán`,

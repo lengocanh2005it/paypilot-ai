@@ -257,7 +257,7 @@ export function CopilotSidebar({
           onClick={onNewChat}
         >
           <MessageSquarePlus className="size-4" />
-          Cuộc trò chuyện mới
+          Đoạn chat mới
         </Button>
       </div>
 

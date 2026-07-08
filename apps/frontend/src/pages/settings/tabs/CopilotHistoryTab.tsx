@@ -1,9 +1,10 @@
+import type { CopilotConversationsListResponse } from '@xcash/shared-types';
 import { SubscriptionPlan } from '@xcash/shared-types';
-import { Bot, ChevronLeft, ChevronRight, ExternalLink, MessageSquare, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { Bot, ExternalLink, MessageSquare, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CopilotQuotaSummary } from '@/components/copilot/CopilotQuotaSummary';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { PaginationBar } from '@/components/shared/PaginationBar';
 import { PlanGate } from '@/components/shared/PlanGate';
 import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Button } from '@/components/ui/button';
@@ -19,23 +20,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAuth } from '@/hooks/useAuth';
-import { useCopilotHistoryPage } from '@/hooks/useCopilotHistoryPage';
-import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { formatDateVN } from '@/lib/dashboard-transactions';
+import { useFilteredPagination } from '@/hooks/useFilteredPagination';
+import { api } from '@/lib/api';
+import { formatDateVN, formatTransactionDateTime } from '@/lib/date';
 
 const STORAGE_KEY_PREFIX = 'xcash_copilot_conv_';
 const PAGE_LIMIT = 10;
-
-function formatDateTimeVN(iso: string) {
-  const date = new Date(iso);
-  return date.toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 const PREVIEW_MAX_LENGTH = 100;
 
@@ -66,26 +56,24 @@ function formatMessagePreview(text: string) {
 function CopilotHistoryTable() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [page, setPage] = useState(1);
-  const debouncedFrom = useDebouncedValue(fromDate, 400);
-  const debouncedTo = useDebouncedValue(toDate, 400);
-  const hasDateFilter = Boolean(debouncedFrom || debouncedTo);
 
-  const resetPage = useCallback(() => setPage(1), []);
-  useEffect(() => {
-    resetPage();
-  }, [debouncedFrom, debouncedTo, resetPage]);
+  const { data, filters, setFilter, resetFilters, page, setPage, isLoading, isError, refetch } =
+    useFilteredPagination({
+      queryKey: ['copilot-history', user?.id],
+      queryFn: ({ filters, page }) => {
+        const params = new URLSearchParams({ page: String(page), limit: String(PAGE_LIMIT) });
+        if (filters.fromDate) params.set('fromDate', filters.fromDate);
+        if (filters.toDate) params.set('toDate', filters.toDate);
+        return api
+          .get<{ data: CopilotConversationsListResponse }>(`/ai/copilot/conversations?${params}`)
+          .then((r) => r.data.data);
+      },
+      defaultFilters: { fromDate: '', toDate: '' },
+      debounceMs: 400,
+      enabled: !!user?.id,
+    });
 
-  const { data, isLoading, isError, refetch } = useCopilotHistoryPage({
-    userId: user?.id,
-    page,
-    fromDate: debouncedFrom || undefined,
-    toDate: debouncedTo || undefined,
-    limit: PAGE_LIMIT,
-  });
-
+  const hasDateFilter = Boolean(filters.fromDate || filters.toDate);
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = data?.totalPages ?? 1;
@@ -96,10 +84,7 @@ function CopilotHistoryTable() {
     navigate('/copilot');
   };
 
-  const clearFilters = () => {
-    setFromDate('');
-    setToDate('');
-  };
+  const clearFilters = () => resetFilters();
 
   if (isLoading) {
     return (
@@ -156,8 +141,8 @@ function CopilotHistoryTable() {
             <Input
               id="copilot-history-from"
               type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              value={filters.fromDate}
+              onChange={(e) => setFilter('fromDate', e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
@@ -165,8 +150,8 @@ function CopilotHistoryTable() {
             <Input
               id="copilot-history-to"
               type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              value={filters.toDate}
+              onChange={(e) => setFilter('toDate', e.target.value)}
             />
           </div>
         </div>
@@ -185,81 +170,93 @@ function CopilotHistoryTable() {
       )}
 
       {items.length > 0 && (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Cập nhật</TableHead>
-                <TableHead>Tiêu đề</TableHead>
-                <TableHead className="text-right hidden sm:table-cell">
-                  <span className="block">Tin nhắn</span>
-                  <span className="block text-[10px] font-normal normal-case text-muted-foreground">
-                    Bạn + AI
-                  </span>
-                </TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => (
-                <TableRow
-                  key={item.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => openConversation(item.id)}
-                >
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    <span className="hidden sm:inline">{formatDateTimeVN(item.updatedAt)}</span>
-                    <span className="sm:hidden">{formatDateVN(item.updatedAt)}</span>
-                  </TableCell>
-                  <TableCell>
-                    <p className="font-medium truncate max-w-[200px] sm:max-w-md">{item.title}</p>
-                    {item.lastMessage && (
-                      <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-[200px] sm:max-w-md">
-                        {formatMessagePreview(item.lastMessage)}
-                      </p>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right hidden sm:table-cell tabular-nums">
-                    {item.messageCount}
-                  </TableCell>
-                  <TableCell>
-                    <ExternalLink className="size-4 text-muted-foreground" />
-                  </TableCell>
+        <>
+          {/* Mobile card layout */}
+          <div className="space-y-3 lg:hidden">
+            {items.map((item) => (
+              <Card
+                key={item.id}
+                className="cursor-pointer py-4 hover:bg-muted/50 transition-colors"
+                onClick={() => openConversation(item.id)}
+              >
+                <CardContent className="space-y-2 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-medium truncate">{item.title}</p>
+                    <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+                  </div>
+                  {item.lastMessage && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      {formatMessagePreview(item.lastMessage)}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">
+                      {formatDateVN(item.updatedAt)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {item.messageCount} tin nhắn
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden lg:block rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Cập nhật</TableHead>
+                  <TableHead>Tiêu đề</TableHead>
+                  <TableHead className="text-right">
+                    <span className="block">Tin nhắn</span>
+                    <span className="block text-[10px] font-normal normal-case text-muted-foreground">
+                      Bạn + AI
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {items.map((item) => (
+                  <TableRow
+                    key={item.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => openConversation(item.id)}
+                  >
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatTransactionDateTime(item.updatedAt)}
+                    </TableCell>
+                    <TableCell>
+                      <p className="font-medium truncate max-w-md">{item.title}</p>
+                      {item.lastMessage && (
+                        <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-md">
+                          {formatMessagePreview(item.lastMessage)}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{item.messageCount}</TableCell>
+                    <TableCell>
+                      <ExternalLink className="size-4 text-muted-foreground" />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       {total > 0 && (
         <div className="flex items-center justify-between pt-1">
-          <p className="text-xs text-muted-foreground">
-            {total} kết quả
-            {totalPages > 1 ? ` · Trang ${page}/${totalPages}` : null}
-          </p>
-          {totalPages > 1 && (
-            <div className="flex gap-1">
-              <Button
-                size="icon"
-                variant="outline"
-                className="size-7"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                <ChevronLeft className="size-3.5" />
-              </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                className="size-7"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                <ChevronRight className="size-3.5" />
-              </Button>
-            </div>
-          )}
+          <p className="text-xs text-muted-foreground">{total} kết quả</p>
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            compact
+            onPageChange={(p) => setPage(p)}
+          />
         </div>
       )}
     </div>

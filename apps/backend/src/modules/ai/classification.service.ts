@@ -70,6 +70,11 @@ export class ClassificationService {
       amount,
       direction,
       fewShotExamples,
+      transaction.senderAccount,
+      transaction.receiverAccount,
+      transaction.transactionDate,
+      transaction.tenantId,
+      transaction.id,
     );
 
     const { debitAccount, creditAccount, confidenceScore, reason } = aiResult
@@ -140,7 +145,11 @@ export class ClassificationService {
 
     // Store embedding asynchronously (non-blocking)
     this.embeddingService
-      .embedAndStoreClassification(classification.id, normalizedContent || content)
+      .embedAndStoreClassification(
+        classification.id,
+        normalizedContent || content,
+        transaction.tenantId,
+      )
       .catch((err: unknown) =>
         this.logger.warn(`Embedding storage failed for ${classification.id}`, err),
       );

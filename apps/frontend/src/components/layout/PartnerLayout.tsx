@@ -1,4 +1,5 @@
 import {
+  Bot,
   Building2,
   Layers,
   LayoutDashboard,
@@ -28,6 +29,7 @@ const partnerNavItems = [
   { to: '/partner/payments', label: 'Lịch sử thanh toán', icon: Receipt },
   { to: '/partner/audit-logs', label: 'Nhật ký', icon: ScrollText },
   { to: '/partner/plans', label: 'Gói dịch vụ', icon: Layers },
+  { to: '/partner/ai-costs', label: 'Chi phí AI', icon: Bot },
 ];
 
 interface PartnerSidebarContentProps {
@@ -172,7 +174,6 @@ function PartnerSidebarContent({
             ) : null}
           </button>
           <div className={cn('flex gap-2', collapsed ? 'flex-col items-center' : 'items-center')}>
-            <ThemeToggle />
             <Button
               type="button"
               variant="outline"
@@ -261,6 +262,9 @@ export function PartnerLayout() {
           </Button>
           <LogoMark size={28} className="rounded-lg" />
           <p className="truncate font-semibold text-primary">X-Cash AI</p>
+          <div className="ml-auto">
+            <ThemeToggle />
+          </div>
         </div>
 
         <main className="min-w-0 flex-1 overflow-y-auto">

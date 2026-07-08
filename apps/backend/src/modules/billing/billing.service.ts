@@ -7,11 +7,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type SubscriptionPlan, TransactionSource } from '@prisma/client';
+import { isOveragePlan, OVERAGE_PLANS } from '../../common/constants/quota-policy';
+import { invalidateTenantPlanCache } from '../../common/util/tenant-plan-cache';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../../redis/redis.service';
 import { NotificationService } from '../notification/notification.service';
 import { PayosService } from './payos.service';
-
-const OVERAGE_PLANS = ['starter', 'pro'] as const;
 
 @Injectable()
 export class BillingService {
@@ -22,6 +23,7 @@ export class BillingService {
     private readonly payosService: PayosService,
     private readonly config: ConfigService,
     private readonly notificationService: NotificationService,
+    private readonly redis: RedisService,
   ) {}
 
   async listPlans() {
@@ -245,6 +247,8 @@ export class BillingService {
         this.logger.warn(`Billing notification failed for tenant ${tenantId}`, err),
       );
 
+    await invalidateTenantPlanCache(this.redis, tenantId);
+
     return { success: true, alreadyPaid: false };
   }
 
@@ -396,7 +400,7 @@ export class BillingService {
     });
     if (!sub) throw new NotFoundException('Không tìm thấy subscription active');
 
-    if (!(OVERAGE_PLANS as readonly string[]).includes(sub.plan)) {
+    if (!isOveragePlan(sub.plan)) {
       throw new BadRequestException('Gói hiện tại không áp dụng phí vượt quota');
     }
 

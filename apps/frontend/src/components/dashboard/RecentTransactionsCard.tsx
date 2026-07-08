@@ -1,13 +1,17 @@
 import { TransactionStatus } from '@xcash/shared-types';
 import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { SignedTransactionAmount } from '@/components/shared/SignedTransactionAmount';
 import { TransactionSourceBadge } from '@/components/shared/TransactionSourceBadge';
 import { TransactionStatusBadge } from '@/components/shared/TransactionStatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatTransactionTime } from '@/lib/dashboard-transactions';
+import {
+  formatSignedTransactionAmount,
+  signedTransactionAmountClassName,
+} from '@/lib/dashboard-transactions';
+import { formatTransactionTime } from '@/lib/date';
+import { cn } from '@/lib/utils';
 import type { TransactionSummary } from '@/types/transaction';
 
 interface RecentTransactionsCardProps {
@@ -72,8 +76,13 @@ export function RecentTransactionsCard({ items, isLoading }: RecentTransactionsC
                   <span className="hidden text-xs text-muted-foreground md:block">
                     {formatTransactionTime(txn.transactionDate)}
                   </span>
-                  <span className="text-sm font-semibold md:text-right">
-                    <SignedTransactionAmount amount={Number(txn.amount)} />
+                  <span
+                    className={cn(
+                      'text-sm font-semibold md:text-right',
+                      signedTransactionAmountClassName(Number(txn.amount)),
+                    )}
+                  >
+                    {formatSignedTransactionAmount(Number(txn.amount))}
                   </span>
                   <div className="flex items-center gap-2 md:block">
                     <span className="text-xs text-muted-foreground md:hidden">Nguồn:</span>

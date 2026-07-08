@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { DashboardStatCard } from '@/components/dashboard/DashboardStatCard';
 import { Header } from '@/components/layout/Header';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { PaginationBar } from '@/components/shared/PaginationBar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,29 +26,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { api, getApiData } from '@/lib/api';
 import { formatVND } from '@/lib/format-vnd';
 import { hasPlanAccess, PLAN_LABEL } from '@/lib/plan';
-
-interface SummaryData {
-  period: { year: number; month: number };
-  summary: { totalRevenue: number; totalExpense: number; net: number };
-  stats: { totalCount: number; classifiedCount: number; reviewCount: number; aiAccuracy: number };
-}
-
-interface AccountRow {
-  accountCode: string;
-  accountName: string;
-  accountType: string;
-  totalDebit: number;
-  totalCredit: number;
-  net: number;
-  transactionCount: number;
-}
-
-interface AccountBreakdownData {
-  items: AccountRow[];
-  page: number;
-  limit: number;
-  total: number;
-}
+import type { AccountBreakdownData, SummaryData } from '@/types/api/reports';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 350;
@@ -77,8 +56,7 @@ const ACCOUNT_TYPE_OPTIONS = [
 ];
 
 async function fetchSummary(year: number, month: number): Promise<SummaryData> {
-  const res = await api.get(`/reports/summary?year=${year}&month=${month}`);
-  return res.data.data;
+  return getApiData<SummaryData>(`/reports/summary?year=${year}&month=${month}`);
 }
 
 function buildAccountBreakdownUrl(params: {
@@ -503,30 +481,17 @@ export default function ReportsPage() {
                     </div>
 
                     {accountTotal > PAGE_SIZE ? (
-                      <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
-                        <p className="text-sm text-muted-foreground">
-                          Hiển thị {accountItems.length} / {accountTotal} tài khoản
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={page <= 1 || fetchingAccounts}
-                            onClick={() => setPage((current) => Math.max(1, current - 1))}
-                          >
-                            Trước
-                          </Button>
-                          <span className="text-sm text-muted-foreground">
-                            Trang {page} / {totalPages}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={page >= totalPages || fetchingAccounts}
-                            onClick={() => setPage((current) => current + 1)}
-                          >
-                            Sau
-                          </Button>
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm text-muted-foreground">
+                            Hiển thị {accountItems.length} / {accountTotal} tài khoản
+                          </p>
+                          <PaginationBar
+                            page={page}
+                            totalPages={totalPages}
+                            isFetching={fetchingAccounts}
+                            onPageChange={(p) => setPage(p)}
+                          />
                         </div>
                       </div>
                     ) : accountTotal > 0 ? (

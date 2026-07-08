@@ -18,9 +18,17 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { api } from '@/lib/api';
 import { formatVND } from '@/lib/format-vnd';
-import { PLAN_LABELS } from '@/lib/plan-labels';
+import { PLAN_LABELS } from '@/lib/plans';
 
 interface PlanPricing {
   plan: string;
@@ -122,7 +130,6 @@ export default function PartnerPlansPage() {
       <Header
         title="Gói dịch vụ"
         description="Chỉnh giá/quota gói Starter trở lên — áp dụng cho lần nâng cấp tiếp theo, không ảnh hưởng gói đang dùng"
-        hideThemeToggle
       />
 
       <div className="space-y-6 p-4 sm:p-6">
@@ -224,53 +231,107 @@ export default function PartnerPlansPage() {
             {loadingPricing ? (
               <TableSkeleton rows={4} columns={4} />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-2 pr-6 font-medium">Gói</th>
-                      <th className="pb-2 pr-6 font-medium">Giá/tháng</th>
-                      <th className="pb-2 pr-6 font-medium">Quota GD/tháng</th>
-                      <th className="pb-2 pr-6 font-medium">Copilot/tháng</th>
-                      <th className="pb-2 pr-6 font-medium">Phí vượt/GD</th>
-                      <th className="pb-2 font-medium">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {(planPricing ?? []).map((p) => (
-                      <tr key={p.plan}>
-                        <td className="py-2 pr-6 font-medium">{PLAN_LABELS[p.plan] ?? p.plan}</td>
-                        <td className="py-2 pr-6">{formatVND(p.pricePerMonth)}</td>
-                        <td className="py-2 pr-6">
-                          {p.plan === 'enterprise' ? 'Không giới hạn' : p.transactionQuota}
-                        </td>
-                        <td className="py-2 pr-6">
-                          {p.copilotQuota === -1
-                            ? 'Không giới hạn'
-                            : p.copilotQuota === 0
-                              ? 'Không có'
-                              : p.copilotQuota}
-                        </td>
-                        <td className="py-2 pr-6">
-                          {p.overagePricePerTransaction != null
-                            ? formatVND(p.overagePricePerTransaction)
-                            : '—'}
-                        </td>
-                        <td className="py-2">
-                          {p.editable ? (
-                            <Button size="sm" variant="outline" onClick={() => openEdit(p)}>
-                              <Pencil className="size-4" />
-                              Sửa
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">Cố định</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                {/* Mobile card layout */}
+                <div className="space-y-2 lg:hidden">
+                  {(planPricing ?? []).map((p) => (
+                    <div key={p.plan} className="rounded-lg border p-3 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-sm">{PLAN_LABELS[p.plan] ?? p.plan}</span>
+                        {p.editable ? (
+                          <Button size="sm" variant="outline" onClick={() => openEdit(p)}>
+                            <Pencil className="size-3" />
+                          </Button>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">Cố định</span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                        <span>
+                          Giá:{' '}
+                          <span className="font-medium text-foreground">
+                            {formatVND(p.pricePerMonth)}
+                          </span>
+                        </span>
+                        <span>
+                          GD:{' '}
+                          <span className="font-medium text-foreground">
+                            {p.plan === 'enterprise' ? 'Không giới hạn' : p.transactionQuota}
+                          </span>
+                        </span>
+                        <span>
+                          Copilot:{' '}
+                          <span className="font-medium text-foreground">
+                            {p.copilotQuota === -1
+                              ? 'Không giới hạn'
+                              : p.copilotQuota === 0
+                                ? 'Không có'
+                                : p.copilotQuota}
+                          </span>
+                        </span>
+                        <span>
+                          Vượt:{' '}
+                          <span className="font-medium text-foreground">
+                            {p.overagePricePerTransaction != null
+                              ? formatVND(p.overagePricePerTransaction)
+                              : '—'}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Desktop table */}
+                <div className="hidden lg:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Gói</TableHead>
+                        <TableHead>Giá/tháng</TableHead>
+                        <TableHead>Quota GD/tháng</TableHead>
+                        <TableHead>Copilot/tháng</TableHead>
+                        <TableHead>Phí vượt/GD</TableHead>
+                        <TableHead className="text-right">Thao tác</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(planPricing ?? []).map((p) => (
+                        <TableRow key={p.plan}>
+                          <TableCell className="font-medium">
+                            {PLAN_LABELS[p.plan] ?? p.plan}
+                          </TableCell>
+                          <TableCell>{formatVND(p.pricePerMonth)}</TableCell>
+                          <TableCell>
+                            {p.plan === 'enterprise' ? 'Không giới hạn' : p.transactionQuota}
+                          </TableCell>
+                          <TableCell>
+                            {p.copilotQuota === -1
+                              ? 'Không giới hạn'
+                              : p.copilotQuota === 0
+                                ? 'Không có'
+                                : p.copilotQuota}
+                          </TableCell>
+                          <TableCell>
+                            {p.overagePricePerTransaction != null
+                              ? formatVND(p.overagePricePerTransaction)
+                              : '—'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {p.editable ? (
+                              <Button size="sm" variant="outline" onClick={() => openEdit(p)}>
+                                <Pencil className="size-4" />
+                                Sửa
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Cố định</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
