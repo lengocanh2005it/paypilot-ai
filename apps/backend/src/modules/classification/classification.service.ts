@@ -142,7 +142,13 @@ export class ClassificationService {
             debitAccount: classification.debitAccount,
             creditAccount: classification.creditAccount,
           },
-          afterState: { debitAccount: dto.debitAccount, creditAccount: dto.creditAccount },
+          afterState: dto.source
+            ? {
+                debitAccount: dto.debitAccount,
+                creditAccount: dto.creditAccount,
+                source: dto.source,
+              }
+            : { debitAccount: dto.debitAccount, creditAccount: dto.creditAccount },
         },
       });
     });

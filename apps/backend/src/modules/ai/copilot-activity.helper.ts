@@ -4,6 +4,11 @@ export type { CopilotActivity };
 
 type ToolActivityMeta = Omit<CopilotActivity, 'urls'>;
 
+const ACTION_CARD_TOOLS = new Set([
+  'propose_confirm_transaction_classification',
+  'propose_correct_transaction_classification',
+]);
+
 const TOOL_ACTIVITIES: Record<string, { final: ToolActivityMeta; streaming: ToolActivityMeta }> = {
   get_month_summary: {
     final: { kind: 'internal_data', label: 'Báo cáo tháng', source: 'X-Cash AI' },
@@ -86,6 +91,14 @@ const TOOL_ACTIVITIES: Record<string, { final: ToolActivityMeta; streaming: Tool
     streaming: {
       kind: 'action_card',
       label: 'Đang chuẩn bị đề xuất xác nhận…',
+      source: 'X-Cash AI',
+    },
+  },
+  propose_correct_transaction_classification: {
+    final: { kind: 'action_card', label: 'Đề xuất sửa định khoản', source: 'X-Cash AI' },
+    streaming: {
+      kind: 'action_card',
+      label: 'Đang chuẩn bị đề xuất sửa định khoản…',
       source: 'X-Cash AI',
     },
   },
@@ -220,13 +233,19 @@ export function buildActivities(
   const result: CopilotActivity[] = [];
 
   for (const name of calledTools) {
-    if (name === 'propose_confirm_transaction_classification') {
+    if (ACTION_CARD_TOOLS.has(name)) {
       const key = `action_card:${name}`;
       if (seen.has(key)) continue;
       seen.add(key);
       const meta = ACTIVITY_MAP[name];
-      const data = resultsCapture?.get(name) as CopilotActivity['actionCard'] | undefined;
-      if (meta && data) result.push({ ...meta, actionCard: { ...data, tool: name } });
+      const data = resultsCapture?.get(name) as
+        | Omit<NonNullable<CopilotActivity['actionCard']>, 'tool'>
+        | undefined;
+      if (meta && data)
+        result.push({
+          ...meta,
+          actionCard: { ...data, tool: name } as CopilotActivity['actionCard'],
+        });
       continue;
     }
 

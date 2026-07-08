@@ -2,7 +2,9 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Copilot action-tool đầu tiên — `propose_confirm_transaction_classification`** (branch `feat/copilot-confirm-action`, PR đã tạo). Tool read-only/dry-run, gated `COPILOT_ACTION_TOOLS_ENABLED` (default 0); FE render "action card" trong chat (`CopilotActionCard.tsx`) — re-check status live qua `useQuery`, xác nhận qua `useMutation` gọi thẳng `POST /review/:id/confirm` (không qua AI); endpoint đó nhận thêm optional `source?: 'copilot'` để audit trail. `CopilotActivity` (shared-types) thêm variant `kind: 'action_card'` + field `actionCard`. `getReviewQueue()` giờ select thêm `transaction.id`; `ReviewPage` có cột "Mã GD" (`CopyIdButton.tsx`, copy-to-clipboard) để lấy transactionId dán vào Copilot. `pnpm verify` pass 10/10.
+Cập nhật lần cuối: **Copilot action-tool thứ hai — `propose_correct_transaction_classification`** (branch `feat/copilot-correct-action`, PR chưa tạo). Tool read-only/dry-run, dùng chung flag `COPILOT_ACTION_TOOLS_ENABLED`; nhận `debitAccount`/`creditAccount` mới do **user** tự nêu (model không tự đề xuất), validate tồn tại + active trong `ChartOfAccount` (1 query `findMany` cho cả 2 mã, không gọi lại tool `lookup_chart_account`); thứ tự check role → status → mã TK. FE mới `CopilotCorrectionCard.tsx` (card so sánh định khoản cũ/mới) — gọi thẳng `POST /review/:id/correct` (nay nhận thêm optional `source?: 'copilot'` giống `confirm`). `CopilotActionCardData` (shared-types) đổi từ interface đơn sang discriminated union (`CopilotConfirmActionCardData | CopilotCorrectActionCardData`, phân biệt qua field `tool`). `pnpm verify` pass 10/10.
+
+Trước đó — **Copilot action-tool đầu tiên — `propose_confirm_transaction_classification`** (branch `feat/copilot-confirm-action`, đã merge vào main qua PR #23). Tool read-only/dry-run, gated `COPILOT_ACTION_TOOLS_ENABLED` (default 0); FE render "action card" trong chat (`CopilotActionCard.tsx`) — re-check status live qua `useQuery`, xác nhận qua `useMutation` gọi thẳng `POST /review/:id/confirm` (không qua AI); endpoint đó nhận thêm optional `source?: 'copilot'` để audit trail. `CopilotActivity` (shared-types) thêm variant `kind: 'action_card'` + field `actionCard`. `getReviewQueue()` giờ select thêm `transaction.id`; `ReviewPage` có cột "Mã GD" (`CopyIdButton.tsx`, copy-to-clipboard) để lấy transactionId dán vào Copilot. `pnpm verify` pass 10/10.
 
 Trước đó — **UI/UX polish** — 10 issues: PaymentStatusBadge shared component, ErrorRetryCard shared component, useCopilotChat hook (CopilotPage ~650→~440 lines), BillingTab split (4 files), CopilotHistoryTab mobile layout, NotificationBell empty state, TransactionStatusBadge adoption (CycleTransactionsDialog), responsive tables (AccountsPage, PaymentHistoryTable, PartnerAiCostsPage×2, PartnerPlansPage, AuditLogPanel). `pnpm verify` pass 10/10.
 
@@ -256,7 +258,19 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - Frontend: `CopyIdButton.tsx` (mới, `components/shared/`) — copy-to-clipboard mã giao dịch rút gọn, dùng trong `ReviewPage.tsx` (cột "Mã GD" desktop table + mobile card) để user lấy transactionId dán vào Copilot ✅
 - Backend test: `copilot-tool.service.spec.ts` (3 case: review/non-review/viewer), `classification.service.spec.ts` (confirm với/không `source`) ✅
 - Env mới: `COPILOT_ACTION_TOOLS_ENABLED` (`.env.example` + `configuration.ts`, default `0`) ✅
-- PRD: [Issue #22](https://github.com/lengocanh2005it/xcash-ai/issues/22), branch `feat/copilot-confirm-action`, PR đã tạo (chưa merge) ✅
+- PRD: [Issue #22](https://github.com/lengocanh2005it/xcash-ai/issues/22), branch `feat/copilot-confirm-action`, PR #23 đã merge vào main ✅
+
+**Đã xong (Copilot action-tool thứ hai — correct_transaction_classification):**
+- Backend: tool mới `propose_correct_transaction_classification` trong `CopilotToolService` — nhận `{ transactionId, debitAccount, creditAccount }` (2 mã TK mới do **user** tự nêu, model không tự đề xuất); thứ tự check role (`CONFIRMABLE_ROLES` tái dùng) → status (`review`) → validate 2 mã TK mới tồn tại + `isActive` trong `ChartOfAccount` của tenant (1 query `findMany` với `accountCode: { in: [...] }`, không gọi lại tool `lookup_chart_account`) ✅
+- Backend: trả `{ ...trường cũ từ propose_confirm, proposedDebitAccount, proposedCreditAccount, canCorrect, reason? }` — không throw ở mọi nhánh fail, đồng nhất pattern `propose_confirm_transaction_classification` ✅
+- Backend: đăng ký tool qua `buildCopilotTools()` dùng chung flag `COPILOT_ACTION_TOOLS_ENABLED` (không tạo flag riêng) ✅
+- Backend: `CorrectClassificationDto` + `ClassificationService.correct()` nhận thêm optional `source?: 'copilot'`, ghi vào `auditLog.afterState` cùng `beforeState`/`afterState` debit/credit đã có — đồng nhất `confirm()` ✅
+- shared-types: `CopilotActionCardData` đổi từ interface đơn sang discriminated union `CopilotConfirmActionCardData | CopilotCorrectActionCardData` (phân biệt qua field `tool`) ✅
+- Backend: `copilot-activity.helper.ts` — `TOOL_ACTIVITIES` thêm entry; `ACTION_CARD_TOOLS` (Set) generalize nhánh xử lý action-card trong `buildActivities()` cho cả 2 tool (trước đây hard-code tên tool đầu tiên) ✅
+- Frontend: `CopilotCorrectionCard.tsx` (mới) — card so sánh định khoản cũ (`debitAccount`/`creditAccount`) vs đề xuất mới (`proposedDebitAccount`/`proposedCreditAccount`), cùng pattern `useQuery` re-check status + `useMutation` gọi `POST /review/:id/correct` với `source: 'copilot'` như `CopilotActionCard` ✅
+- Frontend: `CopilotMessageBubble.tsx` discriminate theo `actionCard.tool` để chọn render `CopilotActionCard` hay `CopilotCorrectionCard` ✅
+- Backend test: mở rộng `copilot-tool.service.spec.ts` (4 case mới: hợp lệ/viewer/non-review/mã TK sai), mở rộng `classification.service.spec.ts` (`correct()` với/không `source`) ✅
+- PRD: [Issue #24](https://github.com/lengocanh2005it/xcash-ai/issues/24), branch `feat/copilot-correct-action`, PR chưa tạo ✅
 
 **Chưa làm (Sprint 4 — còn lại):**
 - Bổ sung env production đầy đủ vào `docker-compose.yml` (OpenAI, Resend, PayOS, v.v.) + deploy lên VPS
@@ -368,9 +382,9 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   ├── copilot-activity.helper.ts # TOOL_ACTIVITIES, getStreamingActivityMeta(), buildActivities() — extracted from OpenAiService ✅
 │   │           │   ├── copilot-conversation.service.ts  # CRUD conversations + messages, cursor pagination, auto-title fire-and-forget, deleteMessage() dangling cleanup (Phase 6) ✅
 │   │           │   ├── copilot-context.service.ts # Fallback: preload summary tháng hiện tại (dùng khi flag=0)
-│   │           │   ├── copilot-tool.service.ts    # execute(tenantId, name, args, role?) — 8 tools + Redis cache (+ search_casso_public + propose_confirm_transaction_classification khi bật) ✅
-│   │           │   ├── copilot-tool.service.spec.ts  # 3 test: review/non-review/viewer cho propose_confirm_transaction_classification ✅
-│   │           │   ├── copilot-tools.factory.ts   # buildCopilotTools() → 8 Tool[] (+ search_casso_public + action-tool optional, cả 2 gated bởi config flag riêng) ✅
+│   │           │   ├── copilot-tool.service.ts    # execute(tenantId, name, args, role?) — 8 tools + Redis cache (+ search_casso_public + 2 action-tool: propose_confirm_transaction_classification, propose_correct_transaction_classification, khi bật) ✅
+│   │           │   ├── copilot-tool.service.spec.ts  # 2 describe block: propose_confirm (3 test: review/non-review/viewer) + propose_correct (4 test: hợp lệ/viewer/non-review/mã TK sai) ✅
+│   │           │   ├── copilot-tools.factory.ts   # buildCopilotTools() → 8 Tool[] (+ search_casso_public riêng flag; + 2 action-tool dùng chung COPILOT_ACTION_TOOLS_ENABLED) ✅
 │   │           │   ├── copilot-cas-faq.ts         # FAQ tĩnh Casso/Cas Link (4 topics)
 │   │           │   └── dto/
 │   │           │       └── copilot-conversation.dto.ts  # ListConversationsQueryDto, GetConversationQueryDto, RenameConversationDto ✅
@@ -486,8 +500,9 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   │   ├── CopilotChatInput.tsx       # Chat input + auto-resize textarea + send/stop buttons ✅
 │           │   │   ├── CopilotMessageBubble.tsx  # Message rendering + source chips + copy button + partial badge ✅
 │           │   │   ├── CopilotWelcomeState.tsx   # Welcome screen + suggestion chips ✅
-│           │   │   ├── CopilotSourceChips.tsx    # Chip nguồn tham khảo (internal_data/knowledge/web_search); kind action_card có icon riêng nhưng render qua CopilotActionCard, không qua chip này ✅
+│           │   │   ├── CopilotSourceChips.tsx    # Chip nguồn tham khảo (internal_data/knowledge/web_search); kind action_card có icon riêng nhưng render qua CopilotActionCard/CopilotCorrectionCard, không qua chip này ✅
 │           │   │   ├── CopilotActionCard.tsx     # Card đề xuất xác nhận giao dịch — useQuery re-check status live + useMutation POST /review/:id/confirm ✅
+│           │   │   ├── CopilotCorrectionCard.tsx  # Card đề xuất sửa định khoản — so sánh cũ/mới, useMutation POST /review/:id/correct ✅
 │           │   │   ├── CopilotLoadingStatus.tsx  # Loading dots / tool activity indicator khi SSE streaming ✅
 │           │   │   ├── CopilotMessageActions.tsx # Copy button hover-reveal trên assistant messages (Phase 5) ✅
 │           │   │   ├── CopilotQuotaSummary.tsx     # Quota bar sidebar + card Settings (ẩn khi unlimited) ✅
@@ -737,13 +752,22 @@ export enum AccountType {
   EXPENSE = 'expense',
 }
 
-export interface CopilotActionCardData {
+export interface CopilotConfirmActionCardData {
   tool: 'propose_confirm_transaction_classification';
   transactionId: string; classificationId: string;
   debitAccount: string; creditAccount: string;
   confidence: number; status: string; content: string; amount: number;
   canConfirm: boolean; reason?: string;
 }
+export interface CopilotCorrectActionCardData {
+  tool: 'propose_correct_transaction_classification';
+  transactionId: string; classificationId: string;
+  debitAccount: string; creditAccount: string;
+  proposedDebitAccount: string; proposedCreditAccount: string;
+  confidence: number; status: string; content: string; amount: number;
+  canCorrect: boolean; reason?: string;
+}
+export type CopilotActionCardData = CopilotConfirmActionCardData | CopilotCorrectActionCardData;
 export interface CopilotActivity {
   kind: 'internal_data' | 'knowledge' | 'web_search' | 'action_card';
   label: string;
@@ -819,6 +843,8 @@ postinstall      → prisma generate
 - **Copilot tools cache keys:** `copilot:tool:summary:{tenantId}:{y}-{m}` TTL=300s; `copilot:tool:banking:{tenantId}` TTL=60s. Key cũ `copilot:context:{tenantId}:{y}-{m}` còn dùng khi flag=0 (fallback).
 - **`propose_confirm_transaction_classification` tool (action-tool đầu tiên):** dry-run — KHÔNG BAO GIỜ ghi DB. Chỉ đọc `TransactionClassification` theo `transactionId`. Gated bởi `COPILOT_ACTION_TOOLS_ENABLED` (default `0`), theo đúng pattern `cassoSearchEnabled` (đọc qua `configService?.get()` trong `buildCopilotTools()`, không truyền = tool không xuất hiện). `canConfirm: false` (không throw) trong 3 case: role không phải `admin`/`accountant`, `status !== 'review'`, hoặc không tìm thấy classification (case này trả thêm placeholder rỗng cho các field bắt buộc của `CopilotActionCardData` để không vỡ contract type — xem code review đã catch bug FE dùng `classificationId` rỗng làm React `key`, giờ FE dùng `transactionId` làm key thay thế). Việc ghi DB thật luôn đi qua `POST /review/:id/confirm` có sẵn, do FE gọi trực tiếp khi user bấm nút trên `CopilotActionCard` — AI không có quyền tự thực thi side-effect.
 - **Vì sao cần cột "Mã GD" (`CopyIdButton`) ở `ReviewPage`:** tool cần `transactionId` chính xác để hoạt động; test thực tế cho thấy nếu chỉ dựa vào model tự suy ra ID từ nội dung tiếng Việt (có dấu, dễ gõ sai) thì Copilot từ chối vì thiếu thông tin cụ thể — user cần copy đúng ID để dán vào chat. Đây là gap phát hiện khi test tay, không phải thiết kế ban đầu.
+- **`propose_correct_transaction_classification` tool (action-tool thứ hai):** khác biệt cốt lõi với `propose_confirm` — tool này nhận **input mới do con người cung cấp** (2 mã tài khoản), không chỉ "đồng ý với gợi ý AI có sẵn". Vì vậy có thêm lớp validate input (`ChartOfAccount` tồn tại + `isActive`) mà `propose_confirm` không cần. Thứ tự check cố định: role → status → mã TK (dừng ở bước đầu tiên fail, không kiểm tra tiếp) — quyết định này để tránh lộ thông tin mã TK hợp lệ/không hợp lệ cho user không có quyền xem. Validate 2 mã TK bằng 1 query `findMany({ accountCode: { in: [debit, credit] } })` thay vì gọi tool `lookup_chart_account` như sub-call hay 2 `findFirst` riêng — tránh phụ thuộc chồng chéo giữa 2 tool và giảm round-trip DB.
+- **`CopilotActionCardData` là discriminated union (không phải interface đơn):** `CopilotConfirmActionCardData | CopilotCorrectActionCardData`, phân biệt qua field `tool`. `CopilotActionCard.tsx` type theo `CopilotConfirmActionCardData` cụ thể (không phải union) vì component chỉ render nhánh confirm; tương tự `CopilotCorrectionCard.tsx` type theo `CopilotCorrectActionCardData`. `CopilotMessageBubble.tsx` là nơi duy nhất discriminate qua `actionCard.tool` để chọn component render. Khi thêm action-tool thứ 3, thêm 1 variant union mới + 1 nhánh trong `CopilotMessageBubble` theo đúng pattern này (`copilot-activity.helper.ts` đã tổng quát hóa qua `ACTION_CARD_TOOLS` Set, không cần sửa lại phần đó).
 - **Copilot conversation history:** khi `POST /ai/copilot` hoặc `POST /ai/copilot/stream` nhận `conversationId`, backend dùng history từ DB (không dùng FE-provided `history[]`) — chặn injection tấn công qua history. Conversation tự tạo (`findOrCreate`) nếu không có `conversationId`; `saveAssistantMessage` + `triggerAutoTitle` đều fire-and-forget. SSE: setup conversation + saveUserMessage trước `res.flushHeaders()` để lỗi 404 trả đúng HTTP code, không bị nuốt vào SSE stream.
 - **Copilot stop generation (Phase 4):** `wasAborted` flag set bởi `req.on('close')` — track sau `res.flushHeaders()` (pre-flush close không trigger). `runnerInstance?.abort()` dừng OpenAI stream runner. `accumulatedContent` tích lũy delta ngay cả khi runner chạy — nếu abort với content > blank → `saveAssistantMessage(..., isPartial=true)`. `incrementAndNotify` bỏ qua khi abort (quota không tính). FE: `sendViaStream()` trả `null` khi `AbortError` (không throw) → `sendMessage()` nhận null = aborted, không fallback JSON, không retry.
 - **Copilot `isPartial` bubble:** `Message` interface FE thêm `isPartial?: boolean`. Khi `sendViaStream()` catch `AbortError`, push bubble `{ role: 'assistant', content: accumulatedContent, isPartial: true }` vào state. Khi load từ DB, `mapDto(m)` map `m.isPartial` vào Message. Bubble có `isPartial=true` render badge "Đã dừng" (StopCircle icon) dưới content.
