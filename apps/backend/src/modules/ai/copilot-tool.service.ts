@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { type Prisma, TransactionStatus } from '@prisma/client';
 import { tavily } from '@tavily/core';
 import { Role } from '@xcash/shared-types';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -7,7 +9,11 @@ import { RedisService } from '../../redis/redis.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
 import { ReportService } from '../report/report.service';
 import { COPILOT_TOOLS, type CopilotToolEntry } from './copilot-tool.registry';
-import { type KnowledgeSearchResult, searchKnowledgeByKeyword } from './knowledge';
+import {
+  hasStrongKeywordKnowledgeMatch,
+  type KnowledgeSearchResult,
+  searchKnowledgeByKeyword,
+} from './knowledge';
 import { OpenAiService } from './openai.service';
 
 const CONFIRMABLE_ROLES = new Set<Role>([Role.ADMIN, Role.ACCOUNTANT]);
@@ -56,11 +62,53 @@ export class CopilotToolService {
     return this.reportService.getTopAccounts(tenantId, year, month, limit);
   }
 
-  async getReviewQueueCount(tenantId: string) {
+  async getReviewQueueCount(tenantId: string, year?: number, month?: number) {
     return {
       count: await this.prisma.transactionClassification.count({
-        where: { tenantId, status: 'review' },
+        where: this.reviewQueueWhere(tenantId, year, month),
       }),
+      ...(year != null && month != null ? { period: { year, month } } : { scope: 'all' as const }),
+    };
+  }
+
+  async listReviewQueue(tenantId: string, limit = 10, year?: number, month?: number) {
+    const take = Math.min(20, Math.max(1, Number(limit) || 10));
+    const where = this.reviewQueueWhere(tenantId, year, month);
+
+    const [classifications, total] = await Promise.all([
+      this.prisma.transactionClassification.findMany({
+        where,
+        include: {
+          transaction: {
+            select: {
+              id: true,
+              content: true,
+              amount: true,
+              transactionDate: true,
+              grantId: true,
+            },
+          },
+        },
+        orderBy: [{ transaction: { transactionDate: 'desc' } }, { createdAt: 'desc' }],
+        take,
+      }),
+      this.prisma.transactionClassification.count({ where }),
+    ]);
+
+    return {
+      total,
+      ...(year != null && month != null ? { period: { year, month } } : { scope: 'all' as const }),
+      items: classifications.map((c) => ({
+        id: c.transaction.id,
+        content: c.transaction.content,
+        amount: Number(c.transaction.amount),
+        transactionDate: c.transaction.transactionDate?.toISOString() ?? null,
+        source: c.transaction.grantId ? 'cas' : 'import',
+        debitAccount: c.debitAccount,
+        creditAccount: c.creditAccount,
+        confidence: c.confidenceScore,
+        status: c.status,
+      })),
     };
   }
 
@@ -112,8 +160,10 @@ export class CopilotToolService {
   }
 
   async searchTransactions(tenantId: string, args: Record<string, unknown>) {
-    const keyword = String(args.keyword ?? '');
+    const keyword = String(args.keyword ?? '').trim();
     const sourceArg = String(args.source ?? 'all');
+    const classificationStatus = String(args.classificationStatus ?? 'all');
+    const accountCode = String(args.accountCode ?? '').trim();
     const grantFilter =
       sourceArg === 'cas'
         ? { grantId: { not: null } }
@@ -121,36 +171,103 @@ export class CopilotToolService {
           ? { grantId: null }
           : {};
     const limit = Math.min(20, Math.max(1, Number(args.limit ?? 10)));
-    const items = await this.prisma.transaction.findMany({
-      where: {
-        tenantId,
-        ...grantFilter,
-        ...(keyword
-          ? {
-              OR: [
-                { content: { contains: keyword, mode: 'insensitive' } },
-                { senderAccount: { contains: keyword, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      select: {
-        transactionId: true,
-        content: true,
-        amount: true,
-        transactionDate: true,
-        grantId: true,
-        classification: {
-          select: { debitAccount: true, creditAccount: true, status: true },
-        },
-      },
-      orderBy: { transactionDate: 'desc' },
-      take: limit,
-    });
-    return {
-      items: items.map((t) => ({ ...t, source: t.grantId ? 'cas' : 'import' })),
-      total: items.length,
+
+    const classificationStatusArg =
+      classificationStatus !== 'all' &&
+      (classificationStatus === 'review' ||
+        classificationStatus === 'classified' ||
+        classificationStatus === 'pending')
+        ? (classificationStatus as TransactionStatus)
+        : undefined;
+
+    const classificationFilter: Prisma.TransactionWhereInput =
+      classificationStatusArg || accountCode
+        ? {
+            classification: {
+              is: {
+                ...(classificationStatusArg ? { status: classificationStatusArg } : {}),
+                ...(accountCode
+                  ? { OR: [{ debitAccount: accountCode }, { creditAccount: accountCode }] }
+                  : {}),
+              },
+            },
+          }
+        : {};
+
+    const where: Prisma.TransactionWhereInput = {
+      tenantId,
+      ...grantFilter,
+      ...classificationFilter,
+      ...(keyword
+        ? {
+            OR: [
+              { content: { contains: keyword, mode: 'insensitive' as const } },
+              { senderAccount: { contains: keyword, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
     };
+
+    const [items, total] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where,
+        select: {
+          id: true,
+          transactionId: true,
+          content: true,
+          amount: true,
+          transactionDate: true,
+          grantId: true,
+          classification: {
+            select: { debitAccount: true, creditAccount: true, status: true },
+          },
+        },
+        orderBy: { transactionDate: 'desc' },
+        take: limit,
+      }),
+      this.prisma.transaction.count({ where }),
+    ]);
+
+    return {
+      total,
+      items: items.map((t) => ({
+        id: t.id,
+        bankTransactionId: t.transactionId,
+        content: t.content,
+        amount: Number(t.amount),
+        transactionDate: t.transactionDate?.toISOString() ?? null,
+        source: t.grantId ? 'cas' : 'import',
+        debitAccount: t.classification?.debitAccount ?? null,
+        creditAccount: t.classification?.creditAccount ?? null,
+        classificationStatus: t.classification?.status ?? null,
+      })),
+    };
+  }
+
+  private reviewQueueWhere(tenantId: string, year?: number, month?: number) {
+    const where: {
+      tenantId: string;
+      status: 'review';
+      transaction?: { transactionDate: { gte: Date; lt: Date } };
+    } = { tenantId, status: 'review' };
+
+    if (
+      year != null &&
+      month != null &&
+      Number.isFinite(year) &&
+      Number.isFinite(month) &&
+      month >= 1 &&
+      month <= 12
+    ) {
+      where.transaction = {
+        transactionDate: {
+          gte: new Date(year, month - 1, 1),
+          lt: new Date(year, month, 1),
+        },
+      };
+    }
+
+    return where;
   }
 
   async proposeConfirmTransactionClassification(
@@ -289,11 +406,16 @@ export class CopilotToolService {
   async searchKnowledge(query: string): Promise<KnowledgeSearchResult> {
     if (!query.trim()) return { sections: [], query, totalFound: 0 };
 
-    if (!this.openAiService.isConfigured()) return searchKnowledgeByKeyword(query);
+    const keywordResult = searchKnowledgeByKeyword(query);
+    if (hasStrongKeywordKnowledgeMatch(query)) {
+      return keywordResult;
+    }
+
+    if (!this.openAiService.isConfigured()) return keywordResult;
 
     try {
-      const vector = await this.openAiService.createEmbedding(query);
-      if (!vector) return searchKnowledgeByKeyword(query);
+      const vector = await this.getOrCreateQueryEmbedding(query);
+      if (!vector) return keywordResult;
 
       const vectorStr = `[${vector.join(',')}]`;
       const rows = await this.prisma.$queryRaw<
@@ -305,7 +427,7 @@ export class CopilotToolService {
         LIMIT 2
       `;
 
-      if (rows.length === 0) return searchKnowledgeByKeyword(query);
+      if (rows.length === 0) return keywordResult;
 
       return {
         sections: rows.map((r) => ({ id: r.section_id, title: r.title, content: r.content })),
@@ -316,8 +438,32 @@ export class CopilotToolService {
       this.logger.warn(
         `pgvector knowledge search thất bại, dùng keyword fallback: ${err instanceof Error ? err.message : String(err)}`,
       );
-      return searchKnowledgeByKeyword(query);
+      return keywordResult;
     }
+  }
+
+  private async getOrCreateQueryEmbedding(query: string): Promise<number[] | null> {
+    const normalized = query.trim().toLowerCase();
+    const cacheKey = `copilot:embed:${createHash('sha256').update(normalized).digest('hex')}`;
+
+    try {
+      const cached = await this.redisService.client.get(cacheKey);
+      if (cached) return JSON.parse(cached) as number[];
+    } catch {
+      // cache miss — proceed to OpenAI
+    }
+
+    const vector = await this.openAiService.createEmbedding(query);
+    if (!vector) return null;
+
+    try {
+      const ttl = this.configService.get<number>('COPILOT_EMBEDDING_CACHE_TTL_SECONDS', 3600);
+      await this.redisService.client.set(cacheKey, JSON.stringify(vector), 'EX', ttl);
+    } catch {
+      // non-critical
+    }
+
+    return vector;
   }
 
   async searchCassoPublic(query: string) {

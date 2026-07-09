@@ -97,10 +97,19 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
   },
   {
     name: 'get_review_queue_count',
-    description: 'Đếm số giao dịch đang chờ kế toán xét duyệt (status=review) của toàn tenant.',
+    description:
+      'Đếm số giao dịch đang chờ kế toán xét duyệt (status=review). Mặc định đếm toàn bộ hàng đợi; truyền year+month nếu user hỏi GD chờ duyệt trong một tháng cụ thể (khớp reviewCount trong báo cáo tháng).',
     parameters: {
       type: 'object',
-      properties: {},
+      properties: {
+        year: { type: 'integer', description: 'Tùy chọn — lọc theo năm giao dịch' },
+        month: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 12,
+          description: 'Tùy chọn — lọc theo tháng GD',
+        },
+      },
       required: [],
       additionalProperties: false,
     },
@@ -112,7 +121,52 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
         source: 'X-Cash AI',
       },
     },
-    execute: (service, tenantId) => service.getReviewQueueCount(tenantId),
+    execute: (service, tenantId, args) =>
+      service.getReviewQueueCount(
+        tenantId,
+        args.year != null ? Number(args.year) : undefined,
+        args.month != null ? Number(args.month) : undefined,
+      ),
+  },
+  {
+    name: 'list_review_queue',
+    description:
+      'Liệt kê chi tiết giao dịch đang chờ kế toán xét duyệt (status=review). Dùng khi user hỏi xem danh sách/chi tiết GD chờ duyệt — KHÔNG dùng search_transactions cho mục đích này. Truyền year+month nếu ngữ cảnh là báo cáo tháng cụ thể.',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 20,
+          description: 'Số giao dịch tối đa trả về, mặc định 10',
+        },
+        year: { type: 'integer', description: 'Tùy chọn — lọc theo năm giao dịch' },
+        month: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 12,
+          description: 'Tùy chọn — lọc theo tháng GD',
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+    activity: {
+      final: { kind: 'internal_data', label: 'Giao dịch chờ duyệt', source: 'X-Cash AI' },
+      streaming: {
+        kind: 'internal_data',
+        label: 'Đang lấy danh sách chờ duyệt…',
+        source: 'X-Cash AI',
+      },
+    },
+    execute: (service, tenantId, args) =>
+      service.listReviewQueue(
+        tenantId,
+        Number(args.limit ?? 10),
+        args.year != null ? Number(args.year) : undefined,
+        args.month != null ? Number(args.month) : undefined,
+      ),
   },
   {
     name: 'lookup_chart_account',
@@ -185,13 +239,23 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
   {
     name: 'search_transactions',
     description:
-      'Tìm kiếm giao dịch theo từ khóa nội dung hoặc tài khoản. Dùng source="cas" để lọc giao dịch từ ngân hàng, source="import" cho giao dịch import Excel, source="all" hoặc bỏ qua để tìm tất cả nguồn.',
+      'Tìm giao dịch theo từ khóa nội dung, mã TK Nợ/Có, hoặc trạng thái định khoản. KHÔNG dùng để liệt kê hàng đợi Human Review — dùng list_review_queue. Field id trong kết quả là mã GD nội bộ (dùng cho thẻ duyệt/sửa).',
     parameters: {
       type: 'object',
       properties: {
         keyword: {
           type: 'string',
-          description: 'Từ khóa tìm trong nội dung hoặc số tài khoản gửi',
+          description:
+            'Từ khóa tìm trong nội dung hoặc số tài khoản gửi — để trống nếu lọc theo accountCode/classificationStatus',
+        },
+        accountCode: {
+          type: 'string',
+          description: 'Lọc GD có định khoản Nợ hoặc Có khớp mã TK, vd "642"',
+        },
+        classificationStatus: {
+          type: 'string',
+          enum: ['review', 'classified', 'pending', 'all'],
+          description: 'Lọc theo trạng thái định khoản; mặc định all',
         },
         source: {
           type: 'string',
@@ -205,7 +269,7 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
           description: 'Số kết quả, mặc định 10',
         },
       },
-      required: ['keyword', 'source', 'limit'],
+      required: [],
       additionalProperties: false,
     },
     activity: {
@@ -221,13 +285,14 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
   {
     name: 'propose_confirm_transaction_classification',
     description:
-      'Chỉ dùng khi user yêu cầu rõ ràng xác nhận/duyệt một giao dịch cụ thể (đã biết transactionId hoặc vừa tìm ra qua search_transactions). KHÔNG tự ý gợi ý xác nhận khi user chỉ hỏi thông tin chung. Tool này CHỈ đọc dữ liệu và đề xuất — không tự ghi xác nhận, người dùng phải bấm nút xác nhận trên giao diện.',
+      'Chỉ dùng khi user yêu cầu rõ ràng xác nhận/duyệt một giao dịch cụ thể. transactionId = field id (UUID nội bộ) từ list_review_queue hoặc search_transactions — KHÔNG dùng bankTransactionId. KHÔNG tự ý gợi ý xác nhận khi user chỉ hỏi thông tin chung. Tool này CHỈ đọc dữ liệu và đề xuất — không tự ghi xác nhận, người dùng phải bấm nút xác nhận trên giao diện.',
     parameters: {
       type: 'object',
       properties: {
         transactionId: {
           type: 'string',
-          description: 'ID giao dịch cần đề xuất xác nhận',
+          description:
+            'Mã GD nội bộ (UUID) — field id từ list_review_queue hoặc search_transactions',
         },
       },
       required: ['transactionId'],
@@ -252,13 +317,14 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
   {
     name: 'propose_correct_transaction_classification',
     description:
-      'Chỉ dùng khi user tự nêu rõ muốn sửa một giao dịch cụ thể thành cặp tài khoản Nợ/Có nào (đã có transactionId, debitAccount, creditAccount do user cung cấp). KHÔNG tự đề xuất định khoản mới thay user, KHÔNG tự ý gợi ý sửa khi user chỉ hỏi thông tin chung. Tool này CHỈ đọc dữ liệu, validate mã tài khoản và đề xuất — không tự ghi sửa, người dùng phải bấm nút trên giao diện.',
+      'Chỉ dùng khi user tự nêu rõ muốn sửa một giao dịch cụ thể thành cặp tài khoản Nợ/Có mới. transactionId = field id (UUID nội bộ) từ list_review_queue hoặc search_transactions. KHÔNG tự đề xuất định khoản mới thay user. Tool này CHỈ đọc dữ liệu, validate mã tài khoản và đề xuất — không tự ghi sửa, người dùng phải bấm nút trên giao diện.',
     parameters: {
       type: 'object',
       properties: {
         transactionId: {
           type: 'string',
-          description: 'ID giao dịch cần đề xuất sửa định khoản',
+          description:
+            'Mã GD nội bộ (UUID) — field id từ list_review_queue hoặc search_transactions',
         },
         debitAccount: {
           type: 'string',

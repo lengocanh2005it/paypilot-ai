@@ -1,5 +1,6 @@
 import type { CopilotActivity } from '@xcash/shared-types';
 import { ACTION_CARD_TOOLS, COPILOT_TOOLS } from './copilot-tool.registry';
+import { KNOWLEDGE_SECTION_IDS_HIDDEN_FROM_SOURCES } from './knowledge';
 
 export type { CopilotActivity };
 
@@ -16,6 +17,13 @@ const STREAMING_ACTIVITY_MAP: Record<string, ToolActivityMeta> = Object.fromEntr
 export function getStreamingActivityMeta(toolName: string): ToolActivityMeta | undefined {
   return STREAMING_ACTIVITY_MAP[toolName];
 }
+
+/** Emitted immediately after SSE headers — before the first OpenAI round-trip. */
+export const COPILOT_INITIAL_STREAM_ACTIVITY: ToolActivityMeta = {
+  kind: 'internal_data',
+  label: 'Đang phân tích câu hỏi…',
+  source: 'AI Copilot',
+};
 
 function formatSnippet(name: string, data: unknown): string | undefined {
   if (data == null) return undefined;
@@ -64,8 +72,29 @@ function formatSnippet(name: string, data: unknown): string | undefined {
           .join('\n');
       }
       case 'get_review_queue_count': {
-        const d = data as { count: number };
-        return `${d.count} giao dịch đang chờ xét duyệt`;
+        const d = data as { count?: number };
+        return d.count != null ? `${d.count} giao dịch chờ duyệt` : undefined;
+      }
+      case 'list_review_queue': {
+        const d = data as {
+          total: number;
+          items: Array<{
+            id: string;
+            content: string;
+            amount: number;
+            debitAccount: string;
+            creditAccount: string;
+            confidence: number;
+          }>;
+        };
+        const preview = d.items
+          .slice(0, 5)
+          .map(
+            (t) =>
+              `• ${t.content?.slice(0, 40)} — Nợ ${t.debitAccount}/Có ${t.creditAccount} (${t.confidence}%)`,
+          )
+          .join('\n');
+        return `${d.total} giao dịch chờ duyệt\n${preview}`;
       }
       case 'lookup_chart_account': {
         const d = data as {
@@ -95,12 +124,20 @@ function formatSnippet(name: string, data: unknown): string | undefined {
       case 'search_transactions': {
         const d = data as {
           total: number;
-          items: Array<{ content: string; amount: number; transactionDate: string }>;
+          items: Array<{
+            id: string;
+            content: string;
+            amount: number;
+            debitAccount?: string | null;
+            creditAccount?: string | null;
+          }>;
         };
         const preview = d.items
           .slice(0, 3)
           .map(
-            (t) => `• ${t.content?.slice(0, 50)} — ${Math.abs(t.amount).toLocaleString('vi-VN')}đ`,
+            (t) =>
+              `• [${t.id.slice(0, 8)}…] ${t.content?.slice(0, 40)} — ${Math.abs(t.amount).toLocaleString('vi-VN')}đ` +
+              (t.debitAccount ? ` (Nợ ${t.debitAccount}/Có ${t.creditAccount})` : ''),
           )
           .join('\n');
         return `${d.total} kết quả\n${preview}`;
@@ -159,6 +196,7 @@ export function buildActivities(
         | undefined;
       if (data?.sections?.length) {
         for (const section of data.sections) {
+          if (KNOWLEDGE_SECTION_IDS_HIDDEN_FROM_SOURCES.has(section.id)) continue;
           const key = `knowledge:${section.id}`;
           if (seen.has(key)) continue;
           seen.add(key);

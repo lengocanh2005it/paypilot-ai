@@ -234,3 +234,126 @@ describe('CopilotToolService — propose_correct_transaction_classification', ()
     expect(typeof result.reason).toBe('string');
   });
 });
+
+describe('CopilotToolService — listReviewQueue', () => {
+  let service: CopilotToolService;
+
+  const prisma = {
+    transactionClassification: {
+      findMany: jest.fn(),
+      count: jest.fn(),
+    },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CopilotToolService,
+        { provide: ReportService, useValue: {} },
+        { provide: OnboardingService, useValue: {} },
+        { provide: PrismaService, useValue: prisma },
+        { provide: RedisService, useValue: { client: { get: jest.fn(), set: jest.fn() } } },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
+        { provide: OpenAiService, useValue: {} },
+      ],
+    }).compile();
+
+    service = module.get(CopilotToolService);
+  });
+
+  it('trả danh sách GD status=review với mã id nội bộ', async () => {
+    prisma.transactionClassification.findMany.mockResolvedValue([
+      {
+        debitAccount: '642',
+        creditAccount: '112',
+        confidenceScore: 72,
+        status: 'review',
+        transaction: {
+          id: 'uuid-1',
+          content: 'Thanh toán điện',
+          amount: -500000,
+          transactionDate: new Date('2026-07-01'),
+          grantId: 'grant-1',
+        },
+      },
+    ]);
+    prisma.transactionClassification.count.mockResolvedValue(1);
+
+    const result = await service.listReviewQueue('tenant-1', 10);
+
+    expect(result.total).toBe(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      id: 'uuid-1',
+      debitAccount: '642',
+      creditAccount: '112',
+      status: 'review',
+      source: 'cas',
+    });
+  });
+});
+
+describe('CopilotToolService — searchTransactions', () => {
+  let service: CopilotToolService;
+
+  const prisma = {
+    transaction: {
+      findMany: jest.fn(),
+      count: jest.fn(),
+    },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CopilotToolService,
+        { provide: ReportService, useValue: {} },
+        { provide: OnboardingService, useValue: {} },
+        { provide: PrismaService, useValue: prisma },
+        { provide: RedisService, useValue: { client: { get: jest.fn(), set: jest.fn() } } },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
+        { provide: OpenAiService, useValue: {} },
+      ],
+    }).compile();
+
+    service = module.get(CopilotToolService);
+  });
+
+  it('trả id nội bộ và lọc classificationStatus=review', async () => {
+    prisma.transaction.findMany.mockResolvedValue([
+      {
+        id: 'uuid-search-1',
+        transactionId: 'BANK-REF-1',
+        content: 'Thanh toán',
+        amount: -100000,
+        transactionDate: new Date('2026-07-01'),
+        grantId: 'g1',
+        classification: { debitAccount: '642', creditAccount: '112', status: 'review' },
+      },
+    ]);
+    prisma.transaction.count.mockResolvedValue(1);
+
+    const result = await service.searchTransactions('tenant-1', {
+      classificationStatus: 'review',
+      limit: 5,
+    });
+
+    expect(prisma.transaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          classification: { is: { status: 'review' } },
+        }),
+      }),
+    );
+    expect(result.items[0]).toMatchObject({
+      id: 'uuid-search-1',
+      bankTransactionId: 'BANK-REF-1',
+      classificationStatus: 'review',
+    });
+    expect(result.total).toBe(1);
+  });
+});

@@ -5,6 +5,8 @@ import {
   Building2,
   ClipboardList,
   HelpCircle,
+  Phone,
+  Sparkles,
   TrendingUp,
 } from 'lucide-react';
 
@@ -15,6 +17,8 @@ const SUGGESTIONS = [
   { icon: Building2, text: 'Đã liên kết ngân hàng chưa?' },
   { icon: HelpCircle, text: 'Sao không thấy giao dịch từ Casso?' },
   { icon: BookOpen, text: 'TK 642 trong TT133 là gì?' },
+  { icon: Phone, text: 'Liên hệ CASSO ở đâu?' },
+  { icon: Sparkles, text: 'Copilot làm được gì?' },
 ];
 
 interface CopilotWelcomeStateProps {
@@ -31,8 +35,8 @@ export function CopilotWelcomeState({ onSendMessage }: CopilotWelcomeStateProps)
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">AI Copilot</h1>
           <p className="mt-1 text-sm text-muted-foreground max-w-sm">
-            Hỏi đáp tài chính bằng ngôn ngữ tự nhiên — doanh thu, chi phí, định khoản TT133, liên
-            kết ngân hàng.
+            Hỏi đáp tài chính, tra cứu doanh thu/chi phí, định khoản TT133 — và đề xuất duyệt/sửa
+            giao dịch ngay trong chat.
           </p>
         </div>
       </div>

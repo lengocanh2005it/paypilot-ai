@@ -3,6 +3,8 @@ export interface KnowledgeSection {
   title: string;
   keywords: string[];
   content: string;
+  /** When false, Copilot may still read this section but UI won't cite it as a public source. */
+  citeInSources?: boolean;
 }
 
 export const CASSO_KNOWLEDGE: KnowledgeSection[] = [
@@ -10,16 +12,18 @@ export const CASSO_KNOWLEDGE: KnowledgeSection[] = [
     id: 'casso_overview',
     title: 'Casso là gì?',
     keywords: ['casso', 'casso là gì', 'casso là công ty', 'bankhub', 'open banking', 'fintech'],
-    content: `**Casso** (casso.vn) là công ty fintech Việt Nam chuyên cung cấp hạ tầng ngân hàng mở (open banking) cho doanh nghiệp. Casso KHÔNG phải sản phẩm của X-Cash AI — đây là hai công ty hoàn toàn độc lập.
+    content: `**Casso** (casso.vn) là công ty fintech Việt Nam chuyên cung cấp hạ tầng ngân hàng mở (open banking) cho doanh nghiệp.
 
-Casso cung cấp các sản phẩm chính:
-- **Cas Link**: Liên kết tài khoản ngân hàng, cho phép ứng dụng đọc số dư và lịch sử giao dịch
-- **Cas Balance Hook**: Webhook real-time, đẩy thông tin giao dịch ngay khi phát sinh
+**X-Cash AI** là **sản phẩm do Casso phát triển** — không phải công ty độc lập hay đối tác tích hợp bên ngoài. Mục đích: giúp SME Việt Nam **tự động định khoản giao dịch ngân hàng** theo chuẩn **TT133**, giảm thời gian nhập liệu thủ công và tổng hợp báo cáo thu chi real-time.
+
+X-Cash AI được xây dựng trên nền tảng hạ tầng Casso:
+- Nhận giao dịch real-time qua **Cas Balance Hook**
+- Mỗi doanh nghiệp liên kết tài khoản ngân hàng qua **Cas Link** (Cài đặt → Ngân hàng)
+
+Casso còn cung cấp các sản phẩm hạ tầng khác (ngoài phạm vi X-Cash AI):
 - **payOS**: Cổng thanh toán online, tạo link/QR thanh toán
-- **Casso Flow**: Tự động hóa quy trình tài chính, trigger hành động theo điều kiện
-- **Cas ID**: Định danh ngân hàng, xác minh thông tin chủ tài khoản
-
-**X-Cash AI** là đối tác tích hợp với Casso: nhận giao dịch ngân hàng real-time qua **Cas Balance Hook**, mỗi doanh nghiệp liên kết tài khoản NH qua **Cas Link**. X-Cash AI là lớp AI định khoản tự động theo chuẩn TT133 — không thay thế Casso mà bổ sung thêm tính năng kế toán lên trên.`,
+- **Casso Flow**: Tự động hóa quy trình tài chính
+- **Cas ID**: Định danh ngân hàng, xác minh chủ tài khoản`,
   },
   {
     id: 'casso_products',
@@ -122,5 +126,31 @@ Luồng xử lý sau khi nhận GD:
 2. AI phân loại định khoản (gpt-4o-mini + pgvector few-shot)
 3. Nếu độ tin cậy ≥ 85% → tự động approve
 4. Nếu < 85% → đưa vào hàng đợi Human Review cho kế toán xét duyệt`,
+  },
+  {
+    id: 'casso_contact',
+    title: 'Thông tin liên hệ CASSO',
+    keywords: [
+      'liên hệ casso',
+      'contact casso',
+      'hotline casso',
+      'số điện thoại casso',
+      'email casso',
+      'giờ làm việc casso',
+      'working hours casso',
+      'hợp tác casso',
+      'hỗ trợ casso',
+      'tổng đài casso',
+    ],
+    content: `**Công ty TNHH CASSO**
+- **Tổng đài hỗ trợ**: **1900 8144**
+- **Điện thoại**: **0974 792 484**
+- **Email**: **support@casso.vn**
+- **Website**: **https://casso.vn**
+- **Giờ làm việc**: **8h00 – 17h30, Thứ Hai – Thứ Sáu**
+- **Địa chỉ**: I.102D, Nhà A, Khu Công Nghệ Phần Mềm, ĐHQG TP.HCM, Phường Linh Xuân, TP Thủ Đức, TP HCM
+- **MST**: 0316794479
+
+**Lưu ý**: CASSO chỉ hỗ trợ trong giờ hành chính (**8h-17h30, T2-T6**). Ngoài khung giờ này, phản hồi từ tổng đài có thể chậm hơn.`,
   },
 ];

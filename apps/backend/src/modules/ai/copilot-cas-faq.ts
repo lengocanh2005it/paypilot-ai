@@ -1,5 +1,7 @@
 const FAQ: Record<string, string> = {
-  overview: `**Casso** (casso.vn) là công ty fintech Việt Nam chuyên cung cấp hạ tầng ngân hàng mở (open banking) cho doanh nghiệp. Casso KHÔNG phải sản phẩm của X-Cash AI — đây là hai công ty độc lập. Casso cung cấp các sản phẩm: **Cas Link** (liên kết tài khoản ngân hàng), **Cas Balance Hook** (webhook giao dịch real-time), **payOS** (cổng thanh toán), **Casso Flow** (tự động hóa tài chính), **Cas ID** (định danh ngân hàng). X-Cash AI là đối tác tích hợp với Casso: nhận giao dịch ngân hàng real-time qua **Cas Balance Hook**, mỗi doanh nghiệp liên kết tài khoản NH qua **Cas Link** (Cài đặt → Ngân hàng). X-Cash AI là lớp AI định khoản tự động theo chuẩn TT133 và tạo báo cáo kế toán — không thay thế Casso mà bổ sung lên trên.`,
+  overview: `**Casso** (casso.vn) là công ty fintech Việt Nam chuyên cung cấp hạ tầng ngân hàng mở (open banking) cho doanh nghiệp. Casso cung cấp các sản phẩm hạ tầng: **Cas Link** (liên kết tài khoản ngân hàng), **Cas Balance Hook** (webhook giao dịch real-time), **payOS** (cổng thanh toán), **Casso Flow** (tự động hóa tài chính), **Cas ID** (định danh ngân hàng).
+
+**X-Cash AI** là sản phẩm do Casso phát triển — không phải đối tác riêng. Mục đích: giúp SME tự động định khoản giao dịch ngân hàng theo chuẩn TT133 và tạo báo cáo kế toán. X-Cash AI nhận giao dịch real-time qua **Cas Balance Hook**, mỗi doanh nghiệp liên kết tài khoản NH qua **Cas Link** (Cài đặt → Ngân hàng).`,
 
   how_to_link: `Để liên kết ngân hàng với X-Cash AI:
 1. Admin vào **Cài đặt → Ngân hàng** (đường dẫn: /settings).

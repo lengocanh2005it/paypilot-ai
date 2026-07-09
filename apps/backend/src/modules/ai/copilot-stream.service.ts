@@ -3,7 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { AiUsageLogService } from './ai-usage-log.service';
-import { buildActivities, getStreamingActivityMeta } from './copilot-activity.helper';
+import {
+  buildActivities,
+  COPILOT_INITIAL_STREAM_ACTIVITY,
+  getStreamingActivityMeta,
+} from './copilot-activity.helper';
 import { CopilotContextService } from './copilot-context.service';
 import { CopilotConversationService } from './copilot-conversation.service';
 import { CopilotQuotaService } from './copilot-quota.service';
@@ -117,12 +121,17 @@ export class CopilotStreamService {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
 
     const writeEvent = (event: string, data: unknown) => {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       (res as unknown as { flush?: () => void }).flush?.();
     };
+
+    res.flushHeaders();
+
+    if (useFunctionCalling) {
+      writeEvent('activity', COPILOT_INITIAL_STREAM_ACTIVITY);
+    }
 
     let wasAborted = false;
     let accumulatedContent = '';

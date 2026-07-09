@@ -14,7 +14,9 @@ export const XCASH_FEATURES_KNOWLEDGE: KnowledgeSection[] = [
       'bạn là ai',
       'bạn làm được gì',
     ],
-    content: `**X-Cash AI** là nền tảng kế toán thông minh cho doanh nghiệp vừa và nhỏ (SME) Việt Nam. X-Cash AI kết hợp tích hợp ngân hàng (qua Casso) với AI định khoản tự động theo chuẩn **TT133**.
+    content: `**X-Cash AI** là sản phẩm do **Casso** phát triển — nền tảng kế toán thông minh cho doanh nghiệp vừa và nhỏ (SME) Việt Nam. Mục đích: tự động định khoản giao dịch ngân hàng theo chuẩn **TT133**, giảm nhập liệu thủ công và tổng hợp báo cáo thu chi real-time.
+
+X-Cash AI dùng hạ tầng ngân hàng mở của Casso (Cas Link + Cas Balance Hook) kết hợp AI định khoản.
 
 Các tính năng chính:
 - **Nhận giao dịch real-time**: Kết nối ngân hàng qua Cas Link, nhận GD tự động qua Cas Balance Hook
@@ -22,7 +24,7 @@ Các tính năng chính:
 - **Human Review**: Giao dịch AI không chắc chắn (<85%) → kế toán xét duyệt tay
 - **Import Excel**: Nhập giao dịch từ file Excel (sao kê ngân hàng tải về)
 - **Báo cáo thu chi**: Tổng hợp doanh thu, chi phí, lãi/lỗ theo tháng
-- **AI Copilot**: Trợ lý AI trả lời câu hỏi về tài chính, kế toán, phân tích dữ liệu của doanh nghiệp`,
+- **AI Copilot**: Trợ lý AI — vừa hỏi đáp tài chính/kế toán, vừa **tra cứu số liệu thật** (doanh thu, chi phí, GD…) và **đề xuất thao tác** (duyệt/sửa định khoản qua thẻ hành động trong chat). Chi tiết: xem mục AI Copilot.`,
   },
   {
     id: 'xcash_human_review',
@@ -44,6 +46,13 @@ Luồng hoạt động:
 2. Kế toán (role: accountant hoặc admin) vào trang Giao dịch → lọc "Chờ duyệt"
 3. Xem đề xuất AI, điều chỉnh nếu cần, nhấn **Duyệt** hoặc **Từ chối**
 4. Sau khi duyệt → GD được ghi nhận vào sổ kế toán chính thức
+
+**Duyệt qua AI Copilot** (thay cho hoặc bổ sung bước trên):
+- Vào **Human Review** (Giao dịch chờ duyệt) → copy **Mã GD** ở cột tương ứng
+- Trong **AI Copilot**, nhắn rõ: "Duyệt giao dịch [mã GD]" hoặc tìm GD trước rồi yêu cầu duyệt
+- Copilot hiển thị **thẻ đề xuất xác nhận** — bạn kiểm tra và bấm nút xác nhận; hệ thống **chưa** tự ghi nhận cho đến khi bạn bấm
+- Muốn **sửa định khoản** (Nợ/Có mới do bạn chỉ định): nêu rõ mã GD + mã TK Nợ + mã TK Có → Copilot hiện thẻ đề xuất sửa, bạn bấm xác nhận
+- Chỉ **Admin** và **Accountant** được dùng thao tác duyệt/sửa qua Copilot
 
 Phân quyền:
 - **Admin, Accountant**: được duyệt/từ chối GD
@@ -110,8 +119,56 @@ Lưu ý:
 AI Copilot có thể lấy và phân tích báo cáo này khi bạn hỏi về tình hình tài chính.`,
   },
   {
+    id: 'xcash_copilot',
+    title: 'AI Copilot — Hỏi đáp, tra cứu dữ liệu & thao tác',
+    keywords: [
+      'ai copilot',
+      'copilot',
+      'trợ lý ai',
+      'bạn làm được gì',
+      'copilot làm gì',
+      'thao tác',
+      'action',
+      'duyệt qua copilot',
+      'sửa định khoản copilot',
+      'thẻ hành động',
+      'action card',
+      'lịch sử copilot',
+      'hỏi đáp ai',
+    ],
+    content: `**AI Copilot** không chỉ trả lời lý thuyết — đây là trợ lý tích hợp trong X-Cash AI, có thể làm 3 nhóm việc:
+
+**1. Hỏi đáp & hướng dẫn**
+- Giải thích **TT133**, mã tài khoản, khái niệm kế toán
+- Hướng dẫn **Casso**, **Cas Link**, liên kết ngân hàng, import Excel, Human Review, gói dịch vụ
+
+**2. Tra cứu dữ liệu thật của doanh nghiệp bạn** (real-time từ hệ thống)
+- Tổng **doanh thu / chi phí / lãi-lỗ** tháng, so sánh tháng trước
+- **Top tài khoản** phát sinh nhiều nhất
+- Số GD **chờ xét duyệt** (Human Review)
+- Trạng thái **liên kết ngân hàng**
+- **Tìm giao dịch** theo từ khóa nội dung hoặc mã tài khoản
+- Tra mã **tài khoản TT133** trong danh mục của doanh nghiệp
+
+**3. Đề xuất thao tác (thẻ hành động trong chat)** — Copilot **không tự ghi** vào hệ thống; bạn phải xem thẻ và bấm nút xác nhận:
+- **Đề xuất xác nhận (duyệt) giao dịch**: khi bạn yêu cầu rõ ràng duyệt một GD cụ thể (cần **mã GD** — copy từ cột Mã GD ở trang Human Review hoặc sau khi Copilot tìm giúp GD đó)
+- **Đề xuất sửa định khoản**: khi bạn nêu rõ mã GD + mã TK **Nợ** mới + mã TK **Có** mới (do bạn chỉ định, Copilot không tự bịa định khoản)
+- Chỉ **Admin** và **Accountant** dùng được hai thao tác trên; **Viewer** chỉ hỏi đáp và xem số liệu
+
+**Lịch sử & quota chat**
+- Xem lại cuộc chat cũ: **Cài đặt → Lịch sử Copilot** (hoặc sidebar Copilot)
+- Mỗi gói có giới hạn **lượt gửi câu hỏi Copilot**/tháng (riêng với quota xử lý giao dịch ngân hàng) — xem trong **Cài đặt → Gói dịch vụ**
+
+Ví dụ câu hỏi:
+- "Doanh thu tháng này bao nhiêu?"
+- "Có bao nhiêu giao dịch chờ duyệt?"
+- "Duyệt giao dịch [dán mã GD]"
+- "Sửa giao dịch [mã GD] thành Nợ 642 Có 112"`,
+  },
+  {
     id: 'xcash_rbac',
     title: 'Phân quyền trong X-Cash AI (RBAC)',
+    citeInSources: false,
     keywords: [
       'phân quyền',
       'role',
@@ -156,6 +213,7 @@ AI Copilot có thể lấy và phân tích báo cáo này khi bạn hỏi về t
     content: `X-Cash AI hoạt động theo mô hình subscription (gói thuê bao theo tháng):
 
 - Mỗi gói có giới hạn số **giao dịch được xử lý** trong tháng (quota GD)
+- Mỗi gói còn có giới hạn **lượt chat AI Copilot**/tháng (quota Copilot) — khác với quota GD
 - Hết quota → hệ thống tạm dừng nhận GD mới từ Casso cho đến khi gia hạn hoặc nâng cấp
 - GD import Excel không bị tính vào quota từ Casso (tùy cấu hình gói)
 
