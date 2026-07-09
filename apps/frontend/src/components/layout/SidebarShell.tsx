@@ -84,7 +84,7 @@ export function SidebarShell({
         </div>
       </div>
 
-      <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
+      <nav className="scrollbar-hidden flex-1 space-y-4 overflow-y-auto px-3 py-4">
         <div className="space-y-1">
           {!collapsed && navLabel ? (
             <p className="px-3 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
