@@ -1,6 +1,7 @@
 import { Injectable, StreamableFile } from '@nestjs/common';
 import { Prisma, TransactionDirection, TransactionSource, TransactionStatus } from '@prisma/client';
 import * as XLSX from 'xlsx';
+import { paginateParams, paginateResult } from '../../common/util/pagination.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AccountBreakdownQueryDto } from './dto/account-breakdown.dto';
 import { buildExportWorkbook } from './report-excel.util';
@@ -375,14 +376,9 @@ export class ReportService {
     }
 
     const total = items.length;
-    const start = (page - 1) * limit;
+    const { skip: start } = paginateParams(page, limit);
 
-    return {
-      items: items.slice(start, start + limit),
-      page,
-      limit,
-      total,
-    };
+    return paginateResult(items.slice(start, start + limit), total, page, limit);
   }
 
   async getByAccount(tenantId: string, fromDate: string, toDate: string) {

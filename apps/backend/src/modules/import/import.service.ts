@@ -9,6 +9,7 @@ import {
 import type { TransactionDirection } from '@xcash/shared-types';
 import type { Queue } from 'bullmq';
 import * as XLSX from 'xlsx';
+import { paginateParams, paginateResult } from '../../common/util/pagination.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WEBHOOK_QUEUE } from '../../queue/queue.module';
 import { AI_CLASSIFY_JOB } from '../ai/classification.processor';
@@ -453,7 +454,7 @@ export class ImportService {
   // ------------------------------------------------------------------ history
 
   async getHistory(tenantId: string, page: number, limit: number) {
-    const skip = (page - 1) * limit;
+    const { skip } = paginateParams(page, limit);
     const [items, total] = await Promise.all([
       this.prisma.transactionImportBatch.findMany({
         where: { tenantId },
@@ -472,8 +473,8 @@ export class ImportService {
     });
     const userMap = new Map(users.map((u) => [u.id, u.name]));
 
-    return {
-      items: items.map((i) => ({
+    return paginateResult(
+      items.map((i) => ({
         id: i.id,
         fileName: i.fileName,
         totalRows: i.totalRows,
@@ -485,7 +486,7 @@ export class ImportService {
       total,
       page,
       limit,
-    };
+    );
   }
 
   // ------------------------------------------------------------------ template

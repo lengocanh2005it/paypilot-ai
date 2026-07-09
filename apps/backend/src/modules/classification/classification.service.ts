@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ClassificationType, Prisma, TransactionStatus } from '@prisma/client';
+import { paginateParams, paginateResult } from '../../common/util/pagination.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmbeddingService } from '../ai/embedding.service';
 import type { CorrectClassificationDto } from './dto/review.dto';
@@ -38,7 +39,7 @@ export class ClassificationService {
     limit: number,
     opts?: { search?: string; minConfidence?: number; maxConfidence?: number },
   ) {
-    const skip = (page - 1) * limit;
+    const { skip } = paginateParams(page, limit);
     const search = opts?.search?.trim();
     const { minConfidence, maxConfidence } = opts ?? {};
 
@@ -73,7 +74,7 @@ export class ClassificationService {
       this.prisma.transactionClassification.count({ where }),
     ]);
 
-    return { items, total, page, limit };
+    return paginateResult(items, total, page, limit);
   }
 
   async confirm(tenantId: string, classificationId: string, userId: string, source?: 'copilot') {
