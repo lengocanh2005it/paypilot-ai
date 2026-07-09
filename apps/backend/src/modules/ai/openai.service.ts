@@ -6,6 +6,8 @@ import { AiUsageLogService } from './ai-usage-log.service';
 import { buildActivities } from './copilot-activity.helper';
 import type { CopilotToolService } from './copilot-tool.service';
 import { buildCopilotTools } from './copilot-tools.factory';
+import { isQuotaOrBillingError, shouldFallbackProvider } from './utils/llm-error.util';
+import { sanitizeCopilotOutput } from './utils/llm-output.util';
 
 export type { CopilotActivity };
 
@@ -20,26 +22,6 @@ export interface FewShotExample {
   content: string;
   debitAccount: string;
   creditAccount: string;
-}
-
-function isRetryableError(err: unknown): boolean {
-  if (err instanceof Error && 'status' in err) {
-    const status = (err as { status: number }).status;
-    if (status === 429 || status === 402 || (status >= 500 && status <= 503)) {
-      return true;
-    }
-  }
-  if (err instanceof Error) {
-    const msg = err.message.toLowerCase();
-    if (
-      msg.includes('insufficient_quota') ||
-      msg.includes('econnreset') ||
-      msg.includes('etimedout')
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 @Injectable()
@@ -64,7 +46,7 @@ export class OpenAiService {
       'text-embedding-3-small',
     );
     this.chatModel = this.configService.get<string>('OPENAI_CHAT_MODEL', 'gpt-4o-mini');
-    this.client = apiKey ? new OpenAI({ apiKey, maxRetries: 3 }) : null;
+    this.client = apiKey ? new OpenAI({ apiKey, maxRetries: 0 }) : null;
 
     // Jina fallback for embeddings
     const jinaKey = this.configService.get<string>('JINA_API_KEY', '');
@@ -126,10 +108,11 @@ export class OpenAiService {
 
         return response.data[0]?.embedding ?? null;
       } catch (err) {
-        if (isRetryableError(err) && this.jinaClient) {
-          this.logger.warn(
-            `OpenAI embedding failed, falling back to Jina: ${err instanceof Error ? err.message : String(err)}`,
-          );
+        if (shouldFallbackProvider(err) && this.jinaClient) {
+          const reason = isQuotaOrBillingError(err)
+            ? 'OpenAI hết quota/credit, chuyển Jina ngay'
+            : 'OpenAI embedding failed, falling back to Jina';
+          this.logger.warn(`${reason}: ${err instanceof Error ? err.message : String(err)}`);
         } else {
           throw err;
         }
@@ -174,11 +157,13 @@ Luôn trả lời bằng tiếng Việt, ngắn gọn, có số liệu cụ th�
 - Số liệu: số tiền (**1.500.000đ**), phần trăm (**85%**), ngày/tháng (**tháng 7/2026**), số lượng (**12 giao dịch**), mã TK (**Nợ 112**, **Có 511**).
 - Từ khóa nghiệp vụ & giới thiệu: **X-Cash AI**, **AI Copilot**, **TT133**, **doanh thu**, **chi phí**, **lãi/lỗ**, **định khoản**, **giao dịch chờ duyệt**, **báo cáo thu chi**, **kế toán SME**.
 Khi giới thiệu bản thân hoặc liệt kê khả năng, cũng phải in đậm các từ khóa trên — không chỉ khi trả lời có số liệu. Không in đậm cả câu, chỉ in đậm đúng cụm quan trọng.
+- KHÔNG dùng heading markdown (#, ##, ###) hay đường kẻ ---; tiêu đề mục đặt trên dòng riêng và bọc **...**, danh sách dùng dấu -.
 
 Phạm vi hỗ trợ:
 - Trả lời các câu hỏi về tài chính, kế toán, giao dịch, định khoản TT133, báo cáo thu chi của doanh nghiệp trên X-Cash AI.
 - LUÔN trả lời thân thiện các câu hỏi xã giao hoặc về chính bạn (ví dụ "bạn là ai", "bạn làm được gì", "chào bạn"): giới thiệu ngắn gọn, in đậm tên **AI Copilot**, **X-Cash AI**, **TT133** và các khả năng chính (**doanh thu**, **chi phí**, **lãi/lỗ**, **giao dịch chờ duyệt**, **định khoản**...).
 - Chỉ từ chối khi người dùng hỏi chủ đề thật sự không liên quan đến vai trò này (lập trình, đời sống, kiến thức chung, thời sự...). Khi đó lịch sự từ chối và nhắc rằng bạn chỉ hỗ trợ về tài chính/kế toán của doanh nghiệp.
+- TUYỆT ĐỐI không dùng thẻ think / reasoning, không hiển thị suy nghĩ nội bộ — chỉ trả lời nội dung cuối cho người dùng.
 
 Dữ liệu tài chính hiện tại của doanh nghiệp:
 ${financialContext}`;
@@ -210,12 +195,16 @@ ${financialContext}`;
           });
         }
 
-        return response.choices[0]?.message?.content ?? 'Xin lỗi, tôi không thể trả lời lúc này.';
+        return sanitizeCopilotOutput(
+          response.choices[0]?.message?.content ?? '',
+          'Xin lỗi, tôi không thể trả lời lúc này.',
+        );
       } catch (error) {
-        if (isRetryableError(error) && this.minimaxClient) {
-          this.logger.warn(
-            `OpenAI chat failed, falling back to MiniMax: ${error instanceof Error ? error.message : String(error)}`,
-          );
+        if (shouldFallbackProvider(error) && this.minimaxClient) {
+          const reason = isQuotaOrBillingError(error)
+            ? 'OpenAI hết quota/credit, chuyển MiniMax ngay'
+            : 'OpenAI chat failed, falling back to MiniMax';
+          this.logger.warn(`${reason}: ${error instanceof Error ? error.message : String(error)}`);
         } else {
           this.logger.error(
             'Copilot chat failed',
@@ -247,7 +236,10 @@ ${financialContext}`;
           });
         }
 
-        return response.choices[0]?.message?.content ?? 'Xin lỗi, tôi không thể trả lời lúc này.';
+        return sanitizeCopilotOutput(
+          response.choices[0]?.message?.content ?? '',
+          'Xin lỗi, tôi không thể trả lời lúc này.',
+        );
       } catch (error) {
         this.logger.error(
           'MiniMax fallback chat also failed',
@@ -281,10 +273,14 @@ ${financialContext}`;
         role,
       );
       if (!runner) {
-        return {
-          reply: 'AI Copilot chưa được cấu hình. Vui lòng liên hệ quản trị viên.',
-          activities: [],
-        };
+        const reply = await this.chatCopilot(
+          message,
+          history,
+          financialContext ?? '',
+          tenantId,
+          conversationId,
+        );
+        return { reply, activities: [] };
       }
 
       runner.on('functionToolCall', (call) => {
@@ -292,7 +288,10 @@ ${financialContext}`;
         calledTools.push(call.name);
       });
 
-      const reply = (await runner.finalContent()) ?? 'Xin lỗi, tôi không thể trả lời lúc này.';
+      const reply = sanitizeCopilotOutput(
+        (await runner.finalContent()) ?? '',
+        'Xin lỗi, tôi không thể trả lời lúc này.',
+      );
       const usage = await runner.totalUsage();
       this.aiUsageLogService.record({
         tenantId,
@@ -336,6 +335,7 @@ Bọc phần quan trọng trong **...**:
 - Số liệu: tiền (**1.500.000đ**), phần trăm (**85%**), ngày/tháng (**tháng 7/2026**), mã TK (**Nợ 112**, **Có 511**)
 - Từ khóa: **X-Cash AI**, **AI Copilot**, **TT133**, **doanh thu**, **chi phí**, **lãi/lỗ**, **định khoản**
 - Khi nói về dữ liệu của doanh nghiệp: dùng "của doanh nghiệp bạn" / "của bạn" thay vì chung chung
+- KHÔNG dùng heading markdown (#, ##, ###) hay đường kẻ --- trong câu trả lời; tiêu đề mục đặt trên dòng riêng và bọc **...**, danh sách dùng dấu -
 
 ## Phạm vi hỗ trợ
 Trả lời tất cả câu hỏi về:
@@ -414,7 +414,7 @@ Không tiết lộ tên tool kỹ thuật, grantId, accessToken, JSON thô. Luô
         max_tokens: 1024,
         stream: true,
       },
-      { maxChatCompletions: 5 },
+      { maxChatCompletions: 5, maxRetries: 0 },
     );
   }
 

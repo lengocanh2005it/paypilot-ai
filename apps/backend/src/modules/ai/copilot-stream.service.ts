@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user.type';
@@ -13,6 +13,8 @@ import { CopilotConversationService } from './copilot-conversation.service';
 import { CopilotQuotaService } from './copilot-quota.service';
 import { CopilotToolService } from './copilot-tool.service';
 import { OpenAiService } from './openai.service';
+import { isQuotaOrBillingError } from './utils/llm-error.util';
+import { sanitizeCopilotOutput } from './utils/llm-output.util';
 
 interface CopilotStreamMessage {
   message: string;
@@ -22,6 +24,8 @@ interface CopilotStreamMessage {
 
 @Injectable()
 export class CopilotStreamService {
+  private readonly logger = new Logger(CopilotStreamService.name);
+
   constructor(
     private readonly openAiService: OpenAiService,
     private readonly conversationService: CopilotConversationService,
@@ -41,15 +45,14 @@ export class CopilotStreamService {
     const isNewConv = !dto.conversationId;
     const useFunctionCalling = this.configService.get<boolean>('COPILOT_USE_FUNCTION_CALLING');
 
+    const userInfo = {
+      name: user.name,
+      role: user.role,
+      businessName: user.businessName,
+    };
     const [conversation, financialContext] = await Promise.all([
       this.conversationService.findOrCreate(tenantId, user.id, dto.conversationId),
-      useFunctionCalling
-        ? Promise.resolve(undefined)
-        : this.copilotContextService.getFinancialContext(tenantId, {
-            name: user.name,
-            role: user.role,
-            businessName: user.businessName,
-          }),
+      this.copilotContextService.getFinancialContext(tenantId, userInfo),
     ]);
     const userMsg = await this.conversationService.saveUserMessage(conversation.id, dto.message);
 
@@ -79,7 +82,7 @@ export class CopilotStreamService {
         reply = await this.openAiService.chatCopilot(
           dto.message,
           history,
-          financialContext!,
+          financialContext,
           tenantId,
           conversation.id,
         );
@@ -110,15 +113,14 @@ export class CopilotStreamService {
     const isNewConv = !dto.conversationId;
     const useFunctionCalling = this.configService.get<boolean>('COPILOT_USE_FUNCTION_CALLING');
 
+    const userInfo = {
+      name: user.name,
+      role: user.role,
+      businessName: user.businessName,
+    };
     const [conversation, financialContext] = await Promise.all([
       this.conversationService.findOrCreate(tenantId, user.id, dto.conversationId),
-      useFunctionCalling
-        ? Promise.resolve(undefined)
-        : this.copilotContextService.getFinancialContext(tenantId, {
-            name: user.name,
-            role: user.role,
-            businessName: user.businessName,
-          }),
+      this.copilotContextService.getFinancialContext(tenantId, userInfo),
     ]);
     const userMsg = await this.conversationService.saveUserMessage(conversation.id, dto.message);
 
@@ -134,6 +136,20 @@ export class CopilotStreamService {
     const writeEvent = (event: string, data: unknown) => {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       (res as unknown as { flush?: () => void }).flush?.();
+    };
+
+    const finishStream = async (
+      reply: string,
+      meta: { activities: ReturnType<typeof buildActivities> } | undefined,
+      activities: ReturnType<typeof buildActivities>,
+    ) => {
+      writeEvent('done', { reply, meta, conversationId: conversation.id });
+      void this.conversationService
+        .saveAssistantMessage(conversation.id, reply, activities)
+        .catch(() => {});
+      if (isNewConv)
+        this.conversationService.triggerAutoTitle(conversation.id, dto.message, tenantId);
+      await this.copilotQuotaService.incrementAndNotify(tenantId, subMeta);
     };
 
     res.flushHeaders();
@@ -158,19 +174,11 @@ export class CopilotStreamService {
         const reply = await this.openAiService.chatCopilot(
           dto.message,
           history,
-          financialContext!,
+          financialContext,
           tenantId,
           conversation.id,
         );
-        if (!wasAborted) {
-          writeEvent('done', { reply, meta: undefined, conversationId: conversation.id });
-          void this.conversationService
-            .saveAssistantMessage(conversation.id, reply, [])
-            .catch(() => {});
-          if (isNewConv)
-            this.conversationService.triggerAutoTitle(conversation.id, dto.message, tenantId);
-          await this.copilotQuotaService.incrementAndNotify(tenantId, subMeta);
-        }
+        if (!wasAborted) await finishStream(reply, undefined, []);
         return;
       }
 
@@ -186,11 +194,14 @@ export class CopilotStreamService {
 
       if (!runner) {
         if (!wasAborted) {
-          writeEvent('done', {
-            reply: 'AI Copilot chưa được cấu hình. Vui lòng liên hệ quản trị viên.',
-            meta: undefined,
-            conversationId: conversation.id,
-          });
+          const reply = await this.openAiService.chatCopilot(
+            dto.message,
+            history,
+            financialContext,
+            tenantId,
+            conversation.id,
+          );
+          await finishStream(reply, undefined, []);
         }
         return;
       }
@@ -211,7 +222,10 @@ export class CopilotStreamService {
         }
       });
 
-      const reply = (await runner.finalContent()) ?? 'Xin lỗi, tôi không thể trả lời lúc này.';
+      const reply = sanitizeCopilotOutput(
+        (await runner.finalContent()) ?? '',
+        'Xin lỗi, tôi không thể trả lời lúc này.',
+      );
       const activities = buildActivities(calledTools, resultsCapture);
       const meta = activities.length > 0 ? { activities } : undefined;
 
@@ -225,24 +239,29 @@ export class CopilotStreamService {
           tokensOut: usage.completion_tokens,
           conversationId: conversation.id,
         });
-        writeEvent('done', { reply, meta, conversationId: conversation.id });
-        void this.conversationService
-          .saveAssistantMessage(conversation.id, reply, activities)
-          .catch(() => {});
-        if (isNewConv)
-          this.conversationService.triggerAutoTitle(conversation.id, dto.message, tenantId);
-        await this.copilotQuotaService.incrementAndNotify(tenantId, subMeta);
+        await finishStream(reply, meta, activities);
       }
-    } catch {
+    } catch (err) {
       if (!wasAborted) {
-        if (!accumulatedContent.trim()) {
-          await this.conversationService.deleteMessage(userMsg.id);
+        if (accumulatedContent.trim()) {
+          await finishStream(accumulatedContent, undefined, []);
+          return;
         }
-        writeEvent('done', {
-          reply: 'Xin lỗi, có lỗi xảy ra. Vui lòng thử lại.',
-          meta: undefined,
-          conversationId: conversation.id,
-        });
+
+        this.logger.warn(
+          isQuotaOrBillingError(err)
+            ? 'Copilot runTools hết quota/credit, chuyển simple chat (MiniMax) ngay'
+            : 'Copilot stream runTools failed, falling back to simple chat',
+          err instanceof Error ? err.message : String(err),
+        );
+        const reply = await this.openAiService.chatCopilot(
+          dto.message,
+          history,
+          financialContext,
+          tenantId,
+          conversation.id,
+        );
+        await finishStream(reply, undefined, []);
       }
     } finally {
       if (wasAborted && accumulatedContent.trim()) {
