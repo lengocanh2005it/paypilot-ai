@@ -23,6 +23,8 @@ const VIEWPORT_PADDING = 16;
 interface NotificationBellProps {
   className?: string;
   align?: 'left' | 'right';
+  /** Larger bell icon when the main sidebar is collapsed. */
+  collapsed?: boolean;
 }
 
 function getDropdownPosition(rect: DOMRect, align: 'left' | 'right') {
@@ -40,7 +42,7 @@ function getDropdownPosition(rect: DOMRect, align: 'left' | 'right') {
   };
 }
 
-export function NotificationBell({ className, align = 'right' }: NotificationBellProps) {
+export function NotificationBell({ className, align = 'right', collapsed }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -349,7 +351,7 @@ export function NotificationBell({ className, align = 'right' }: NotificationBel
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <Bell className="size-4" />
+        <Bell className={cn(collapsed ? 'size-5' : 'size-4')} />
         {unreadCount > 0 ? (
           <span className="pointer-events-none absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white shadow-sm">
             {unreadCount > 99 ? '99+' : unreadCount}

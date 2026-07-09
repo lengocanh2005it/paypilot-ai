@@ -15,6 +15,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { SidebarCollapseFade } from '@/components/layout/SidebarCollapseFade';
 import { ProfileDialog } from '@/components/profile/ProfileDialog';
 import { NotificationBell } from '@/components/shared/NotificationBell';
 import { UserAvatar } from '@/components/shared/UserAvatar';
@@ -77,16 +78,20 @@ function NavItemLink({
       title={collapsed ? item.label : undefined}
       className={({ isActive }) =>
         cn(
-          'group relative flex items-center rounded-lg px-3 py-2.5 text-sm transition-colors',
-          collapsed ? 'justify-center' : 'gap-3',
+          'group relative flex items-center rounded-lg text-sm transition-colors',
+          collapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2.5',
           isActive
             ? 'bg-primary/10 font-medium text-primary ring-1 ring-primary/15'
             : 'text-sidebar-foreground hover:bg-primary/5 hover:text-primary',
         )
       }
     >
-      <Icon className="size-4 shrink-0" />
-      {!collapsed ? <span className="truncate">{item.label}</span> : null}
+      <Icon className={cn('shrink-0', collapsed ? 'size-5' : 'size-4')} />
+      {!collapsed ? (
+        <SidebarCollapseFade collapsed={false} className="truncate">
+          {item.label}
+        </SidebarCollapseFade>
+      ) : null}
       {badgeCount ? (
         <span
           className={cn(
@@ -153,7 +158,7 @@ export function SidebarContent({
         onToggleCollapsed={onToggleCollapsed}
         showClose={showClose}
         onClose={onClose}
-        headerRight={<NotificationBell align="left" />}
+        headerRight={<NotificationBell align="left" collapsed={collapsed} />}
         navLabel="Menu chính"
         navItems={primaryNavItems.map((item) => (
           <NavItemLink
@@ -184,10 +189,12 @@ export function SidebarContent({
             >
               <UserAvatar name={user?.name} avatarUrl={user?.avatarUrl} />
               {!collapsed ? (
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{user?.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
-                </div>
+                <SidebarCollapseFade collapsed={false} block className="min-w-0">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{user?.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+                  </div>
+                </SidebarCollapseFade>
               ) : null}
             </button>
             <Button
@@ -199,8 +206,10 @@ export function SidebarContent({
               aria-label="Đăng xuất"
               title={collapsed ? 'Đăng xuất' : undefined}
             >
-              <LogOut className="size-4" />
-              {!collapsed ? 'Đăng xuất' : null}
+              <LogOut className={cn(collapsed ? 'size-5' : 'size-4')} />
+              {!collapsed ? (
+                <SidebarCollapseFade collapsed={false}>Đăng xuất</SidebarCollapseFade>
+              ) : null}
             </Button>
           </div>
         }

@@ -1,6 +1,7 @@
 import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/brand/Logo';
+import { SidebarCollapseFade } from '@/components/layout/SidebarCollapseFade';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -31,8 +32,8 @@ export function SidebarShell({
     <div className="flex h-full min-h-0 w-full flex-1 flex-col">
       <div
         className={cn(
-          'border-b border-sidebar-border/80 px-3 py-4',
-          collapsed ? 'flex flex-col items-center gap-2' : 'px-4',
+          'border-b border-sidebar-border/80',
+          collapsed ? 'flex flex-col items-center gap-2 px-2 py-3' : 'px-4 py-4',
         )}
       >
         <div
@@ -47,7 +48,7 @@ export function SidebarShell({
               collapsed && 'justify-center',
             )}
           >
-            <Logo collapsed={collapsed} markSize={36} />
+            <Logo collapsed={collapsed} markSize={collapsed ? 40 : 36} />
           </div>
 
           <div className={cn('flex shrink-0 items-center gap-1', collapsed ? 'flex-col' : '')}>
@@ -63,7 +64,7 @@ export function SidebarShell({
                 title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
               >
                 {collapsed ? (
-                  <PanelLeftOpen className="size-4" />
+                  <PanelLeftOpen className="size-5" />
                 ) : (
                   <PanelLeftClose className="size-4" />
                 )}
@@ -84,12 +85,19 @@ export function SidebarShell({
         </div>
       </div>
 
-      <nav className="scrollbar-hidden flex-1 space-y-4 overflow-y-auto px-3 py-4">
-        <div className="space-y-1">
-          {!collapsed && navLabel ? (
-            <p className="px-3 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              {navLabel}
-            </p>
+      <nav
+        className={cn(
+          'scrollbar-hidden flex-1 overflow-y-auto px-3',
+          collapsed ? 'space-y-2 py-2' : 'space-y-4 py-4',
+        )}
+      >
+        <div className={cn(collapsed ? 'space-y-0.5' : 'space-y-1')}>
+          {navLabel ? (
+            <SidebarCollapseFade collapsed={collapsed} block className="px-3 pb-1">
+              <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                {navLabel}
+              </p>
+            </SidebarCollapseFade>
           ) : null}
           {navItems}
         </div>
@@ -111,7 +119,7 @@ export function DesktopSidebarWrapper({ collapsed, children }: DesktopSidebarWra
   return (
     <aside
       className={cn(
-        'hidden shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sm transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:h-svh',
+        'hidden shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-sm transition-[width] duration-200 ease-out lg:sticky lg:top-0 lg:flex lg:h-svh',
         collapsed ? 'w-[4.5rem]' : 'w-64',
       )}
     >
