@@ -45,7 +45,7 @@ export function SidebarShell({
             <Logo collapsed={collapsed} markSize={36} />
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
+          <div className={cn('flex shrink-0 items-center gap-1', collapsed ? 'flex-col' : '')}>
             {headerRight}
             {showCollapseToggle ? (
               <Button
