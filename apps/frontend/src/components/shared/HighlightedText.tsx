@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
+import { formatCopilotDisplayText } from '@/lib/format-copilot-text';
 
 // Keyword nghiệp vụ để AI tự highlight qua **...** trong system prompt.
 // Chỉ giữ pattern deterministic ở FE — số tiền, %, ngày, mã TK.
@@ -92,15 +93,17 @@ function colorize(text: string, keyPrefix: string): ReactNode {
 const BOLD_RE = /\*\*([\s\S]+?)\*\*/g;
 
 export function HighlightedText({ text }: { text: string }): ReactNode {
+  const displayText = formatCopilotDisplayText(text);
   const nodes: ReactNode[] = [];
   let cursor = 0;
-  let match: RegExpExecArray | null = BOLD_RE.exec(text);
+  BOLD_RE.lastIndex = 0;
+  let match: RegExpExecArray | null = BOLD_RE.exec(displayText);
 
   while (match !== null) {
     if (match.index > cursor) {
       nodes.push(
         <Fragment key={`plain-${cursor}-${match.index}`}>
-          {colorize(text.slice(cursor, match.index), `p${cursor}-${match.index}`)}
+          {colorize(displayText.slice(cursor, match.index), `p${cursor}-${match.index}`)}
         </Fragment>,
       );
     }
@@ -110,12 +113,14 @@ export function HighlightedText({ text }: { text: string }): ReactNode {
       </strong>,
     );
     cursor = match.index + match[0].length;
-    match = BOLD_RE.exec(text);
+    match = BOLD_RE.exec(displayText);
   }
 
-  if (cursor < text.length) {
-    nodes.push(<Fragment key="plain-tail">{colorize(text.slice(cursor), 'ptail')}</Fragment>);
+  if (cursor < displayText.length) {
+    nodes.push(
+      <Fragment key="plain-tail">{colorize(displayText.slice(cursor), 'ptail')}</Fragment>,
+    );
   }
 
-  return nodes.length > 0 ? nodes : text;
+  return nodes.length > 0 ? nodes : displayText;
 }
