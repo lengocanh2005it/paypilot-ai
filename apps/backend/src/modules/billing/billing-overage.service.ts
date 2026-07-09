@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isOveragePlan } from '../../common/constants/quota-policy';
+import { SubscriptionQueryAdapter } from '../../common/services/subscription-query.adapter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { PayosService } from './payos.service';
@@ -14,6 +15,7 @@ export class BillingOverageService {
     private readonly payosService: PayosService,
     private readonly config: ConfigService,
     private readonly notificationService: NotificationService,
+    private readonly subscriptionQuery: SubscriptionQueryAdapter,
   ) {}
 
   async getOverageOrders(tenantId: string) {
@@ -31,10 +33,7 @@ export class BillingOverageService {
   }
 
   async createOverageOrder(tenantId: string) {
-    const sub = await this.prisma.subscription.findFirst({
-      where: { tenantId, status: 'active' },
-      orderBy: { startedAt: 'desc' },
-    });
+    const sub = await this.subscriptionQuery.findActive(tenantId);
     if (!sub) throw new NotFoundException('Không tìm thấy subscription active');
 
     if (!isOveragePlan(sub.plan)) {

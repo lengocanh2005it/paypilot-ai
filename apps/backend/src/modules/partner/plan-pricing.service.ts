@@ -1,9 +1,8 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { SubscriptionPlan } from '@prisma/client';
+import { SubscriptionQueryAdapter } from '../../common/services/subscription-query.adapter';
 import { createAuditLog } from '../../common/util/audit-log.util';
-import { invalidateTenantPlanCache } from '../../common/util/tenant-plan-cache';
 import { PrismaService } from '../../prisma/prisma.service';
-import { RedisService } from '../../redis/redis.service';
 import { NotificationService } from '../notification/notification.service';
 import type { UpdatePlanPricingDto } from './dto/plan-pricing.dto';
 
@@ -13,8 +12,8 @@ export class PlanPricingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly redis: RedisService,
     private readonly notificationService: NotificationService,
+    private readonly subscriptionQuery: SubscriptionQueryAdapter,
   ) {}
 
   async listPlanPricing() {
@@ -151,7 +150,7 @@ export class PlanPricingService {
         this.logger.warn(`Plan change notification failed for tenant ${tenantId}`, err),
       );
 
-    await invalidateTenantPlanCache(this.redis, tenantId);
+    await this.subscriptionQuery.invalidateCache(tenantId);
 
     return { success: true, plan: targetPlan };
   }

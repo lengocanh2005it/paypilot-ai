@@ -7,9 +7,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type SubscriptionPlan, TransactionSource } from '@prisma/client';
-import { invalidateTenantPlanCache } from '../../common/util/tenant-plan-cache';
+import { SubscriptionQueryAdapter } from '../../common/services/subscription-query.adapter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { RedisService } from '../../redis/redis.service';
 import { NotificationService } from '../notification/notification.service';
 import { PayosService } from './payos.service';
 
@@ -22,7 +21,7 @@ export class BillingService {
     private readonly payosService: PayosService,
     private readonly config: ConfigService,
     private readonly notificationService: NotificationService,
-    private readonly redis: RedisService,
+    private readonly subscriptionQuery: SubscriptionQueryAdapter,
   ) {}
 
   async listPlans() {
@@ -46,10 +45,7 @@ export class BillingService {
   }
 
   async getCurrentPlan(tenantId: string) {
-    const sub = await this.prisma.subscription.findFirst({
-      where: { tenantId, status: 'active' },
-      orderBy: { startedAt: 'desc' },
-    });
+    const sub = await this.subscriptionQuery.findActive(tenantId);
     if (!sub) throw new NotFoundException('Không tìm thấy gói dịch vụ');
 
     const planPricing = await this.prisma.planPricing.findUnique({
@@ -102,10 +98,7 @@ export class BillingService {
   }
 
   async upgrade(tenantId: string, targetPlan: SubscriptionPlan) {
-    const currentSub = await this.prisma.subscription.findFirst({
-      where: { tenantId, status: 'active' },
-      orderBy: { startedAt: 'desc' },
-    });
+    const currentSub = await this.subscriptionQuery.findActive(tenantId);
 
     if (currentSub?.plan === targetPlan) {
       throw new BadRequestException('Doanh nghiệp đang sử dụng gói này');
@@ -242,7 +235,7 @@ export class BillingService {
         this.logger.warn(`Billing notification failed for tenant ${tenantId}`, err),
       );
 
-    await invalidateTenantPlanCache(this.redis, tenantId);
+    await this.subscriptionQuery.invalidateCache(tenantId);
 
     return { success: true, alreadyPaid: false };
   }

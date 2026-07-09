@@ -9,21 +9,17 @@ import {
 import type { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { SubscriptionQueryAdapter } from '../services/subscription-query.adapter';
 import type { AuthenticatedUser } from '../types/authenticated-user.type';
 
 export const COPILOT_SUBSCRIPTION_KEY = '__copilotSubscription';
 
-const CACHE_TTL_SECONDS = 30;
-
-interface CachedQuota {
-  subscriptionId: string;
-  copilotUsedThisCycle: number;
-  copilotQuota: number;
-}
+const PLAN_PRICING_CACHE_TTL = 30;
 
 @Injectable()
 export class CopilotQuotaGuard implements CanActivate {
   constructor(
+    private readonly subscriptionQuery: SubscriptionQueryAdapter,
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
   ) {}
@@ -41,66 +37,45 @@ export class CopilotQuotaGuard implements CanActivate {
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ hoặc đã hết hạn');
     }
 
-    const cacheKey = `copilot:quota:${user.tenantId}`;
-    let cached: CachedQuota | null = null;
+    const sub = await this.subscriptionQuery.findActive(user.tenantId);
+    if (!sub) return true;
 
-    try {
-      const raw = await this.redis.client.get(cacheKey);
-      if (raw) cached = JSON.parse(raw) as CachedQuota;
-    } catch {
-      // cache miss — proceed to DB
-    }
-
-    let subscriptionId: string;
-    let copilotUsedThisCycle: number;
+    // Fetch copilotQuota from planPricing (separate cache — quota rarely changes)
     let copilotQuota: number;
-
-    if (cached) {
-      subscriptionId = cached.subscriptionId;
-      copilotUsedThisCycle = cached.copilotUsedThisCycle;
-      copilotQuota = cached.copilotQuota;
-    } else {
-      const subscription = await this.prisma.subscription.findFirst({
-        where: { tenantId: user.tenantId, status: 'active' },
-        orderBy: { startedAt: 'desc' },
-        select: { id: true, plan: true, copilotUsedThisCycle: true },
-      });
-
-      if (!subscription) return true;
-
-      const planPricing = await this.prisma.planPricing.findUnique({
-        where: { plan: subscription.plan },
-        select: { copilotQuota: true },
-      });
-
-      subscriptionId = subscription.id;
-      copilotUsedThisCycle = subscription.copilotUsedThisCycle;
-      copilotQuota = planPricing?.copilotQuota ?? -1;
-
-      try {
+    const pricingCacheKey = `copilot:pricing:${sub.plan}`;
+    try {
+      const cached = await this.redis.client.get(pricingCacheKey);
+      if (cached) {
+        copilotQuota = Number(cached);
+      } else {
+        const pricing = await this.prisma.planPricing.findUnique({
+          where: { plan: sub.plan },
+          select: { copilotQuota: true },
+        });
+        copilotQuota = pricing?.copilotQuota ?? -1;
         await this.redis.client.setex(
-          cacheKey,
-          CACHE_TTL_SECONDS,
-          JSON.stringify({ subscriptionId, copilotUsedThisCycle, copilotQuota }),
+          pricingCacheKey,
+          PLAN_PRICING_CACHE_TTL,
+          String(copilotQuota),
         );
-      } catch {
-        // non-critical — ignore cache write errors
       }
+    } catch {
+      copilotQuota = -1;
     }
 
     if (copilotQuota === -1) {
-      request[COPILOT_SUBSCRIPTION_KEY] = { id: subscriptionId };
+      request[COPILOT_SUBSCRIPTION_KEY] = { id: sub.id };
       return true;
     }
 
-    if (copilotUsedThisCycle >= copilotQuota) {
+    if (sub.copilotUsedThisCycle >= copilotQuota) {
       throw new HttpException(
         `Bạn đã dùng hết ${copilotQuota} lượt chat Copilot trong tháng này. Nâng cấp gói để tiếp tục.`,
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
-    request[COPILOT_SUBSCRIPTION_KEY] = { id: subscriptionId };
+    request[COPILOT_SUBSCRIPTION_KEY] = { id: sub.id };
     return true;
   }
 }

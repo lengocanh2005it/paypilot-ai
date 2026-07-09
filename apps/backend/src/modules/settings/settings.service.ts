@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { SubscriptionPlan } from '@prisma/client';
+import { SubscriptionQueryAdapter } from '../../common/services/subscription-query.adapter';
 import { meetsPlan } from '../../common/util/plan.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
@@ -24,6 +25,7 @@ export class SettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly subscriptionQuery: SubscriptionQueryAdapter,
   ) {}
 
   async getThreshold(tenantId: string) {
@@ -65,12 +67,8 @@ export class SettingsService {
   ): Promise<NotificationConfig> {
     // Thông báo Email cần gói Starter+, Slack cần gói Pro+
     if (dto.emailEnabled || dto.slackEnabled || dto.monthlyReportEnabled) {
-      const subscription = await this.prisma.subscription.findFirst({
-        where: { tenantId, status: 'active' },
-        orderBy: { startedAt: 'desc' },
-        select: { plan: true },
-      });
-      const plan: SubscriptionPlan | null = subscription?.plan ?? null;
+      const planInfo = await this.subscriptionQuery.findActivePlan(tenantId);
+      const plan: SubscriptionPlan | null = planInfo?.plan ?? null;
       if (dto.emailEnabled && !meetsPlan(plan, 'starter')) {
         throw new ForbiddenException('Thông báo Email yêu cầu gói Starter trở lên.');
       }

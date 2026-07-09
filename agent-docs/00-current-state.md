@@ -284,6 +284,20 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - Tests: cập nhật `banking.service.spec.ts` mock cho transaction context ✅
 - `pnpm verify` pass 11/11 ✅
 
+**Đã xong (Architecture refactoring #10 — Extract SubscriptionQueryAdapter):**
+- Backend: tạo `common/services/subscription-query.adapter.ts` — `SubscriptionQueryAdapter` single seam cho pattern `findFirst({ where: { tenantId, status: 'active' } })` đã bị duplicated ở 7+ file; 2 methods: `findActive(tenantId)` trả full DTO (id, plan, status, pricePerMonth, quota fields, cycle dates), `findActivePlan(tenantId)` trả nhẹ `{ subscriptionId, plan }` cho guards/settings/token; self-cache Redis 60s TTL; `invalidateCache(tenantId)` xóa cả 2 key ✅
+- Backend: đăng ký adapter trong `CommonServicesModule` (Global, available toàn app) ✅
+- Backend: refactor `CopilotQuotaGuard` — dùng adapter cho subscription, giữ own Redis cache 30s riêng cho `copilotQuota` từ `planPricing` (giá rarely đổi) ✅
+- Backend: refactor `PlanGuard` — dùng adapter `findActivePlan()`, bỏ manual Redis cache (`getCachedTenantPlan`/`setCachedTenantPlan`) ✅
+- Backend: refactor `SettingsService.updateNotifications()` — dùng adapter `findActivePlan()` cho plan check ✅
+- Backend: refactor `TokenService.getActivePlan()` — dùng adapter `findActivePlan()` ✅
+- Backend: refactor `BillingService.getCurrentPlan()` + `upgrade()` — dùng adapter; `confirmPayment()` gọi `invalidateCache()` thay `invalidateTenantPlanCache()` ✅
+- Backend: refactor `BillingOverageService.createOverageOrder()` — dùng adapter ✅
+- Backend: refactor `PlanPricingService.setTenantPlan()` — dùng `invalidateCache()` thay `invalidateTenantPlanCache()` ✅
+- Backend: xóa `common/util/tenant-plan-cache.ts` (không còn ai import) ✅
+- Backend: bỏ unused `RedisService` param khỏi `BillingService` + `PlanPricingService` constructors ✅
+- `pnpm verify` pass 11/11 ✅
+
 **Chưa làm (Sprint 4 — còn lại):**
 - Bổ sung env production đầy đủ vào `docker-compose.yml` (OpenAI, Resend, PayOS, v.v.) + deploy lên VPS
 - SSL/HTTPS + nginx config production (domain thật, certbot) — template có tại `deploy/nginx/xcash.conf`
@@ -362,10 +376,12 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │       │   ├── constants/
 │   │       │   │   ├── quota-policy.ts          # OVERAGE_PLANS, QUOTA_WARNING_RATIO, isOveragePlan() — shared across billing/banking ✅
 │   │       │   │   └── ai-pricing.ts            # AI_PRICING record + calcCostUsd(model, tokensIn, tokensOut) — on-the-fly cost calculation ✅
+│   │       │   ├── services/
+│   │       │   │   └── subscription-query.adapter.ts  # SubscriptionQueryAdapter — single seam for "active subscription by tenant" queries, Redis 60s cache, findActive() + findActivePlan() + invalidateCache() ✅
 │   │       │   ├── decorators/                # @Roles, @RequiresPlan, @Public
 │   │       │   ├── guards/auth.guards.ts       # JwtAuthGuard, RolesGuard, PartnerGuard
-│   │       │   ├── guards/plan.guard.ts
-│   │       │   ├── guards/copilot-quota.guard.ts  # CopilotQuotaGuard — Redis cache 30s TTL, skip quota=-1, throw 429, store subscription id ✅
+│   │       │   ├── guards/plan.guard.ts         # PlanGuard — uses SubscriptionQueryAdapter ✅
+│   │       │   ├── guards/copilot-quota.guard.ts  # CopilotQuotaGuard — uses SubscriptionQueryAdapter for subscription, own Redis cache 30s for copilotQuota from planPricing ✅
 │   │       │   ├── guards/copilot-throttler.guard.ts  # CopilotThrottlerGuard — per-user rate limit riêng cho Copilot (Phase 6) ✅
 │   │       │   ├── guards/tenant-throttler.guard.ts
 │   │       │   ├── filters/all-exceptions.filter.ts

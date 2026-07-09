@@ -14,6 +14,8 @@ export interface CopilotToolEntry {
     args: Record<string, unknown>,
     role?: Role,
   ) => Promise<unknown>;
+  /** Format result data into a short snippet for UI display. */
+  formatSnippet?: (data: unknown) => string | undefined;
   /** Feature flag env var name. If undefined, tool is always enabled. */
   enabledBy?: string;
 }
@@ -41,6 +43,25 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
     },
     execute: (service, tenantId, args) =>
       service.getMonthSummary(tenantId, Number(args.year), Number(args.month)),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as {
+        period?: { year: number; month: number };
+        summary?: { totalRevenue?: number; totalExpense?: number; net?: number };
+        stats?: { totalCount?: number; reviewCount?: number; aiAccuracy?: number };
+      };
+      const fmt = (n?: number) => (n != null ? `${Math.abs(n).toLocaleString('vi-VN')}đ` : '—');
+      const s = d.summary;
+      const st = d.stats;
+      return [
+        `Thu: ${fmt(s?.totalRevenue)} · Chi: ${fmt(s?.totalExpense)} · Lãi/lỗ: ${fmt(s?.net)}`,
+        st
+          ? `${st.totalCount ?? 0} giao dịch · ${st.reviewCount ?? 0} chờ duyệt · AI ${st.aiAccuracy ?? 0}%`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+    },
   },
   {
     name: 'get_month_comparison',
@@ -60,6 +81,15 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
     },
     execute: (service, tenantId, args) =>
       service.getMonthComparison(tenantId, Number(args.year), Number(args.month)),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as {
+        current?: { summary?: { totalRevenue?: number; totalExpense?: number; net?: number } };
+        previous?: { summary?: { totalRevenue?: number; totalExpense?: number; net?: number } };
+      };
+      const fmt = (n?: number) => (n != null ? `${Math.abs(n).toLocaleString('vi-VN')}đ` : '—');
+      return `Tháng này: thu ${fmt(d.current?.summary?.totalRevenue)}, chi ${fmt(d.current?.summary?.totalExpense)}\nTháng trước: thu ${fmt(d.previous?.summary?.totalRevenue)}, chi ${fmt(d.previous?.summary?.totalExpense)}`;
+    },
   },
   {
     name: 'get_top_accounts',
@@ -94,6 +124,23 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
         Number(args.month),
         Math.min(10, Number(args.limit ?? 5)),
       ),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as Array<{
+        accountCode: string;
+        accountName?: string;
+        totalDebit?: number;
+        totalCredit?: number;
+      }>;
+      if (!Array.isArray(d)) return undefined;
+      return d
+        .slice(0, 3)
+        .map((a) => {
+          const total = Math.abs((a.totalDebit ?? 0) - (a.totalCredit ?? 0));
+          return `TK ${a.accountCode}${a.accountName ? ` (${a.accountName})` : ''}: ${total.toLocaleString('vi-VN')}đ`;
+        })
+        .join('\n');
+    },
   },
   {
     name: 'get_review_queue_count',
@@ -127,6 +174,11 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
         args.year != null ? Number(args.year) : undefined,
         args.month != null ? Number(args.month) : undefined,
       ),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as { count?: number };
+      return d.count != null ? `${d.count} giao dịch chờ duyệt` : undefined;
+    },
   },
   {
     name: 'list_review_queue',
@@ -167,6 +219,28 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
         args.year != null ? Number(args.year) : undefined,
         args.month != null ? Number(args.month) : undefined,
       ),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as {
+        total: number;
+        items: Array<{
+          id: string;
+          content: string;
+          amount: number;
+          debitAccount: string;
+          creditAccount: string;
+          confidence: number;
+        }>;
+      };
+      const preview = d.items
+        .slice(0, 5)
+        .map(
+          (t) =>
+            `• ${t.content?.slice(0, 40)} — Nợ ${t.debitAccount}/Có ${t.creditAccount} (${t.confidence}%)`,
+        )
+        .join('\n');
+      return `${d.total} giao dịch chờ duyệt\n${preview}`;
+    },
   },
   {
     name: 'lookup_chart_account',
@@ -189,6 +263,16 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
     },
     execute: (service, tenantId, args) =>
       service.lookupChartAccount(tenantId, String(args.accountCode)),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as {
+        accountCode?: string;
+        accountName?: string;
+        accountType?: string;
+      } | null;
+      if (!d) return 'Không tìm thấy tài khoản';
+      return `TK ${d.accountCode} — ${d.accountName}\nLoại: ${d.accountType}`;
+    },
   },
   {
     name: 'get_banking_status',
@@ -209,6 +293,17 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
       },
     },
     execute: (service, tenantId) => service.getBankingStatus(tenantId),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as {
+        bankingLinked?: boolean;
+        grants?: Array<{ bankName: string; accountNumber: string; status: string }>;
+        recentCasActivity?: { countLast7Days: number };
+      };
+      if (!d.bankingLinked) return 'Chưa liên kết ngân hàng qua Cas Link';
+      const grantList = d.grants?.map((g) => `${g.bankName} ${g.accountNumber}`).join(', ') ?? '';
+      return `Đã liên kết: ${grantList}\n7 ngày qua: ${d.recentCasActivity?.countLast7Days ?? 0} giao dịch từ Casso`;
+    },
   },
   {
     name: 'search_knowledge_base',
@@ -235,6 +330,13 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
       },
     },
     execute: (service, _tenantId, args) => service.searchKnowledge(String(args.query ?? '')),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as { sections?: Array<{ title: string; content: string }> } | null;
+      if (!d?.sections?.length) return undefined;
+      const first = d.sections[0];
+      return `${first.title}\n${first.content.slice(0, 250)}`;
+    },
   },
   {
     name: 'search_transactions',
@@ -281,6 +383,28 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
       },
     },
     execute: (service, tenantId, args) => service.searchTransactions(tenantId, args),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as {
+        total: number;
+        items: Array<{
+          id: string;
+          content: string;
+          amount: number;
+          debitAccount?: string | null;
+          creditAccount?: string | null;
+        }>;
+      };
+      const preview = d.items
+        .slice(0, 3)
+        .map(
+          (t) =>
+            `• [${t.id.slice(0, 8)}…] ${t.content?.slice(0, 40)} — ${Math.abs(t.amount).toLocaleString('vi-VN')}đ` +
+            (t.debitAccount ? ` (Nợ ${t.debitAccount}/Có ${t.creditAccount})` : ''),
+        )
+        .join('\n');
+      return `${d.total} kết quả\n${preview}`;
+    },
   },
   {
     name: 'propose_confirm_transaction_classification',
@@ -381,6 +505,16 @@ export const COPILOT_TOOLS: CopilotToolEntry[] = [
     },
     enabledBy: 'COPILOT_CASSO_SEARCH_ENABLED',
     execute: (service, _tenantId, args) => service.searchCassoPublic(String(args.query ?? '')),
+    formatSnippet: (data) => {
+      if (data == null) return undefined;
+      const d = data as {
+        answer?: string;
+        results?: Array<{ title: string; url: string; snippet: string }>;
+        disclaimer?: string;
+      };
+      const text = d.answer ?? d.results?.[0]?.snippet ?? '';
+      return text.slice(0, 300);
+    },
   },
 ];
 

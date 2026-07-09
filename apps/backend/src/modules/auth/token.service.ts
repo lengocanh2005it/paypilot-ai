@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { type Role as PrismaRole, type SubscriptionPlan } from '@prisma/client';
 import { Role } from '@xcash/shared-types';
+import { SubscriptionQueryAdapter } from '../../common/services/subscription-query.adapter';
 import type { AuthenticatedUser, AuthJwtPayload } from '../../common/types/authenticated-user.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
@@ -22,10 +23,11 @@ export class TokenService {
   private readonly sessionRefreshTtlSeconds: number;
 
   constructor(
-    private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly configService: ConfigService,
+    private readonly subscriptionQuery: SubscriptionQueryAdapter,
   ) {
     this.refreshTtlSeconds = this.parseDurationToSeconds(
       this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
@@ -165,12 +167,8 @@ export class TokenService {
 
   async getActivePlan(tenantId: string | null): Promise<SubscriptionPlan | null> {
     if (!tenantId) return null;
-    const subscription = await this.prisma.subscription.findFirst({
-      where: { tenantId, status: 'active' },
-      orderBy: { startedAt: 'desc' },
-      select: { plan: true },
-    });
-    return subscription?.plan ?? null;
+    const planInfo = await this.subscriptionQuery.findActivePlan(tenantId);
+    return planInfo?.plan ?? null;
   }
 
   async assertNotSuspended(tenantId: string | null): Promise<void> {

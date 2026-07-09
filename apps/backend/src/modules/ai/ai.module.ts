@@ -14,9 +14,11 @@ import { ClassificationService } from './classification.service';
 import { CopilotController } from './copilot.controller';
 import { CopilotContextService } from './copilot-context.service';
 import { CopilotConversationService } from './copilot-conversation.service';
+import { CopilotKnowledgeService } from './copilot-knowledge.service';
 import { CopilotQuotaService } from './copilot-quota.service';
 import { CopilotStreamService } from './copilot-stream.service';
 import { CopilotToolService } from './copilot-tool.service';
+import { CopilotTransactionQueryService } from './copilot-tx-query.service';
 import { EmbeddingService } from './embedding.service';
 import { OpenAiService } from './openai.service';
 
@@ -37,6 +39,8 @@ import { OpenAiService } from './openai.service';
     ClassificationProcessor,
     CopilotContextService,
     CopilotConversationService,
+    CopilotKnowledgeService,
+    CopilotTransactionQueryService,
     CopilotQuotaService,
     CopilotStreamService,
     CopilotToolService,

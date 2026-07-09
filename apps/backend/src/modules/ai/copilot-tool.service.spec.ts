@@ -1,15 +1,15 @@
-import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Role } from '@xcash/shared-types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { OnboardingService } from '../onboarding/onboarding.service';
 import { ReportService } from '../report/report.service';
+import { CopilotKnowledgeService } from './copilot-knowledge.service';
 import { CopilotToolService } from './copilot-tool.service';
-import { OpenAiService } from './openai.service';
+import { CopilotTransactionQueryService } from './copilot-tx-query.service';
 
-describe('CopilotToolService — propose_confirm_transaction_classification', () => {
-  let service: CopilotToolService;
+describe('CopilotTransactionQueryService — propose_confirm_transaction_classification', () => {
+  let service: CopilotTransactionQueryService;
 
   const prisma = {
     transactionClassification: {
@@ -25,17 +25,14 @@ describe('CopilotToolService — propose_confirm_transaction_classification', ()
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        CopilotToolService,
-        { provide: ReportService, useValue: {} },
-        { provide: OnboardingService, useValue: {} },
+        CopilotTransactionQueryService,
         { provide: PrismaService, useValue: prisma },
+        { provide: OnboardingService, useValue: {} },
         { provide: RedisService, useValue: { client: { get: jest.fn(), set: jest.fn() } } },
-        { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: OpenAiService, useValue: {} },
       ],
     }).compile();
 
-    service = module.get(CopilotToolService);
+    service = module.get(CopilotTransactionQueryService);
   });
 
   it('trả canConfirm=true kèm đủ field khi status=review và role có quyền', async () => {
@@ -115,8 +112,8 @@ describe('CopilotToolService — propose_confirm_transaction_classification', ()
   });
 });
 
-describe('CopilotToolService — propose_correct_transaction_classification', () => {
-  let service: CopilotToolService;
+describe('CopilotTransactionQueryService — propose_correct_transaction_classification', () => {
+  let service: CopilotTransactionQueryService;
 
   const prisma = {
     transactionClassification: {
@@ -132,17 +129,14 @@ describe('CopilotToolService — propose_correct_transaction_classification', ()
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        CopilotToolService,
-        { provide: ReportService, useValue: {} },
-        { provide: OnboardingService, useValue: {} },
+        CopilotTransactionQueryService,
         { provide: PrismaService, useValue: prisma },
+        { provide: OnboardingService, useValue: {} },
         { provide: RedisService, useValue: { client: { get: jest.fn(), set: jest.fn() } } },
-        { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: OpenAiService, useValue: {} },
       ],
     }).compile();
 
-    service = module.get(CopilotToolService);
+    service = module.get(CopilotTransactionQueryService);
   });
 
   const mockClassification = (overrides: Partial<Record<string, unknown>> = {}) => ({
@@ -235,8 +229,8 @@ describe('CopilotToolService — propose_correct_transaction_classification', ()
   });
 });
 
-describe('CopilotToolService — listReviewQueue', () => {
-  let service: CopilotToolService;
+describe('CopilotTransactionQueryService — listReviewQueue', () => {
+  let service: CopilotTransactionQueryService;
 
   const prisma = {
     transactionClassification: {
@@ -250,17 +244,14 @@ describe('CopilotToolService — listReviewQueue', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        CopilotToolService,
-        { provide: ReportService, useValue: {} },
-        { provide: OnboardingService, useValue: {} },
+        CopilotTransactionQueryService,
         { provide: PrismaService, useValue: prisma },
+        { provide: OnboardingService, useValue: {} },
         { provide: RedisService, useValue: { client: { get: jest.fn(), set: jest.fn() } } },
-        { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: OpenAiService, useValue: {} },
       ],
     }).compile();
 
-    service = module.get(CopilotToolService);
+    service = module.get(CopilotTransactionQueryService);
   });
 
   it('trả danh sách GD status=review với mã id nội bộ', async () => {
@@ -295,8 +286,8 @@ describe('CopilotToolService — listReviewQueue', () => {
   });
 });
 
-describe('CopilotToolService — searchTransactions', () => {
-  let service: CopilotToolService;
+describe('CopilotTransactionQueryService — searchTransactions', () => {
+  let service: CopilotTransactionQueryService;
 
   const prisma = {
     transaction: {
@@ -310,17 +301,14 @@ describe('CopilotToolService — searchTransactions', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        CopilotToolService,
-        { provide: ReportService, useValue: {} },
-        { provide: OnboardingService, useValue: {} },
+        CopilotTransactionQueryService,
         { provide: PrismaService, useValue: prisma },
+        { provide: OnboardingService, useValue: {} },
         { provide: RedisService, useValue: { client: { get: jest.fn(), set: jest.fn() } } },
-        { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: OpenAiService, useValue: {} },
       ],
     }).compile();
 
-    service = module.get(CopilotToolService);
+    service = module.get(CopilotTransactionQueryService);
   });
 
   it('trả id nội bộ và lọc classificationStatus=review', async () => {
@@ -355,5 +343,67 @@ describe('CopilotToolService — searchTransactions', () => {
       classificationStatus: 'review',
     });
     expect(result.total).toBe(1);
+  });
+});
+
+describe('CopilotToolService — facade dispatch', () => {
+  let service: CopilotToolService;
+
+  const mockReportService = {
+    getSummary: jest.fn().mockResolvedValue({ summary: { totalRevenue: 1000 } }),
+    getComparison: jest.fn().mockResolvedValue({ current: {} }),
+    getTopAccounts: jest.fn().mockResolvedValue([]),
+  };
+
+  const mockTxQueryService = {
+    getReviewQueueCount: jest.fn().mockResolvedValue({ count: 5 }),
+    listReviewQueue: jest.fn().mockResolvedValue({ total: 5, items: [] }),
+    lookupChartAccount: jest.fn().mockResolvedValue(null),
+    getBankingStatus: jest.fn().mockResolvedValue({ bankingLinked: true }),
+    searchTransactions: jest.fn().mockResolvedValue({ total: 0, items: [] }),
+    proposeConfirmTransactionClassification: jest.fn().mockResolvedValue({ canConfirm: true }),
+    proposeCorrectTransactionClassification: jest.fn().mockResolvedValue({ canCorrect: true }),
+  };
+
+  const mockKnowledgeService = {
+    searchKnowledge: jest.fn().mockResolvedValue({ sections: [], totalFound: 0 }),
+    searchCassoPublic: jest.fn().mockResolvedValue({ results: [] }),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CopilotToolService,
+        { provide: ReportService, useValue: mockReportService },
+        { provide: CopilotKnowledgeService, useValue: mockKnowledgeService },
+        { provide: CopilotTransactionQueryService, useValue: mockTxQueryService },
+      ],
+    }).compile();
+
+    service = module.get(CopilotToolService);
+  });
+
+  it('execute dispatches to correct registry entry', async () => {
+    const result = await service.execute('tenant-1', 'get_month_summary', {
+      year: 2026,
+      month: 7,
+    });
+    expect(mockReportService.getSummary).toHaveBeenCalledWith('tenant-1', 2026, 7);
+    expect(result).toEqual({ summary: { totalRevenue: 1000 } });
+  });
+
+  it('execute throws on unknown tool', async () => {
+    await expect(service.execute('tenant-1', 'unknown_tool', {})).rejects.toThrow(
+      'Unknown copilot tool: unknown_tool',
+    );
+  });
+
+  it('getRegistry returns all registered tools', () => {
+    const registry = service.getRegistry();
+    expect(registry.size).toBeGreaterThan(0);
+    expect(registry.has('get_month_summary')).toBe(true);
+    expect(registry.has('search_knowledge_base')).toBe(true);
   });
 });

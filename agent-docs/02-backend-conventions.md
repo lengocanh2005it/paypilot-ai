@@ -57,10 +57,12 @@ src/common/
 │   └── public.decorator.ts       # @Public() — bỏ qua JwtAuthGuard (SSE stream)
 ├── guards/
 │   ├── auth.guards.ts             # JwtAuthGuard, RolesGuard, PartnerGuard
-│   ├── plan.guard.ts              # kiểm tra gói subscription từ DB (Redis cache 60s)
-│   ├── copilot-quota.guard.ts     # kiểm tra quota Copilot từ DB (Redis cache 30s, skip=-1 Enterprise)
+│   ├── plan.guard.ts              # kiểm tra gói subscription qua SubscriptionQueryAdapter (Redis cache 60s)
+│   ├── copilot-quota.guard.ts     # kiểm tra quota Copilot — adapter cho subscription, own Redis cache 30s cho copilotQuota từ planPricing
 │   ├── copilot-throttler.guard.ts # per-user rate limit riêng cho Copilot (30 req/min)
 │   └── tenant-throttler.guard.ts  # rate limit theo tenantId (global APP_GUARD)
+├── services/
+│   └── subscription-query.adapter.ts  # SubscriptionQueryAdapter — single seam cho "active subscription by tenant", Redis 60s cache, findActive() + findActivePlan() + invalidateCache()
 ├── constants/
 │   └── quota-policy.ts            # OVERAGE_PLANS, QUOTA_WARNING_RATIO, isOveragePlan() — shared across modules
 ├── filters/
@@ -166,8 +168,8 @@ Biome rule `useImportType` tự đổi `import { AppService }` thành `import ty
 ## Guard caching pattern
 
 Guards đọc từ DB nên cache kết quả Redis để tránh query quá nhiều:
-- `PlanGuard`: cache 60s theo `tenantId`, invalidate khi upgrade/partner đổi gói
-- `CopilotQuotaGuard`: cache 30s theo `tenantId` (shorter vì quota có thể thay đổi giữa các request)
+- `SubscriptionQueryAdapter` (shared): cache 60s theo `tenantId` cho cả `findActive()` và `findActivePlan()`; invalidate khi upgrade/partner đổi gói qua `invalidateCache(tenantId)`
+- `CopilotQuotaGuard`: dùng adapter cho subscription, giữ own cache 30s riêng cho `copilotQuota` từ `planPricing` (giá rarely đổi)
 - Cả hai dùng pattern: check Redis trước → miss thì query DB + set cache → trả kết quả
 - **Không cache** khi cần đọc subscription real-time (race condition risk) — guard đọc DB trực tiếp nếu cần chính xác 100%
 
