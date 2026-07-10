@@ -10,7 +10,7 @@ import { buildCopilotToolSchemas } from './copilot-tools.factory';
 import type { LlmAdapter, LlmMessage } from './llm-adapter.interface';
 import { OpenAiCompatibleAdapter } from './openai-compatible.adapter';
 import { isQuotaOrBillingError, shouldFallbackProvider } from './utils/llm-error.util';
-import { sanitizeCopilotOutput } from './utils/llm-output.util';
+import { appendFallbackNotice, sanitizeCopilotOutput } from './utils/llm-output.util';
 
 export type { CopilotActivity };
 
@@ -291,16 +291,21 @@ ${financialContext}`;
     });
 
     try {
-      const reply = sanitizeCopilotOutput(
+      const rawReply = sanitizeCopilotOutput(
         await runner.finalContent(),
         'Xin lỗi, tôi không thể trả lời lúc này.',
       );
+      const { name: usedAdapter, fallback: usedFallback } = await runner.usedAdapterInfo();
+      const reply = usedFallback ? appendFallbackNotice(rawReply) : rawReply;
+      if (usedFallback) {
+        this.logger.warn(`Copilot trả lời qua fallback adapter: ${usedAdapter}`);
+      }
       const usage = await runner.totalUsage();
       if (usage) {
         this.aiUsageLogService.record({
           tenantId,
           callType: 'copilot',
-          model: this.chatModel,
+          model: usedAdapter === 'minimax' ? this.minimaxModel : this.chatModel,
           tokensIn: usage.prompt_tokens,
           tokensOut: usage.completion_tokens,
           conversationId,

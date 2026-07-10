@@ -20,9 +20,18 @@ function mergeUsage(a: LlmUsage | undefined, b: LlmUsage | undefined): LlmUsage 
  * fallback giữa các adapter khi lỗi thuộc nhóm nên chuyển provider.
  * Không biết gì về provider cụ thể — chỉ phụ thuộc LlmAdapter interface.
  */
+export interface UsedAdapterInfo {
+  /** Tên adapter thực sự trả lời (undefined nếu tất cả đều lỗi). */
+  name: string | undefined;
+  /** true nếu adapter trả lời KHÔNG phải adapter đầu tiên (đã fallback). */
+  fallback: boolean;
+}
+
 export class CopilotAgentHarness extends EventEmitter {
   private aborted = false;
   private usage: LlmUsage | undefined;
+  private usedAdapterName: string | undefined;
+  private fallbackOccurred = false;
   private readonly runPromise: Promise<string>;
 
   constructor(
@@ -59,11 +68,21 @@ export class CopilotAgentHarness extends EventEmitter {
     return this.usage;
   }
 
+  /** Adapter nào thực sự trả lời — dùng để cảnh báo user khi câu trả lời đến từ fallback provider. */
+  async usedAdapterInfo(): Promise<UsedAdapterInfo> {
+    await this.runPromise.catch(() => undefined);
+    return { name: this.usedAdapterName, fallback: this.fallbackOccurred };
+  }
+
   private async run(messages: LlmMessage[]): Promise<string> {
     let lastError: unknown;
-    for (const adapter of this.adapters) {
+    for (let i = 0; i < this.adapters.length; i++) {
+      const adapter = this.adapters[i];
       try {
-        return await this.runWithAdapter(adapter, messages);
+        const content = await this.runWithAdapter(adapter, messages);
+        this.usedAdapterName = adapter.name;
+        this.fallbackOccurred = i > 0;
+        return content;
       } catch (err) {
         lastError = err;
         if (!shouldFallbackProvider(err)) throw err;

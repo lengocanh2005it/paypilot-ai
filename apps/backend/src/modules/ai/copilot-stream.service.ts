@@ -14,7 +14,7 @@ import { CopilotQuotaService } from './copilot-quota.service';
 import { CopilotToolService } from './copilot-tool.service';
 import { OpenAiService } from './openai.service';
 import { isQuotaOrBillingError } from './utils/llm-error.util';
-import { sanitizeCopilotOutput } from './utils/llm-output.util';
+import { appendFallbackNotice, sanitizeCopilotOutput } from './utils/llm-output.util';
 
 interface CopilotStreamMessage {
   message: string;
@@ -271,10 +271,12 @@ export class CopilotStreamService {
         }
       });
 
-      const reply = sanitizeCopilotOutput(
+      const rawReply = sanitizeCopilotOutput(
         (await runner.finalContent()) ?? '',
         'Xin lỗi, tôi không thể trả lời lúc này.',
       );
+      const { fallback: usedFallback } = await runner.usedAdapterInfo();
+      const reply = usedFallback ? appendFallbackNotice(rawReply) : rawReply;
       const activities = buildActivities(calledTools, resultsCapture);
       const meta = activities.length > 0 ? { activities } : undefined;
 

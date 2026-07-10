@@ -170,6 +170,49 @@ describe('CopilotAgentHarness', () => {
     expect(adapter.callCount).toBe(2);
   });
 
+  it('reports the primary adapter with fallback=false when it answers directly', async () => {
+    const adapter = new FakeAdapter('openai', () => [contentChunk('ok'), doneChunk('stop')]);
+
+    const harness = new CopilotAgentHarness([adapter], 'system prompt', [], 'hello', [], jest.fn());
+
+    await expect(harness.usedAdapterInfo()).resolves.toEqual({ name: 'openai', fallback: false });
+  });
+
+  it('reports the secondary adapter with fallback=true after a quota fallback', async () => {
+    const primary = new FakeAdapter('openai', () => quotaError);
+    const secondary = new FakeAdapter('minimax', () => [contentChunk('ok'), doneChunk('stop')]);
+
+    const harness = new CopilotAgentHarness(
+      [primary, secondary],
+      'system prompt',
+      [],
+      'hello',
+      [],
+      jest.fn(),
+    );
+
+    await expect(harness.usedAdapterInfo()).resolves.toEqual({ name: 'minimax', fallback: true });
+  });
+
+  it('reports name=undefined when every adapter fails', async () => {
+    const primary = new FakeAdapter('openai', () => quotaError);
+    const secondary = new FakeAdapter('minimax', () => quotaError);
+
+    const harness = new CopilotAgentHarness(
+      [primary, secondary],
+      'system prompt',
+      [],
+      'hello',
+      [],
+      jest.fn(),
+    );
+
+    await expect(harness.usedAdapterInfo()).resolves.toEqual({
+      name: undefined,
+      fallback: false,
+    });
+  });
+
   it('emits content deltas as they stream', async () => {
     const adapter = new FakeAdapter('primary', () => [
       contentChunk('A'),
