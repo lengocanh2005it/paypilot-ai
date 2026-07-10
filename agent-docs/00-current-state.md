@@ -2,7 +2,9 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Copilot LLM Provider Adapter** (branch `feat/copilot-llm-provider-adapter`, issues #31 + #32).
+Cập nhật lần cuối: **File-level refactoring (Round 1 + Round 2)** — split large files into focused modules. Branch `feat/copilot-llm-provider-adapter`, PR #34.
+
+Trước đó — **Copilot LLM Provider Adapter** (branch `feat/copilot-llm-provider-adapter`, issues #31 + #32).
 
 Trước đó — **Copilot action-tool thứ hai — `propose_correct_transaction_classification`** (branch `feat/copilot-correct-action`, PR chưa tạo). Tool read-only/dry-run, dùng chung flag `COPILOT_ACTION_TOOLS_ENABLED`; nhận `debitAccount`/`creditAccount` mới do **user** tự nêu (model không tự đề xuất), validate tồn tại + active trong `ChartOfAccount` (1 query `findMany` cho cả 2 mã, không gọi lại tool `lookup_chart_account`); thứ tự check role → status → mã TK. FE mới `CopilotCorrectionCard.tsx` (card so sánh định khoản cũ/mới) — gọi thẳng `POST /review/:id/correct` (nay nhận thêm optional `source?: 'copilot'` giống `confirm`). `CopilotActionCardData` (shared-types) đổi từ interface đơn sang discriminated union (`CopilotConfirmActionCardData | CopilotCorrectActionCardData`, phân biệt qua field `tool`). `pnpm verify` pass 10/10.
 
@@ -315,6 +317,14 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - ADR: `agent-docs/reference/copilot-llm-provider-adapter.md` ✅
 - `pnpm verify` pass 11/11 ✅
 
+**Đã xong (File-level refactoring — Round 1 + Round 2):**
+- **Backend:** `resend-email.service.ts` → extracted `email-templates.ts` (451→98 lines); `common/utils/` merged into `common/util/`; `cas-client.service.ts` → extracted `cas-identity-parser.ts`; `notification.service.ts` → extracted `notification-creators.ts`; `report-data.service.ts` → extracted `report-account-summary.ts` ✅
+- **Frontend:** `ReviewPage.tsx` → extracted `SwipeableReviewCard.tsx`; `LandingPage.tsx` → split into 9 section components (LandingNavbar, HeroSection, HeroDemoCard, StatsBand, FeaturesSection, StepsSection, PricingSection, CtaSection, LandingFooter); `PartnerTenantsPage.tsx` → extracted `TenantDetailDialog.tsx` + `SetPlanDialog.tsx`; `PartnerAiCostsPage.tsx` → extracted `AiCostConstants.ts` + `AiCostDetailSheet.tsx`; `PartnerDashboardPage.tsx` → extracted `DashboardChartComponents.tsx`; `ImportTransactionsDialog.tsx` → extracted `ImportUploadStep.tsx` + `ImportPreviewStep.tsx` + `ImportResultStep.tsx`; `TransactionsPage.tsx` → extracted `TransactionFilters.tsx` + `TransactionBulkBar.tsx` ✅
+- **Shared-types:** split `index.ts` (198 lines) into `copilot-types.ts`, `import-types.ts`, `notification-types.ts` ✅
+- **Lint cleanup:** removed unused imports, fixed unused parameters, fixed `undefined` vs `null` mismatches ✅
+- `pnpm verify` pass 11/11 ✅
+- PR: https://github.com/lengocanh2005it/xcash-ai/pull/34 ✅
+
 **Chưa làm (Sprint 4 — còn lại):**
 - Bổ sung env production đầy đủ vào `docker-compose.yml` (OpenAI, Resend, PayOS, v.v.) + deploy lên VPS
 - SSL/HTTPS + nginx config production (domain thật, certbot) — template có tại `deploy/nginx/xcash.conf`
@@ -455,7 +465,8 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   └── dto/review.dto.ts              # CorrectClassificationDto, ConfirmClassificationDto ✅
 │   │           ├── report/                    # Tổng hợp + export Excel + so sánh tháng + top accounts ✅
 │   │           │   ├── report.controller.ts   # + GET /reports/comparison, /reports/top-accounts
-│   │           │   ├── report.service.ts       # + getComparison(), getTopAccounts(), fetchExportData() (extracted for reuse) ✅
+│   │           │   ├── report.service.ts       # + getComparison(), getTopAccounts(), fetchExportData() (extracted for reuse)
+│   │           │   ├── report-account-summary.ts  # buildAccountSummaries, fetchClassificationSides, mergeAccountSideAggregates (extracted) ✅
 │   │           │   └── report.module.ts
 │   │           ├── settings/                  # Threshold (Prisma) + Notifications (Redis) ✅
 │   │           │   ├── settings.controller.ts
@@ -493,8 +504,10 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   ├── notification.controller.ts  # GET list/unread/stream, PATCH read, DELETE 1/nhiều/all
 │   │           │   ├── notification.service.ts      # delegates SSE ops to notification-stream.service ✅
 │   │           │   ├── notification-stream.service.ts  # RxJS Subject SSE streaming (streamForToken, emitTransactionClassified, emitNotification) ✅
+│   │           │   ├── notification-creators.ts  # All create* notification functions (extracted from service) ✅
 │   │           │   ├── notification-delivery.service.ts  # enqueue email/Slack sau publish
-│   │           │   ├── resend-email.service.ts
+│   │           │   ├── resend-email.service.ts  # Refactored: delegates to email-templates.ts
+│   │           │   ├── email-templates.ts       # Email HTML templates (extracted from resend-email.service) ✅
 │   │           │   ├── email.processor.ts      # BullMQ queue email-delivery
 │   │           │   ├── slack.service.ts        # gửi Slack Incoming Webhook (per-tenant URL từ Settings)
 │   │           │   ├── dto/delete-notifications.dto.ts
@@ -505,6 +518,8 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   ├── profile.module.ts
 │   │           │   └── dto/update-profile.dto.ts
 │   │           ├── cas/
+│   │           │   ├── cas-client.service.ts   # Refactored: delegates to cas-identity-parser.ts
+│   │           │   └── cas-identity-parser.ts  # parseCasIdentity() — extracted from cas-client.service ✅
 │   │           ├── health/
 │   │           ├── onboarding/
 │   │           ├── import/                    # Excel Import — validate, import, download template ✅
@@ -514,6 +529,9 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   ├── import.service.spec.ts
 │   │           │   └── dto/import.dto.ts
 │   │           └── transaction/               # GET list (+ filter source) + detail + reclassify + bulk-reclassify ✅
+│   │               ├── transaction.controller.ts
+│   │               ├── transaction.service.ts
+│   │               └── dto/
 │   └── frontend/
 │       ├── vite.config.ts
 │       ├── package.json
@@ -585,7 +603,15 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   ├── dashboard/DashboardPage.tsx # summary API + stat cards clickable + CTA onboarding ✅
 │           │   ├── accounts/AccountsPage.tsx  # Danh mục TK TT133 + tìm mã/tên + mobile card layout ✅
 │           │   ├── transactions/              # TransactionsPage (filter source, nút Import Excel, badge amber, bulk-reclassify) + TransactionDetailSheet + ImportTransactionsDialog ✅
+│           │   │   ├── TransactionsPage.tsx      # Refactored: delegates to TransactionFilters + TransactionBulkBar ✅
+│           │   │   ├── TransactionFilters.tsx    # Filter bar component (extracted from TransactionsPage) ✅
+│           │   │   ├── TransactionBulkBar.tsx    # Bulk action bar (extracted from TransactionsPage) ✅
+│           │   │   ├── ImportTransactionsDialog.tsx  # Refactored: delegates to step components
+│           │   │   ├── ImportUploadStep.tsx      # Upload step (extracted from ImportTransactionsDialog) ✅
+│           │   │   ├── ImportPreviewStep.tsx     # Preview step (extracted from ImportTransactionsDialog) ✅
+│           │   │   └── ImportResultStep.tsx      # Result step (extracted from ImportTransactionsDialog) ✅
 │           │   ├── review/ReviewPage.tsx      # Human Review queue (confirm/correct/skip) + SwipeableReviewCard mobile ✅
+│   │           │   ├── components/shared/SwipeableReviewCard.tsx  # Swipeable review card for mobile (extracted from ReviewPage) ✅
 │           │   ├── reports/ReportsPage.tsx    # Báo cáo tháng + export Excel ✅
 │           │   ├── analytics/AnalyticsPage.tsx # So sánh tháng, BarChart thu/chi, top 5 danh mục ✅
 │           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat — 2-column layout (sidebar+chat), mobile Sheet, localStorage persistence, history from DB, infinite scroll, stop button (Phase 4+5); ~440 lines after hook extraction ✅
@@ -596,15 +622,36 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   │   ├── PaymentHistoryTable.tsx # Payment history table component (mobile + desktop) ✅
 │           │   │   └── CycleTransactionsDialog.tsx # Cycle transactions dialog (uses TransactionStatusBadge) ✅
 │           │   ├── components/audit/AuditLogPanel.tsx  # Bảng nhật ký dùng chung + mobile card layout ✅
+│           │   ├── landing/                    # Landing page — split into 9 section components ✅
+│           │   │   ├── LandingPage.tsx         # Main page (now ~60 lines, delegates to sections) ✅
+│           │   │   ├── landing-data.ts         # Static data for landing page
+│           │   │   ├── LandingNavbar.tsx       # Navigation bar (extracted) ✅
+│           │   │   ├── HeroSection.tsx         # Hero section (extracted) ✅
+│           │   │   ├── HeroDemoCard.tsx        # Demo card in hero (extracted) ✅
+│           │   │   ├── StatsBand.tsx           # Stats band (extracted) ✅
+│           │   │   ├── FeaturesSection.tsx     # Features section (extracted) ✅
+│           │   │   ├── StepsSection.tsx        # Steps section (extracted) ✅
+│           │   │   ├── PricingSection.tsx      # Pricing section (extracted) ✅
+│   │           │   │   ├── CtaSection.tsx          # CTA section (extracted) ✅
+│           │   │   └── LandingFooter.tsx       # Footer (extracted) ✅
 │           │   └── partner/
 │           │       ├── PartnerLayout.tsx          # Sidebar: Dashboard/DN/Thanh toán/Nhật ký/Gói dịch vụ/Chi phí AI ✅
-│           │       ├── PartnerDashboardPage.tsx   # Stat cards (5 cột, thêm "Chi phí AI tháng này" click → /partner/ai-costs) + biểu đồ doanh thu theo gói ✅
-│           │       ├── PartnerTenantsPage.tsx     # Danh sách tenant paginate 20/trang, filter, dialog chi tiết + đổi gói ✅
+│           │       ├── PartnerDashboardPage.tsx   # Refactored: delegates to DashboardChartComponents ✅
+│           │       ├── DashboardChartComponents.tsx  # Chart tooltip components + PLAN_COLORS (extracted) ✅
+│           │       ├── PartnerTenantsPage.tsx     # Refactored: delegates to TenantDetailDialog + SetPlanDialog ✅
+│           │       ├── TenantDetailDialog.tsx     # Tenant detail dialog (extracted from PartnerTenantsPage) ✅
+│           │       ├── SetPlanDialog.tsx           # Set plan dialog (extracted from PartnerTenantsPage) ✅
 │           │       ├── PartnerPaymentsPage.tsx    # Lịch sử thanh toán (bảng payment_orders + filter + summary) ✅
 │           │       ├── PartnerAuditPage.tsx       # /partner/audit-logs — audit log toàn hệ thống ✅
 │           │       ├── PartnerPlansPage.tsx       # 4 plan cards, bảng giá, dialog chỉnh giá + mobile card layout ✅
-│           │       └── PartnerAiCostsPage.tsx     # Chi phí AI — date filter, bảng tenant ranked by cost, breakdown badges, Sheet detail per-call + mobile card layout ✅
-├── packages/shared-types/src/index.ts        # TransactionStatus.CLASSIFIED (bỏ MATCHED), ClassificationType, AccountType ✅
+│           │       ├── PartnerAiCostsPage.tsx     # Refactored: delegates to AiCostConstants + AiCostDetailSheet ✅
+│           │       ├── AiCostConstants.ts         # AI cost helper constants (extracted from PartnerAiCostsPage) ✅
+│           │       └── AiCostDetailSheet.tsx      # AI cost detail sheet (extracted from PartnerAiCostsPage) ✅
+├── packages/shared-types/src/
+│   ├── index.ts              # TransactionStatus.CLASSIFIED (bỏ MATCHED), ClassificationType, AccountType
+│   ├── copilot-types.ts      # CopilotActivity, CopilotConversationSummary, CopilotMessageDto, etc. (split from index) ✅
+│   ├── import-types.ts       # Import-related types (split from index) ✅
+│   └── notification-types.ts # Notification types (split from index) ✅
 ├── biome.json, package.json, turbo.json, pnpm-workspace.yaml
 ```
 
@@ -777,7 +824,10 @@ ai_usage_logs
 
 ## Nguyên văn `shared-types/src/index.ts`
 
+> **Lưu ý:** Sau Round 2 refactoring, types đã được split thành nhiều file. `index.ts` chỉ còn chứa enums + re-exports. Copilot types → `copilot-types.ts`, Import types → `import-types.ts`, Notification types → `notification-types.ts`.
+
 ```typescript
+// === Enums ===
 export enum Role {
   CAS_PARTNER = 'cas_partner',
   ADMIN = 'admin',
@@ -805,47 +855,8 @@ export enum AccountType {
   EXPENSE = 'expense',
 }
 
-export interface CopilotConfirmActionCardData {
-  tool: 'propose_confirm_transaction_classification';
-  transactionId: string; classificationId: string;
-  debitAccount: string; creditAccount: string;
-  confidence: number; status: string; content: string; amount: number;
-  canConfirm: boolean; reason?: string;
-}
-export interface CopilotCorrectActionCardData {
-  tool: 'propose_correct_transaction_classification';
-  transactionId: string; classificationId: string;
-  debitAccount: string; creditAccount: string;
-  proposedDebitAccount: string; proposedCreditAccount: string;
-  confidence: number; status: string; content: string; amount: number;
-  canCorrect: boolean; reason?: string;
-}
-export type CopilotActionCardData = CopilotConfirmActionCardData | CopilotCorrectActionCardData;
-export interface CopilotActivity {
-  kind: 'internal_data' | 'knowledge' | 'web_search' | 'action_card';
-  label: string;
-  source?: string;
-  urls?: string[];
-  snippet?: string;
-  actionCard?: CopilotActionCardData;
-}
-export interface CopilotConversationSummary {
-  id: string; title: string; createdAt: string; updatedAt: string;
-  messageCount: number; lastMessage?: string;
-}
-export interface CopilotMessageDto {
-  id: string; role: 'user' | 'assistant'; content: string;
-  activities?: CopilotActivity[]; createdAt: string; isPartial: boolean;
-}
-export interface CopilotConversationDetail {
-  id: string; title: string; createdAt: string; updatedAt: string;
-  messages: CopilotMessageDto[]; hasMore: boolean; oldestMessageId: string | null;
-}
-export interface CopilotConversationsListResponse {
-  items: CopilotConversationSummary[]; hasMore: boolean; cursorNext: string | null;
-}
-
 // + CasGrantStatus, SubscriptionPlan, SubscriptionStatus, PaymentOrderStatus, ApiResponse<T>
+// Re-exports từ copilot-types.ts, import-types.ts, notification-types.ts
 ```
 
 ---
