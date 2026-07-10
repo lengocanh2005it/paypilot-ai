@@ -1,8 +1,10 @@
-﻿# Current State — Đọc file này ĐẦU TIÊN
+# Current State — Đọc file này ĐẦU TIÊN
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Candidate #6 — Close the Shared Types Gap** — thêm ~40 domain API response types vào `packages/shared-types/src/index.ts`: Auth/Profile (AuthenticatedUser, UserProfile, UpdateProfileInput), Transaction (TransactionSummary, TransactionDetail, TransactionListResponse, TransactionClassificationSummary), Review (ClassificationItem, ReviewQueueResponse), Onboarding (OnboardingGrant/Step/Status, GrantTokenResponse, BankingCallbackResponse), Billing (PlanData, UpgradeResult, BillingPlan, PaymentOrder, PaymentHistoryResponse, CycleTransaction, OverageOrder/Result), Reports (SummaryData, AccountSummary, AccountBreakdownData, ComparisonData, TopAccountsData), Partner (PartnerTenant/TenantsResponse, TenantMember/Detail, PlanPricingItem, DashboardStats, RevenueTrendPoint, PartnerPayment, PaymentsResponse, AiCost*). FE type files (`types/` và `types/api/`) giờ là re-export barrel từ shared-types. BE `report-data.service.ts` import AccountSummary từ shared-types. `pnpm verify` pass 11/11.
+Cập nhật lần cuối: **Architecture candidates #4, #6, #7 hoàn thành** — #4 xóa `ReportService` pass-through layer (collapse 9/10 1-line delegations vào `ReportDataService`); #6 thêm ~40 domain API response types vào `packages/shared-types/src/index.ts`, FE type files là re-export barrel; #7 gộp cache key `findActivePlan()` vào chung `sub:active:{tenantId}`, thêm `copilotQuota` vào `ActiveSubscription` DTO, xóa `PrismaService`+`RedisService` khỏi `CopilotQuotaGuard`. `pnpm verify` pass 11/11.
+
+Trước đó — **Architecture candidates #4, #6, #7** — #4 xóa `ReportService` (pass-through layer, 9/11 methods 1-line delegation), chuyển `exportExcel()` vào `ReportDataService`, 3 consumer files inject `ReportDataService` trực tiếp; #6 thêm ~40 domain API response types vào shared-types (Auth/Profile/Transaction/Review/Onboarding/Billing/Reports/Partner/Copilot/Common `ApiResponse<T>`), FE type files thành barrel re-export; #7 hợp nhất cache key `findActivePlan()` vào `sub:active:{tenantId}`, thêm `copilotQuota` vào `ActiveSubscription` DTO, `CopilotQuotaGuard` đọc `copilotQuota` từ sub (xóa `PrismaService`+`RedisService` inject + own Redis cache 30s), `BillingService.getCurrentPlan()` xóa redundant `planPricing` query. `pnpm verify` pass 11/11.
 
 Trước đó — **Copilot action-tool đầu tiên — `propose_confirm_transaction_classification`** (branch `feat/copilot-confirm-action`, đã merge vào main qua PR #23). Tool read-only/dry-run, gated `COPILOT_ACTION_TOOLS_ENABLED` (default 0); FE render "action card" trong chat (`CopilotActionCard.tsx`) — re-check status live qua `useQuery`, xác nhận qua `useMutation` gọi thẳng `POST /review/:id/confirm` (không qua AI); endpoint đó nhận thêm optional `source?: 'copilot'` để audit trail. `CopilotActivity` (shared-types) thêm variant `kind: 'action_card'` + field `actionCard`. `getReviewQueue()` giờ select thêm `transaction.id`; `ReviewPage` có cột "Mã GD" (`CopyIdButton.tsx`, copy-to-clipboard) để lấy transactionId dán vào Copilot. `pnpm verify` pass 10/10.
 
@@ -170,7 +172,7 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 
 **Đã xong (Copilot Quota — Phase 1–4):**
 - **Phase 1 — Schema:** migration `20260706143059_add_copilot_quota` — thêm `NotificationType.copilot_quota_warning` + `copilot_quota_exceeded`; cột `subscriptions.copilot_used_this_cycle` (Int, default 0); cột `plan_pricing.copilot_quota` (Int, default -1 = unlimited); seed `plan_pricing` copilotQuota (Free=0, Starter=200, Pro=1000, Enterprise=-1) ✅
-- **Phase 2 — Guard + increment:** `CopilotQuotaGuard` (`common/guards/copilot-quota.guard.ts`) — đọc subscription + planPricing từ DB (no cache), skip nếu quota=-1 (Enterprise), throw 429 nếu đã vượt, store `{ id }` vào `request[COPILOT_SUBSCRIPTION_KEY]`; guard chain trên `CopilotController`: `JwtAuthGuard → RolesGuard → PlanGuard → CopilotQuotaGuard`; `incrementAndNotify()` fire-and-forget sau `writeEvent('done')` — `$increment copilotUsedThisCycle` + gọi `checkCopilotQuotaNotifications()`; `NotificationService.checkCopilotQuotaNotifications()` dedup `copilot_quota_warning` (≥80%) và `copilot_quota_exceeded` (≥100%) mỗi chu kỳ bằng `createOncePerCycle()` ✅
+- **Phase 2 — Guard + increment:** `CopilotQuotaGuard` (`common/guards/copilot-quota.guard.ts`) — dùng `SubscriptionQueryAdapter` lấy subscription (có sẵn `copilotQuota` trong `ActiveSubscription`), skip nếu quota=-1 (Enterprise), throw 429 nếu đã vượt, store `{ id }` vào `request[COPILOT_SUBSCRIPTION_KEY]`; guard chain: `JwtAuthGuard → RolesGuard → PlanGuard → CopilotQuotaGuard`; `incrementAndNotify()` fire-and-forget sau `writeEvent('done')` — `$increment copilotUsedThisCycle` + gọi `checkCopilotQuotaNotifications()`; `NotificationService.checkCopilotQuotaNotifications()` dedup `copilot_quota_warning` (≥80%) và `copilot_quota_exceeded` (≥100%) mỗi chu kỳ bằng `createOncePerCycle()` ✅
 - **Phase 3 — Billing cycle reset + expose:** `BillingCycleService` reset `copilotUsedThisCycle=0` khi hết cycle; `BillingService.getCurrentPlan()` trả thêm `copilotQuota` + `copilotUsed`; `UpdatePlanPricingDto` thêm optional `copilotQuota` (Min -1); `PartnerService.updatePlanPricing()` + `listPlanPricing()` lưu và trả `copilotQuota` ✅
 - **Phase 4 — Frontend:** `SettingsPage` BillingTab — progress bar "Lượt chat Copilot" (ẩn khi quota=-1, màu primary/<80%, orange/≥80%, destructive/≥100%); `PartnerPlansPage` — hiện `copilotQuota` trong card + bảng tổng hợp, thêm input field trong dialog với helper text "Nhập -1 để không giới hạn" ✅
 
@@ -284,14 +286,14 @@ Trước đó — **Phase 7 polish + UX hardening** — Settings tab phân trang
 - Tests: cập nhật `banking.service.spec.ts` mock cho transaction context ✅
 - `pnpm verify` pass 11/11 ✅
 
-**Đã xong (Architecture refactoring #10 — Extract SubscriptionQueryAdapter):**
-- Backend: tạo `common/services/subscription-query.adapter.ts` — `SubscriptionQueryAdapter` single seam cho pattern `findFirst({ where: { tenantId, status: 'active' } })` đã bị duplicated ở 7+ file; 2 methods: `findActive(tenantId)` trả full DTO (id, plan, status, pricePerMonth, quota fields, cycle dates), `findActivePlan(tenantId)` trả nhẹ `{ subscriptionId, plan }` cho guards/settings/token; self-cache Redis 60s TTL; `invalidateCache(tenantId)` xóa cả 2 key ✅
+**Đã xong (Architecture refactoring #10 — Extract SubscriptionQueryAdapter + #7 eliminate redundant queries):**
+- Backend: tạo `common/services/subscription-query.adapter.ts` — `SubscriptionQueryAdapter` single seam cho `findFirst({ where: { tenantId, status: 'active' } })` đã duplicated ở 7+ file; `findActive(tenantId)` trả full DTO (id, plan, status, pricePerMonth, quota fields, cycle dates, **copilotQuota from PlanPricing**), `findActivePlan(tenantId)` trả nhẹ `{ subscriptionId, plan }` (dùng chung cache key `sub:active:{tenantId}` — xóa key riêng `sub:plan:{tenantId}`); self-cache Redis 60s TTL; `invalidateCache(tenantId)` xóa 1 key ✅
 - Backend: đăng ký adapter trong `CommonServicesModule` (Global, available toàn app) ✅
-- Backend: refactor `CopilotQuotaGuard` — dùng adapter cho subscription, giữ own Redis cache 30s riêng cho `copilotQuota` từ `planPricing` (giá rarely đổi) ✅
+- Backend: refactor `CopilotQuotaGuard` — dùng adapter cho subscription, **đọc `copilotQuota` trực tiếp từ `sub.copilotQuota`** (xóa `PrismaService`+`RedisService` inject, xóa own Redis cache 30s cho planPricing) ✅
 - Backend: refactor `PlanGuard` — dùng adapter `findActivePlan()`, bỏ manual Redis cache (`getCachedTenantPlan`/`setCachedTenantPlan`) ✅
 - Backend: refactor `SettingsService.updateNotifications()` — dùng adapter `findActivePlan()` cho plan check ✅
 - Backend: refactor `TokenService.getActivePlan()` — dùng adapter `findActivePlan()` ✅
-- Backend: refactor `BillingService.getCurrentPlan()` + `upgrade()` — dùng adapter; `confirmPayment()` gọi `invalidateCache()` thay `invalidateTenantPlanCache()` ✅
+- Backend: refactor `BillingService.getCurrentPlan()` — dùng adapter, **xóa riêng `planPricing` query** (lấy `copilotQuota` từ `sub.copilotQuota`); `upgrade()` dùng adapter; `confirmPayment()` gọi `invalidateCache()` thay `invalidateTenantPlanCache()` ✅
 - Backend: refactor `BillingOverageService.createOverageOrder()` — dùng adapter ✅
 - Backend: refactor `PlanPricingService.setTenantPlan()` — dùng `invalidateCache()` thay `invalidateTenantPlanCache()` ✅
 - Backend: xóa `common/util/tenant-plan-cache.ts` (không còn ai import) ✅
@@ -377,11 +379,11 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │       │   │   ├── quota-policy.ts          # OVERAGE_PLANS, QUOTA_WARNING_RATIO, isOveragePlan() — shared across billing/banking ✅
 │   │       │   │   └── ai-pricing.ts            # AI_PRICING record + calcCostUsd(model, tokensIn, tokensOut) — on-the-fly cost calculation ✅
 │   │       │   ├── services/
-│   │       │   │   └── subscription-query.adapter.ts  # SubscriptionQueryAdapter — single seam for "active subscription by tenant" queries, Redis 60s cache, findActive() + findActivePlan() + invalidateCache() ✅
+│   │   │   │   └── subscription-query.adapter.ts  # SubscriptionQueryAdapter — single seam for "active subscription by tenant" queries; findActive() trả ActiveSubscription kèm copilotQuota; findActivePlan() dùng chung cache sub:active:{tenantId}; Redis 60s cache ✅
 │   │       │   ├── decorators/                # @Roles, @RequiresPlan, @Public
 │   │       │   ├── guards/auth.guards.ts       # JwtAuthGuard, RolesGuard, PartnerGuard
 │   │       │   ├── guards/plan.guard.ts         # PlanGuard — uses SubscriptionQueryAdapter ✅
-│   │       │   ├── guards/copilot-quota.guard.ts  # CopilotQuotaGuard — uses SubscriptionQueryAdapter for subscription, own Redis cache 30s for copilotQuota from planPricing ✅
+│   │       │   ├── guards/copilot-quota.guard.ts  # CopilotQuotaGuard — uses SubscriptionQueryAdapter; reads copilotQuota from sub.copilotQuota (embedded in ActiveSubscription); removed own planPricing cache ✅
 │   │       │   ├── guards/copilot-throttler.guard.ts  # CopilotThrottlerGuard — per-user rate limit riêng cho Copilot (Phase 6) ✅
 │   │       │   ├── guards/tenant-throttler.guard.ts
 │   │       │   ├── filters/all-exceptions.filter.ts
@@ -429,9 +431,11 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   ├── classification.module.ts
 │   │           │   └── dto/review.dto.ts              # CorrectClassificationDto, ConfirmClassificationDto ✅
 │   │           ├── report/                    # Tổng hợp + export Excel + so sánh tháng + top accounts ✅
-│   │           │   ├── report.controller.ts   # + GET /reports/comparison, /reports/top-accounts
-│   │           │   ├── report.service.ts       # + getComparison(), getTopAccounts(), fetchExportData() (extracted for reuse) ✅
-│   │           │   └── report.module.ts
+│   │           │   ├── report.controller.ts   # injects ReportDataService directly (đã xóa pass-through layer)
+│   │           │   ├── report-data.service.ts # getComparison(), getTopAccounts(), getSummary(), exportExcel() — main business logic ✅
+│   │           │   ├── report.module.ts       # exports ReportDataService
+│   │           │   ├── monthly-report.scheduler.ts  # injects ReportDataService directly ✅
+│   │           │   └── report.service.ts (đã xóa — pass-through layer collapsed) ✅
 │   │           ├── settings/                  # Threshold (Prisma) + Notifications (Redis) ✅
 │   │           │   ├── settings.controller.ts
 │   │           │   ├── settings.service.ts
