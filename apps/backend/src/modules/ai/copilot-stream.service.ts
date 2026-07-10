@@ -280,14 +280,16 @@ export class CopilotStreamService {
 
       if (!wasAborted) {
         const usage = await runner.totalUsage();
-        this.aiUsageLogService.record({
-          tenantId,
-          callType: 'copilot',
-          model: this.openAiService.getChatModel(),
-          tokensIn: usage.prompt_tokens,
-          tokensOut: usage.completion_tokens,
-          conversationId: conversation.id,
-        });
+        if (usage) {
+          this.aiUsageLogService.record({
+            tenantId,
+            callType: 'copilot',
+            model: this.openAiService.getChatModel(),
+            tokensIn: usage.prompt_tokens,
+            tokensOut: usage.completion_tokens,
+            conversationId: conversation.id,
+          });
+        }
         await finishStream(reply, meta, activities);
       }
     } catch (err) {

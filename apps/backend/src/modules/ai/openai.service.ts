@@ -4,8 +4,11 @@ import type { CopilotActivity, Role } from '@xcash/shared-types';
 import OpenAI from 'openai';
 import { AiUsageLogService } from './ai-usage-log.service';
 import { buildActivities } from './copilot-activity.helper';
+import { CopilotAgentHarness } from './copilot-agent.harness';
 import type { CopilotToolService } from './copilot-tool.service';
-import { buildCopilotTools } from './copilot-tools.factory';
+import { buildCopilotToolSchemas } from './copilot-tools.factory';
+import type { LlmAdapter, LlmMessage } from './llm-adapter.interface';
+import { OpenAiCompatibleAdapter } from './openai-compatible.adapter';
 import { isQuotaOrBillingError, shouldFallbackProvider } from './utils/llm-error.util';
 import { sanitizeCopilotOutput } from './utils/llm-output.util';
 
@@ -263,54 +266,15 @@ ${financialContext}`;
     const calledTools: string[] = [];
     const resultsCapture = new Map<string, unknown>();
 
-    try {
-      const runner = this.createCopilotRunner(
-        tenantId,
-        message,
-        history,
-        toolService,
-        resultsCapture,
-        role,
-      );
-      if (!runner) {
-        const reply = await this.chatCopilot(
-          message,
-          history,
-          financialContext ?? '',
-          tenantId,
-          conversationId,
-        );
-        return { reply, activities: [] };
-      }
-
-      runner.on('functionToolCall', (call) => {
-        this.logger.debug(`Copilot tool called: ${call.name}`);
-        calledTools.push(call.name);
-      });
-
-      const reply = sanitizeCopilotOutput(
-        (await runner.finalContent()) ?? '',
-        'Xin lỗi, tôi không thể trả lời lúc này.',
-      );
-      const usage = await runner.totalUsage();
-      this.aiUsageLogService.record({
-        tenantId,
-        callType: 'copilot',
-        model: this.chatModel,
-        tokensIn: usage.prompt_tokens,
-        tokensOut: usage.completion_tokens,
-        conversationId,
-      });
-
-      const activities = buildActivities(calledTools, resultsCapture);
-      return { reply, activities };
-    } catch (error) {
-      this.logger.error(
-        'Copilot runTools failed, falling back to simple chat',
-        error instanceof Error ? error.message : String(error),
-      );
-
-      // Fallback to simple chat (has MiniMax fallback built-in)
+    const runner = this.createCopilotRunner(
+      tenantId,
+      message,
+      history,
+      toolService,
+      resultsCapture,
+      role,
+    );
+    if (!runner) {
       const reply = await this.chatCopilot(
         message,
         history,
@@ -319,6 +283,38 @@ ${financialContext}`;
         conversationId,
       );
       return { reply, activities: [] };
+    }
+
+    runner.on('functionToolCall', (call: { name: string }) => {
+      this.logger.debug(`Copilot tool called: ${call.name}`);
+      calledTools.push(call.name);
+    });
+
+    try {
+      const reply = sanitizeCopilotOutput(
+        await runner.finalContent(),
+        'Xin lỗi, tôi không thể trả lời lúc này.',
+      );
+      const usage = await runner.totalUsage();
+      if (usage) {
+        this.aiUsageLogService.record({
+          tenantId,
+          callType: 'copilot',
+          model: this.chatModel,
+          tokensIn: usage.prompt_tokens,
+          tokensOut: usage.completion_tokens,
+          conversationId,
+        });
+      }
+
+      const activities = buildActivities(calledTools, resultsCapture);
+      return { reply, activities };
+    } catch (error) {
+      this.logger.error(
+        'Copilot agent harness failed (mọi LLM adapter đều lỗi)',
+        error instanceof Error ? error.message : String(error),
+      );
+      return { reply: 'Xin lỗi, có lỗi xảy ra. Vui lòng thử lại.', activities: [] };
     }
   }
 
@@ -380,6 +376,17 @@ Khi nhận data từ knowledge về AI Copilot:
 Không tiết lộ tên tool kỹ thuật, grantId, accessToken, JSON thô. Luôn trả lời tiếng Việt.`;
   }
 
+  /** Adapter theo thứ tự ưu tiên — harness tự fallback sang adapter kế tiếp khi lỗi quota/billing. */
+  private buildLlmAdapters(): LlmAdapter[] {
+    const adapters: LlmAdapter[] = [];
+    if (this.client)
+      adapters.push(new OpenAiCompatibleAdapter('openai', this.client, this.chatModel));
+    if (this.minimaxClient) {
+      adapters.push(new OpenAiCompatibleAdapter('minimax', this.minimaxClient, this.minimaxModel));
+    }
+    return adapters;
+  }
+
   createCopilotRunner(
     tenantId: string,
     message: string,
@@ -387,34 +394,30 @@ Không tiết lộ tên tool kỹ thuật, grantId, accessToken, JSON thô. Luô
     toolService: CopilotToolService,
     resultsCapture?: Map<string, unknown>,
     role?: Role,
-  ) {
-    if (!this.client) return null;
+  ): CopilotAgentHarness | null {
+    const adapters = this.buildLlmAdapters();
+    if (adapters.length === 0) return null;
 
     const cassoSearchEnabled =
       this.configService.get<boolean>('COPILOT_CASSO_SEARCH_ENABLED') ?? false;
-    const tools = buildCopilotTools(
-      tenantId,
-      toolService,
-      this.configService,
-      resultsCapture,
-      role,
-    );
-    return this.client.chat.completions.runTools(
-      {
-        model: this.chatModel,
-        messages: [
-          { role: 'system', content: this.buildCopilotSystemPrompt(cassoSearchEnabled) },
-          ...history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
-          { role: 'user', content: message },
-        ],
-        // biome-ignore lint/suspicious/noExplicitAny: OpenAI SDK tool type requires cast
-        tools: tools as any,
-        tool_choice: 'auto',
-        temperature: 0.3,
-        max_tokens: 1024,
-        stream: true,
-      },
-      { maxChatCompletions: 5, maxRetries: 0 },
+    const tools = buildCopilotToolSchemas(this.configService);
+
+    const executeTool = async (name: string, args: Record<string, unknown>): Promise<unknown> => {
+      const result = await toolService.execute(tenantId, name, args, role);
+      resultsCapture?.set(name, result);
+      return result;
+    };
+
+    const llmHistory: LlmMessage[] = history.map((h) => ({ role: h.role, content: h.content }));
+
+    return new CopilotAgentHarness(
+      adapters,
+      this.buildCopilotSystemPrompt(cassoSearchEnabled),
+      llmHistory,
+      message,
+      tools,
+      executeTool,
+      5,
     );
   }
 
