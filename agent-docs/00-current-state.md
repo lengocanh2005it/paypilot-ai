@@ -2,7 +2,7 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Copilot action-tool thứ hai — `propose_correct_transaction_classification`** (branch `feat/copilot-correct-action`, PR chưa tạo). Tool read-only/dry-run, dùng chung flag `COPILOT_ACTION_TOOLS_ENABLED`; nhận `debitAccount`/`creditAccount` mới do **user** tự nêu (model không tự đề xuất), validate tồn tại + active trong `ChartOfAccount` (1 query `findMany` cho cả 2 mã, không gọi lại tool `lookup_chart_account`); thứ tự check role → status → mã TK. FE mới `CopilotCorrectionCard.tsx` (card so sánh định khoản cũ/mới) — gọi thẳng `POST /review/:id/correct` (nay nhận thêm optional `source?: 'copilot'` giống `confirm`). `CopilotActionCardData` (shared-types) đổi từ interface đơn sang discriminated union (`CopilotConfirmActionCardData | CopilotCorrectActionCardData`, phân biệt qua field `tool`). `pnpm verify` pass 10/10.
+Cập nhật lần cuối: **Candidate #6 — Close the Shared Types Gap** — thêm ~40 domain API response types vào `packages/shared-types/src/index.ts`: Auth/Profile (AuthenticatedUser, UserProfile, UpdateProfileInput), Transaction (TransactionSummary, TransactionDetail, TransactionListResponse, TransactionClassificationSummary), Review (ClassificationItem, ReviewQueueResponse), Onboarding (OnboardingGrant/Step/Status, GrantTokenResponse, BankingCallbackResponse), Billing (PlanData, UpgradeResult, BillingPlan, PaymentOrder, PaymentHistoryResponse, CycleTransaction, OverageOrder/Result), Reports (SummaryData, AccountSummary, AccountBreakdownData, ComparisonData, TopAccountsData), Partner (PartnerTenant/TenantsResponse, TenantMember/Detail, PlanPricingItem, DashboardStats, RevenueTrendPoint, PartnerPayment, PaymentsResponse, AiCost*). FE type files (`types/` và `types/api/`) giờ là re-export barrel từ shared-types. BE `report-data.service.ts` import AccountSummary từ shared-types. `pnpm verify` pass 11/11.
 
 Trước đó — **Copilot action-tool đầu tiên — `propose_confirm_transaction_classification`** (branch `feat/copilot-confirm-action`, đã merge vào main qua PR #23). Tool read-only/dry-run, gated `COPILOT_ACTION_TOOLS_ENABLED` (default 0); FE render "action card" trong chat (`CopilotActionCard.tsx`) — re-check status live qua `useQuery`, xác nhận qua `useMutation` gọi thẳng `POST /review/:id/confirm` (không qua AI); endpoint đó nhận thêm optional `source?: 'copilot'` để audit trail. `CopilotActivity` (shared-types) thêm variant `kind: 'action_card'` + field `actionCard`. `getReviewQueue()` giờ select thêm `transaction.id`; `ReviewPage` có cột "Mã GD" (`CopyIdButton.tsx`, copy-to-clipboard) để lấy transactionId dán vào Copilot. `pnpm verify` pass 10/10.
 
@@ -750,77 +750,41 @@ ai_usage_logs
 
 ---
 
-## Nguyên văn `shared-types/src/index.ts`
+## Nguyên văn `shared-types/src/index.ts` — tóm tắt 7 domain block
 
 ```typescript
-export enum Role {
-  CAS_PARTNER = 'cas_partner',
-  ADMIN = 'admin',
-  ACCOUNTANT = 'accountant',
-  VIEWER = 'viewer',
-}
+// ─── Enums (13, generated from Prisma) ──────────────────────────────────
+// AccountType, AiCallType, CasGrantStatus, ClassificationType,
+// CopilotMessageRole, NotificationType, PaymentOrderStatus, Role,
+// SubscriptionPlan, SubscriptionStatus, TransactionDirection,
+// TransactionSource, TransactionStatus
 
-export enum TransactionStatus {
-  PENDING = 'pending',
-  CLASSIFIED = 'classified',
-  REVIEW = 'review',
-  SKIPPED = 'skipped',
-}
+// ─── Plan utilities ─────────────────────────────────────────────────────
+// PLAN_RANK, PLAN_LABEL, meetsPlan()
 
-export enum ClassificationType {
-  AUTO = 'auto',
-  MANUAL = 'manual',
-}
-
-export enum AccountType {
-  ASSET = 'asset',
-  LIABILITY = 'liability',
-  EQUITY = 'equity',
-  REVENUE = 'revenue',
-  EXPENSE = 'expense',
-}
-
-export interface CopilotConfirmActionCardData {
-  tool: 'propose_confirm_transaction_classification';
-  transactionId: string; classificationId: string;
-  debitAccount: string; creditAccount: string;
-  confidence: number; status: string; content: string; amount: number;
-  canConfirm: boolean; reason?: string;
-}
-export interface CopilotCorrectActionCardData {
-  tool: 'propose_correct_transaction_classification';
-  transactionId: string; classificationId: string;
-  debitAccount: string; creditAccount: string;
-  proposedDebitAccount: string; proposedCreditAccount: string;
-  confidence: number; status: string; content: string; amount: number;
-  canCorrect: boolean; reason?: string;
-}
-export type CopilotActionCardData = CopilotConfirmActionCardData | CopilotCorrectActionCardData;
-export interface CopilotActivity {
-  kind: 'internal_data' | 'knowledge' | 'web_search' | 'action_card';
-  label: string;
-  source?: string;
-  urls?: string[];
-  snippet?: string;
-  actionCard?: CopilotActionCardData;
-}
-export interface CopilotConversationSummary {
-  id: string; title: string; createdAt: string; updatedAt: string;
-  messageCount: number; lastMessage?: string;
-}
-export interface CopilotMessageDto {
-  id: string; role: 'user' | 'assistant'; content: string;
-  activities?: CopilotActivity[]; createdAt: string; isPartial: boolean;
-}
-export interface CopilotConversationDetail {
-  id: string; title: string; createdAt: string; updatedAt: string;
-  messages: CopilotMessageDto[]; hasMore: boolean; oldestMessageId: string | null;
-}
-export interface CopilotConversationsListResponse {
-  items: CopilotConversationSummary[]; hasMore: boolean; cursorNext: string | null;
-}
-
-// + CasGrantStatus, SubscriptionPlan, SubscriptionStatus, PaymentOrderStatus, ApiResponse<T>
+// ─── Auth / Profile ──── AuthenticatedUser, UserProfile, UpdateProfileInput
+// ─── Transaction ──────── TransactionClassificationSummary, TransactionSummary,
+//                          TransactionDetail, TransactionListResponse
+// ─── Review ───────────── ClassificationItem, ReviewQueueResponse
+// ─── Onboarding ───────── OnboardingGrant, OnboardingStep, OnboardingStatus,
+//                          GrantTokenResponse, BankingCallbackResponse
+// ─── Billing ──────────── PlanData, UpgradeResult, OverageOrder,
+//                          OveragePaymentResult, BillingPlan, PaymentOrder,
+//                          PaymentHistoryResponse, CycleTransaction
+// ─── Reports ──────────── SummaryData, AccountSummary, AccountBreakdownData,
+//                          ComparisonData, TopAccountsData
+// ─── Partner ──────────── PartnerTenant, PartnerTenantsResponse, TenantMember,
+//                          TenantDetail, PlanPricingItem, DashboardStats,
+//                          RevenueTrendPoint, PartnerPayment, PaymentsResponse,
+//                          AiCostBreakdownItem, AiCostRow, AiCostsResponse,
+//                          AiCostDetailLog, AiCostDetailResponse
+// ─── Notifications ────── AppNotification, NotificationListResult
+// ─── Import ───────────── ImportValidateResult, ImportResult, ImportHistoryItem
+// ─── Copilot ──────────── CopilotConfirmActionCardData, CopilotCorrectActionCardData,
+//                          CopilotActionCardData, CopilotActivity,
+//                          CopilotConversationSummary, CopilotMessageDto,
+//                          CopilotConversationDetail, CopilotConversationsListResponse
+// ─── Common ───────────── ApiResponse<T>
 ```
 
 ---

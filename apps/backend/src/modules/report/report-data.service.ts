@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, TransactionDirection, TransactionSource, TransactionStatus } from '@prisma/client';
+import type { AccountSummary } from '@xcash/shared-types';
 import { paginateParams, paginateResult } from '../../common/util/pagination.util';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -40,15 +41,7 @@ export interface SourceBreakdownItem {
   count: number;
 }
 
-export interface AccountSummary {
-  accountCode: string;
-  accountName: string;
-  accountType: string;
-  totalDebit: number;
-  totalCredit: number;
-  net: number;
-  transactionCount: number;
-}
+export type { AccountSummary } from '@xcash/shared-types';
 
 @Injectable()
 export class ReportDataService {
