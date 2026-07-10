@@ -12,7 +12,12 @@ function contentChunk(text: string, finish: string | null = null): ChatCompletio
   } as ChatCompletionChunk;
 }
 
-function toolCallChunk(id: string, name: string, args: string): ChatCompletionChunk {
+function toolCallChunk(
+  id: string,
+  name: string,
+  args: string,
+  toolCallIndex = 0,
+): ChatCompletionChunk {
   return {
     id: 'c',
     object: 'chat.completion.chunk',
@@ -21,7 +26,7 @@ function toolCallChunk(id: string, name: string, args: string): ChatCompletionCh
     choices: [
       {
         index: 0,
-        delta: { tool_calls: [{ index: 0, id, function: { name, arguments: args } }] },
+        delta: { tool_calls: [{ index: toolCallIndex, id, function: { name, arguments: args } }] },
         finish_reason: null,
       },
     ],
@@ -147,6 +152,57 @@ describe('CopilotAgentHarness', () => {
     expect(toolCalls).toEqual(['get_month_summary']);
     expect(executeTool).toHaveBeenCalledWith('get_month_summary', { year: 2026, month: 7 });
     expect(adapter.callCount).toBe(2);
+  });
+
+  it('dedupes a repeated tool call (same name+args) within the same request', async () => {
+    const adapter = new FakeAdapter('primary', (callIndex) => {
+      if (callIndex < 2) {
+        return [
+          toolCallChunk('call_dup', 'get_month_summary', '{"year":2026,"month":7}'),
+          doneChunk('tool_calls'),
+        ];
+      }
+      return [contentChunk('Doanh thu tháng 7 là 100tr'), doneChunk('stop')];
+    });
+    const executeTool = jest.fn().mockResolvedValue({ revenue: 100_000_000 });
+
+    const harness = new CopilotAgentHarness(
+      [adapter],
+      'system prompt',
+      [],
+      'doanh thu tháng này, chắc chắn lại lần nữa',
+      [],
+      executeTool,
+    );
+
+    await expect(harness.finalContent()).resolves.toBe('Doanh thu tháng 7 là 100tr');
+    expect(executeTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not dedupe tool calls with different args', async () => {
+    const adapter = new FakeAdapter('primary', (callIndex) => {
+      if (callIndex === 0) {
+        return [
+          toolCallChunk('call_a', 'get_month_summary', '{"year":2026,"month":6}', 0),
+          toolCallChunk('call_b', 'get_month_summary', '{"year":2026,"month":7}', 1),
+          doneChunk('tool_calls'),
+        ];
+      }
+      return [contentChunk('So sánh 2 tháng'), doneChunk('stop')];
+    });
+    const executeTool = jest.fn().mockResolvedValue({ revenue: 1 });
+
+    const harness = new CopilotAgentHarness(
+      [adapter],
+      'system prompt',
+      [],
+      'so sánh tháng 6 và tháng 7',
+      [],
+      executeTool,
+    );
+
+    await harness.finalContent();
+    expect(executeTool).toHaveBeenCalledTimes(2);
   });
 
   it('forces one final no-tool call after maxIterations to summarize instead of returning empty', async () => {

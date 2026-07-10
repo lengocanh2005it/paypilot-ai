@@ -32,6 +32,8 @@ export class CopilotAgentHarness extends EventEmitter {
   private usage: LlmUsage | undefined;
   private usedAdapterName: string | undefined;
   private fallbackOccurred = false;
+  /** Dedupe tool call trùng lặp (cùng name+args) trong cùng 1 request — chỉ cache kết quả thành công. */
+  private readonly toolResultCache = new Map<string, unknown>();
   private readonly runPromise: Promise<string>;
 
   constructor(
@@ -118,12 +120,20 @@ export class CopilotAgentHarness extends EventEmitter {
 
       for (const call of result.toolCalls) {
         this.emit('functionToolCall', { name: call.function.name });
+        const argsRaw = call.function.arguments || '{}';
+        const cacheKey = `${call.function.name}:${argsRaw}`;
+
         let output: unknown;
-        try {
-          const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>;
-          output = await this.executeTool(call.function.name, args);
-        } catch (err) {
-          output = { error: err instanceof Error ? err.message : String(err) };
+        if (this.toolResultCache.has(cacheKey)) {
+          output = this.toolResultCache.get(cacheKey);
+        } else {
+          try {
+            const args = JSON.parse(argsRaw) as Record<string, unknown>;
+            output = await this.executeTool(call.function.name, args);
+            this.toolResultCache.set(cacheKey, output);
+          } catch (err) {
+            output = { error: err instanceof Error ? err.message : String(err) };
+          }
         }
         messages.push({
           role: 'tool',
