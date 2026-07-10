@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, TransactionDirection, TransactionSource, TransactionStatus } from '@prisma/client';
+import { TransactionDirection, TransactionSource, TransactionStatus } from '@prisma/client';
 import { paginateParams, paginateResult } from '../../common/util/pagination.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  AccountSummary,
+  buildAccountSummaries,
+  fetchClassificationSides,
+} from './report-account-summary';
 
 interface DailyTrendSqlRow {
   day_key: string;
@@ -9,12 +14,6 @@ interface DailyTrendSqlRow {
   classified_count: bigint;
   revenue_amount: unknown;
   expense_amount: unknown;
-}
-
-interface AccountSideSqlRow {
-  account_code: string;
-  total: unknown;
-  tx_count: bigint;
 }
 
 export interface DailyTrendPoint {
@@ -38,16 +37,6 @@ export interface StatusBreakdownItem {
 export interface SourceBreakdownItem {
   source: TransactionSource;
   count: number;
-}
-
-export interface AccountSummary {
-  accountCode: string;
-  accountName: string;
-  accountType: string;
-  totalDebit: number;
-  totalCredit: number;
-  net: number;
-  transactionCount: number;
 }
 
 @Injectable()
@@ -195,120 +184,11 @@ export class ReportDataService {
     return { items, total };
   }
 
-  private async fetchClassificationSides(
-    tenantId: string,
-    from: Date,
-    to: Date,
-    inclusiveEnd = false,
-  ): Promise<{ debits: AccountSideSqlRow[]; credits: AccountSideSqlRow[] }> {
-    const dateEnd = inclusiveEnd
-      ? Prisma.sql`t.transaction_date <= ${to}`
-      : Prisma.sql`t.transaction_date < ${to}`;
-
-    const [debits, credits] = await Promise.all([
-      this.prisma.$queryRaw<AccountSideSqlRow[]>`
-        SELECT
-          tc.debit_account AS account_code,
-          COALESCE(SUM(tc.amount::numeric), 0) AS total,
-          COUNT(*)::bigint AS tx_count
-        FROM transaction_classifications tc
-        INNER JOIN transactions t ON t.id = tc.transaction_id
-        WHERE tc.tenant_id = ${tenantId}
-          AND tc.status::text = ${TransactionStatus.classified}
-          AND t.transaction_date >= ${from}
-          AND ${dateEnd}
-        GROUP BY tc.debit_account
-      `,
-      this.prisma.$queryRaw<AccountSideSqlRow[]>`
-        SELECT
-          tc.credit_account AS account_code,
-          COALESCE(SUM(tc.amount::numeric), 0) AS total,
-          COUNT(*)::bigint AS tx_count
-        FROM transaction_classifications tc
-        INNER JOIN transactions t ON t.id = tc.transaction_id
-        WHERE tc.tenant_id = ${tenantId}
-          AND tc.status::text = ${TransactionStatus.classified}
-          AND t.transaction_date >= ${from}
-          AND ${dateEnd}
-        GROUP BY tc.credit_account
-      `,
-    ]);
-
-    return { debits, credits };
-  }
-
-  private mergeAccountSideAggregates(
-    map: Map<string, AccountSummary>,
-    rows: AccountSideSqlRow[],
-    side: 'debit' | 'credit',
-  ): void {
-    for (const row of rows) {
-      const amount = Number(row.total);
-      const count = Number(row.tx_count);
-      const existing = map.get(row.account_code);
-      if (existing) {
-        if (side === 'debit') {
-          existing.totalDebit += amount;
-        } else {
-          existing.totalCredit += amount;
-        }
-        existing.transactionCount += count;
-        existing.net = existing.totalCredit - existing.totalDebit;
-        continue;
-      }
-
-      map.set(row.account_code, {
-        accountCode: row.account_code,
-        accountName: row.account_code,
-        accountType: 'unknown',
-        totalDebit: side === 'debit' ? amount : 0,
-        totalCredit: side === 'credit' ? amount : 0,
-        net: (side === 'credit' ? amount : 0) - (side === 'debit' ? amount : 0),
-        transactionCount: count,
-      });
-    }
-  }
-
-  async buildAccountSummaries(
-    tenantId: string,
-    from: Date,
-    to: Date,
-    inclusiveEnd = false,
-  ): Promise<AccountSummary[]> {
-    const { debits, credits } = await this.fetchClassificationSides(
-      tenantId,
-      from,
-      to,
-      inclusiveEnd,
-    );
-
-    const accountMap = new Map<string, AccountSummary>();
-    this.mergeAccountSideAggregates(accountMap, debits, 'debit');
-    this.mergeAccountSideAggregates(accountMap, credits, 'credit');
-
-    const codes = [...accountMap.keys()];
-    if (codes.length > 0) {
-      const accounts = await this.prisma.chartOfAccount.findMany({
-        where: { tenantId, accountCode: { in: codes } },
-        select: { accountCode: true, accountName: true, accountType: true },
-      });
-      for (const a of accounts) {
-        const entry = accountMap.get(a.accountCode);
-        if (entry) {
-          entry.accountName = a.accountName;
-          entry.accountType = a.accountType;
-        }
-      }
-    }
-
-    return [...accountMap.values()].sort((a, b) => a.accountCode.localeCompare(b.accountCode));
-  }
-
   async getSummary(tenantId: string, year: number, month: number) {
     const { from, to } = this.periodBounds(year, month);
 
     const [byAccount, reviewCount, totalCount, classifiedCount] = await Promise.all([
-      this.buildAccountSummaries(tenantId, from, to),
+      buildAccountSummaries(this.prisma, tenantId, from, to),
       this.prisma.transactionClassification.count({
         where: {
           tenantId,
@@ -351,7 +231,7 @@ export class ReportDataService {
     to.setHours(23, 59, 59, 999);
 
     const [byAccount, reviewCount, totalCount, classifiedCount] = await Promise.all([
-      this.buildAccountSummaries(tenantId, from, to),
+      buildAccountSummaries(this.prisma, tenantId, from, to),
       this.prisma.transactionClassification.count({
         where: {
           tenantId,
@@ -401,7 +281,7 @@ export class ReportDataService {
     const accountType =
       filters.accountType && filters.accountType !== 'all' ? filters.accountType : undefined;
 
-    let items = await this.buildAccountSummaries(tenantId, from, to);
+    let items = await buildAccountSummaries(this.prisma, tenantId, from, to);
 
     if (search) {
       items = items.filter(
@@ -472,7 +352,7 @@ export class ReportDataService {
           },
           orderBy: { transaction: { transactionDate: 'asc' } },
         }),
-        this.buildAccountSummaries(tenantId, from, to, true),
+        buildAccountSummaries(this.prisma, tenantId, from, to, true),
         this.prisma.transactionClassification.count({
           where: {
             tenantId,
@@ -557,7 +437,13 @@ export class ReportDataService {
     const from = new Date(year, month - 1, 1);
     const to = new Date(year, month, 1);
 
-    const { debits, credits } = await this.fetchClassificationSides(tenantId, from, to, false);
+    const { debits, credits } = await fetchClassificationSides(
+      this.prisma,
+      tenantId,
+      from,
+      to,
+      false,
+    );
 
     const expenseMap = new Map(debits.map((row) => [row.account_code, Number(row.total)]));
     const revenueMap = new Map(credits.map((row) => [row.account_code, Number(row.total)]));

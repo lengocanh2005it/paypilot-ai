@@ -9,13 +9,6 @@ import { TableSkeleton } from '@/components/shared/TableSkeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -24,7 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -34,16 +26,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { usePartnerTenants } from '@/hooks/usePartnerTenants';
-import { formatDateVN } from '@/lib/date';
 import { formatVND } from '@/lib/format-vnd';
 import { PLAN_LABELS } from '@/lib/plans';
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: 'Admin',
-  accountant: 'Kế toán',
-  viewer: 'Người xem',
-  cas_partner: 'Cas Partner',
-};
+import { SetPlanDialog } from './SetPlanDialog';
+import { TenantDetailDialog } from './TenantDetailDialog';
 
 export default function PartnerTenantsPage() {
   const {
@@ -362,102 +348,14 @@ export default function PartnerTenantsPage() {
           </CardContent>
         </Card>
 
-        <Dialog
+        <TenantDetailDialog
           open={viewingTenantId !== null}
           onOpenChange={(open) => !open && setViewingTenantId(null)}
-        >
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{tenantDetail?.businessName ?? 'Chi tiết doanh nghiệp'}</DialogTitle>
-            </DialogHeader>
-            {loadingDetail || !tenantDetail ? (
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-              </div>
-            ) : (
-              <div className="space-y-4 text-sm">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <p className="text-xs text-muted-foreground">Chủ doanh nghiệp</p>
-                    <p className="font-medium">{tenantDetail.ownerName ?? '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Gói</p>
-                    <p className="font-medium">
-                      {tenantDetail.plan
-                        ? (PLAN_LABELS[tenantDetail.plan] ?? tenantDetail.plan)
-                        : '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Trạng thái</p>
-                    {tenantDetail.status === 'suspended' ? (
-                      <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                        Đã khóa
-                      </Badge>
-                    ) : (
-                      <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                        Hoạt động
-                      </Badge>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Giá/tháng</p>
-                    <p className="font-medium">{formatVND(tenantDetail.pricePerMonth)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Ngưỡng định khoản tự động</p>
-                    <p className="font-medium">{tenantDetail.classificationThreshold}%</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Quota GD/chu kỳ</p>
-                    <p className="font-medium">
-                      {tenantDetail.transactionUsedThisCycle} / {tenantDetail.transactionQuota}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">GD tháng này / tổng</p>
-                    <p className="font-medium">
-                      {tenantDetail.transactionsThisMonth} / {tenantDetail.totalTransactions}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Độ chính xác AI (tháng này)</p>
-                    <p className="font-medium">{tenantDetail.aiAccuracy}%</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Ngày tạo</p>
-                    <p className="font-medium">{formatDateVN(tenantDetail.createdAt)}</p>
-                  </div>
-                </div>
+          tenantDetail={tenantDetail ?? null}
+          loadingDetail={loadingDetail}
+        />
 
-                <div>
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">
-                    Thành viên ({tenantDetail.members.length})
-                  </p>
-                  <div className="max-h-48 space-y-2 overflow-y-auto">
-                    {tenantDetail.members.map((m) => (
-                      <div
-                        key={m.id}
-                        className="flex items-center justify-between rounded-md border px-3 py-2"
-                      >
-                        <div>
-                          <p className="font-medium">{m.name}</p>
-                          <p className="text-xs text-muted-foreground">{m.email}</p>
-                        </div>
-                        <Badge variant="secondary">{ROLE_LABELS[m.role] ?? m.role}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
+        <SetPlanDialog
           open={setPlanTarget !== null && !confirmSetPlan}
           onOpenChange={(open) => {
             if (!open) {
@@ -465,67 +363,13 @@ export default function PartnerTenantsPage() {
               setSelectedNewPlan('');
             }
           }}
-        >
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Đổi gói dịch vụ</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-2 text-sm">
-              <p className="text-muted-foreground">
-                Doanh nghiệp:{' '}
-                <span className="font-medium text-foreground">{setPlanTarget?.businessName}</span>
-              </p>
-              <p className="text-muted-foreground">
-                Gói hiện tại:{' '}
-                <span className="font-medium text-foreground">
-                  {setPlanTarget?.plan
-                    ? (PLAN_LABELS[setPlanTarget.plan] ?? setPlanTarget.plan)
-                    : '—'}
-                </span>
-              </p>
-              <div className="space-y-1.5">
-                <p className="font-medium">Chọn gói mới</p>
-                <Select value={selectedNewPlan} onValueChange={setSelectedNewPlan}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn gói..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(planPricing ?? []).map((p) => (
-                      <SelectItem key={p.plan} value={p.plan}>
-                        <span className="flex items-center gap-2">
-                          <span>{PLAN_LABELS[p.plan] ?? p.plan}</span>
-                          <span className="text-xs text-muted-foreground">
-                            —{' '}
-                            {p.pricePerMonth === 0
-                              ? 'Miễn phí'
-                              : `${formatVND(p.pricePerMonth)}/tháng`}
-                          </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSetPlanTarget(null);
-                  setSelectedNewPlan('');
-                }}
-              >
-                Hủy
-              </Button>
-              <Button
-                disabled={!selectedNewPlan || selectedNewPlan === setPlanTarget?.plan}
-                onClick={() => setConfirmSetPlan(true)}
-              >
-                Tiếp tục
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          target={setPlanTarget}
+          planPricing={planPricing ?? null}
+          selectedPlan={selectedNewPlan}
+          onSelectedPlanChange={setSelectedNewPlan}
+          onConfirm={() => setConfirmSetPlan(true)}
+          isPending={setPlanMutation.isPending}
+        />
 
         <ConfirmDialog
           open={confirmSetPlan}
