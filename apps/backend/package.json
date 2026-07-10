@@ -28,6 +28,7 @@
     "prisma:seed:partners": "ts-node --transpile-only prisma/seed-partners-demo.ts",
     "seed:knowledge": "ts-node --transpile-only -r tsconfig-paths/register src/scripts/seed-knowledge.ts",
     "migrate:embedding-dims": "ts-node --transpile-only -r tsconfig-paths/register src/scripts/migrate-embedding-dims.ts",
+    "eval:copilot-tools": "ts-node --transpile-only -r tsconfig-paths/register src/scripts/eval-copilot-tool-routing.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {
