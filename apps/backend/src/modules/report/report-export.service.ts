@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { RedisService } from '../../redis/redis.service';
 import { ReportDataService } from './report-data.service';
@@ -102,6 +102,12 @@ export class ReportExportService {
         contentType: contentTypeFor(cached.format),
         fileName: cached.fileName,
       };
+    }
+
+    if (!fallback.fromDate || !fallback.toDate) {
+      throw new BadRequestException(
+        'Thiếu tham số fromDate/toDate để tạo lại file export đã hết hạn',
+      );
     }
 
     return this.buildFile(tenantId, fallback.format, fallback.fromDate, fallback.toDate);

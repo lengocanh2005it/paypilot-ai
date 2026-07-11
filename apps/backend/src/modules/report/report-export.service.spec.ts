@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ReportExportService } from './report-export.service';
 
 describe('ReportExportService', () => {
@@ -93,5 +93,19 @@ describe('ReportExportService', () => {
 
     expect(file.buffer.length).toBeGreaterThan(0);
     expect(fetchExportData).toHaveBeenCalledTimes(1);
+  });
+
+  it('getExportFile throws BadRequestException when Redis misses and fallback fromDate/toDate is missing', async () => {
+    const service = makeService();
+
+    await expect(
+      service.getExportFile('non-existent-id', 'tenant-1', {
+        format: 'pdf',
+        fromDate: '',
+        toDate: '2026-06-30',
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(fetchExportData).not.toHaveBeenCalled();
   });
 });
