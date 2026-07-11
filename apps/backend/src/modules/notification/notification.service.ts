@@ -2,6 +2,17 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { NotificationType, Prisma } from '@prisma/client';
 import { paginateParams } from '../../common/util/pagination.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  checkCopilotQuotaNotifications,
+  createBillingPaymentDue,
+  createBillingSuccess,
+  createOverageStarted,
+  createPlanActivatedByPartner,
+  createQuotaExceeded,
+  createQuotaWarning,
+  createReviewNeeded,
+  createTenantSuspended,
+} from './notification-creators';
 import { NotificationDeliveryService } from './notification-delivery.service';
 import { NotificationStreamService } from './notification-stream.service';
 
@@ -186,20 +197,20 @@ export class NotificationService {
 
   async createReviewNeeded(
     tenantId: string,
-    _transactionDbId: string,
+    transactionDbId: string,
     content: string | null,
     confidenceScore: number,
   ): Promise<void> {
-    const preview = this.buildContentPreview(content);
-    const body = preview
-      ? `Độ tin cậy ${confidenceScore}% — "${preview}"`
-      : `Độ tin cậy ${confidenceScore}% — cần kế toán xác nhận định khoản`;
-
-    await this.publish(tenantId, NotificationType.review_needed, {
-      title: 'Giao dịch mới cần review',
-      body,
-      link: '/review',
-    });
+    await createReviewNeeded(
+      this.prisma,
+      this.streamService,
+      this.deliveryService,
+      this.logger,
+      tenantId,
+      transactionDbId,
+      content,
+      confidenceScore,
+    );
   }
 
   async createQuotaWarning(
@@ -208,20 +219,28 @@ export class NotificationService {
     quota: number,
     cycleStart: Date,
   ): Promise<void> {
-    const percent = Math.round((used / quota) * 100);
-    await this.createOncePerCycle(tenantId, NotificationType.quota_warning, cycleStart, {
-      title: 'Sắp hết quota giao dịch',
-      body: `Đã dùng ${used}/${quota} giao dịch (${percent}%) trong chu kỳ này. Cân nhắc nâng cấp gói.`,
-      link: '/settings?tab=billing',
-    });
+    await createQuotaWarning(
+      this.prisma,
+      this.streamService,
+      this.deliveryService,
+      this.logger,
+      tenantId,
+      used,
+      quota,
+      cycleStart,
+    );
   }
 
   async createQuotaExceeded(tenantId: string, quota: number, cycleStart: Date): Promise<void> {
-    await this.createOncePerCycle(tenantId, NotificationType.quota_exceeded, cycleStart, {
-      title: 'Đã hết quota giao dịch',
-      body: `Đã dùng hết ${quota} giao dịch trong chu kỳ này.`,
-      link: '/settings?tab=billing',
-    });
+    await createQuotaExceeded(
+      this.prisma,
+      this.streamService,
+      this.deliveryService,
+      this.logger,
+      tenantId,
+      quota,
+      cycleStart,
+    );
   }
 
   async checkCopilotQuotaNotifications(
@@ -230,25 +249,16 @@ export class NotificationService {
     quota: number,
     cycleStart: Date,
   ): Promise<void> {
-    if (quota === -1) return;
-
-    if (used >= quota) {
-      await this.createOncePerCycle(tenantId, NotificationType.copilot_quota_exceeded, cycleStart, {
-        title: 'Đã hết lượt chat Copilot',
-        body: `Đã dùng hết ${quota} lượt chat Copilot trong tháng này. Nâng cấp gói để tiếp tục.`,
-        link: '/settings?tab=billing',
-      });
-      return;
-    }
-
-    const percent = used / quota;
-    if (percent >= 0.8) {
-      await this.createOncePerCycle(tenantId, NotificationType.copilot_quota_warning, cycleStart, {
-        title: 'Sắp hết lượt chat Copilot',
-        body: `Đã dùng ${used}/${quota} lượt chat Copilot (${Math.round(percent * 100)}%) trong tháng này.`,
-        link: '/settings?tab=billing',
-      });
-    }
+    await checkCopilotQuotaNotifications(
+      this.prisma,
+      this.streamService,
+      this.deliveryService,
+      this.logger,
+      tenantId,
+      used,
+      quota,
+      cycleStart,
+    );
   }
 
   async createOverageStarted(
@@ -256,11 +266,15 @@ export class NotificationService {
     pricePerTransaction: number,
     cycleStart: Date,
   ): Promise<void> {
-    await this.createOncePerCycle(tenantId, NotificationType.overage_started, cycleStart, {
-      title: 'Giao dịch vượt quota',
-      body: `Giao dịch mới vượt quota sẽ tính phí ${this.formatVnd(pricePerTransaction)}/giao dịch.`,
-      link: '/settings?tab=billing',
-    });
+    await createOverageStarted(
+      this.prisma,
+      this.streamService,
+      this.deliveryService,
+      this.logger,
+      tenantId,
+      pricePerTransaction,
+      cycleStart,
+    );
   }
 
   async createBillingSuccess(
@@ -270,33 +284,29 @@ export class NotificationService {
     amount: number,
     quota?: number,
   ): Promise<void> {
-    const planLabel = this.getPlanLabel(plan);
-
-    if (kind === 'upgrade') {
-      const quotaPart =
-        quota != null ? ` Quota ${quota.toLocaleString('vi-VN')} giao dịch/tháng.` : '';
-      await this.publish(tenantId, NotificationType.billing_success, {
-        title: `Mua gói ${planLabel} thành công`,
-        body: `Doanh nghiệp của bạn đã kích hoạt gói ${planLabel}.${quotaPart} Số tiền thanh toán: ${this.formatVnd(amount)}.`,
-        link: '/settings?tab=billing',
-      });
-      return;
-    }
-
-    await this.publish(tenantId, NotificationType.billing_success, {
-      title: 'Thanh toán phí vượt quota thành công',
-      body: `Đã thanh toán ${this.formatVnd(amount)} cho phí vượt quota gói ${planLabel}.`,
-      link: '/settings?tab=billing',
-    });
+    await createBillingSuccess(
+      this.prisma,
+      this.streamService,
+      this.deliveryService,
+      this.logger,
+      tenantId,
+      kind,
+      plan,
+      amount,
+      quota,
+    );
   }
 
   async createPlanActivatedByPartner(tenantId: string, plan: string, quota: number): Promise<void> {
-    const planLabel = this.getPlanLabel(plan);
-    await this.publish(tenantId, NotificationType.billing_success, {
-      title: `Gói ${planLabel} đã được kích hoạt`,
-      body: `Gói dịch vụ của doanh nghiệp đã được cập nhật thành ${planLabel} (${quota.toLocaleString('vi-VN')} giao dịch/tháng).`,
-      link: '/settings?tab=billing',
-    });
+    await createPlanActivatedByPartner(
+      this.prisma,
+      this.streamService,
+      this.deliveryService,
+      this.logger,
+      tenantId,
+      plan,
+      quota,
+    );
   }
 
   async createBillingPaymentDue(
@@ -304,95 +314,24 @@ export class NotificationService {
     amount: number,
     overageCount: number,
   ): Promise<void> {
-    await this.publish(tenantId, NotificationType.billing_payment_due, {
-      title: 'Có phí vượt quota cần thanh toán',
-      body: `${overageCount} giao dịch vượt quota — tổng ${this.formatVnd(amount)}. Vui lòng thanh toán để tiếp tục.`,
-      link: '/settings?tab=billing',
-    });
+    await createBillingPaymentDue(
+      this.prisma,
+      this.streamService,
+      this.deliveryService,
+      this.logger,
+      tenantId,
+      amount,
+      overageCount,
+    );
   }
 
   async createTenantSuspended(tenantId: string): Promise<void> {
-    await this.publish(tenantId, NotificationType.tenant_suspended, {
-      title: 'Tài khoản doanh nghiệp bị khóa',
-      body: 'Tài khoản đã bị Cas Partner tạm khóa. Liên hệ hỗ trợ để được mở lại.',
-      link: null,
-    });
-  }
-
-  private async publish(
-    tenantId: string,
-    type: NotificationType,
-    data: { title: string; body: string; link: string | null },
-  ): Promise<void> {
-    const notification = await this.prisma.notification.create({
-      data: {
-        tenantId,
-        userId: null,
-        type,
-        title: data.title,
-        body: data.body,
-        link: data.link,
-      },
-    });
-
-    this.streamService.emitNotification(tenantId, notification);
-
-    void Promise.all([
-      this.deliveryService
-        .enqueueEmailIfEnabled(tenantId, data)
-        .catch((err: unknown) =>
-          this.logger.warn(`Failed to queue email for tenant ${tenantId}`, err),
-        ),
-      this.deliveryService
-        .sendSlackIfEnabled(tenantId, data)
-        .catch((err: unknown) =>
-          this.logger.warn(`Failed to send Slack for tenant ${tenantId}`, err),
-        ),
-    ]);
-  }
-
-  private async createOncePerCycle(
-    tenantId: string,
-    type: NotificationType,
-    cycleStart: Date,
-    data: { title: string; body: string; link: string | null },
-  ): Promise<void> {
-    const existing = await this.prisma.notification.findFirst({
-      where: {
-        tenantId,
-        type,
-        userId: null,
-        createdAt: { gte: cycleStart },
-      },
-    });
-
-    if (existing) {
-      return;
-    }
-
-    await this.publish(tenantId, type, data);
-  }
-
-  private formatVnd(amount: number): string {
-    return `${amount.toLocaleString('vi-VN')}đ`;
-  }
-
-  private getPlanLabel(plan: string): string {
-    const labels: Record<string, string> = {
-      free: 'Free',
-      starter: 'Starter',
-      pro: 'Pro',
-      enterprise: 'Enterprise',
-    };
-    return labels[plan.toLowerCase()] ?? plan;
-  }
-
-  private buildContentPreview(content: string | null): string {
-    if (!content?.trim()) {
-      return '';
-    }
-
-    const trimmed = content.trim();
-    return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed;
+    await createTenantSuspended(
+      this.prisma,
+      this.streamService,
+      this.deliveryService,
+      this.logger,
+      tenantId,
+    );
   }
 }
