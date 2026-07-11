@@ -30,13 +30,23 @@ export interface CopilotCorrectActionCardData {
 
 export type CopilotActionCardData = CopilotConfirmActionCardData | CopilotCorrectActionCardData;
 
+export interface CopilotFileExportData {
+  tool: 'export_report';
+  exportId: string;
+  format: 'excel' | 'pdf';
+  fileName: string;
+  fromDate: string;
+  toDate: string;
+}
+
 export interface CopilotActivity {
-  kind: 'internal_data' | 'knowledge' | 'web_search' | 'action_card';
+  kind: 'internal_data' | 'knowledge' | 'web_search' | 'action_card' | 'file_export';
   label: string;
   source?: string;
   urls?: string[];
   snippet?: string;
   actionCard?: CopilotActionCardData;
+  fileExport?: CopilotFileExportData;
 }
 
 export interface CopilotConversationSummary {
