@@ -2,6 +2,7 @@ import {
   buildDailyTrendBuckets,
   formatDayKey,
   formatDayLabel,
+  monthToDateRange,
   periodBounds,
   startOfDay,
 } from './report-date.util';
@@ -90,5 +91,23 @@ describe('buildDailyTrendBuckets', () => {
     const dates = buckets.map((b) => b.date);
     const sorted = [...dates].sort();
     expect(dates).toEqual(sorted);
+  });
+});
+
+describe('monthToDateRange', () => {
+  it('returns first and last day of month as YYYY-MM-DD strings', () => {
+    expect(monthToDateRange(2026, 7)).toEqual({ fromDate: '2026-07-01', toDate: '2026-07-31' });
+  });
+
+  it('handles February in a leap year', () => {
+    expect(monthToDateRange(2028, 2)).toEqual({ fromDate: '2028-02-01', toDate: '2028-02-29' });
+  });
+
+  it('handles February in a non-leap year', () => {
+    expect(monthToDateRange(2026, 2)).toEqual({ fromDate: '2026-02-01', toDate: '2026-02-28' });
+  });
+
+  it('handles December', () => {
+    expect(monthToDateRange(2026, 12)).toEqual({ fromDate: '2026-12-01', toDate: '2026-12-31' });
   });
 });

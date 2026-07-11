@@ -16,6 +16,18 @@ export function periodBounds(year: number, month: number) {
   };
 }
 
+export function monthToDateRange(
+  year: number,
+  month: number,
+): { fromDate: string; toDate: string } {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    fromDate: `${year}-${pad(month)}-01`,
+    toDate: `${year}-${pad(month)}-${pad(lastDay)}`,
+  };
+}
+
 export function startOfDay(date: Date) {
   const normalized = new Date(date);
   normalized.setHours(0, 0, 0, 0);

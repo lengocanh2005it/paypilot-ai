@@ -1,5 +1,10 @@
-import type { CopilotActivity } from '@xcash/shared-types';
-import { ACTION_CARD_TOOLS, COPILOT_TOOLS, type CopilotToolEntry } from './copilot-tool.registry';
+import type { CopilotActivity, CopilotFileExportData } from '@xcash/shared-types';
+import {
+  ACTION_CARD_TOOLS,
+  COPILOT_TOOLS,
+  type CopilotToolEntry,
+  FILE_EXPORT_TOOLS,
+} from './copilot-tool.registry';
 import { KNOWLEDGE_SECTION_IDS_HIDDEN_FROM_SOURCES } from './knowledge';
 
 export type { CopilotActivity };
@@ -57,6 +62,19 @@ export function buildActivities(
           ...meta,
           actionCard: { ...data, tool: name } as CopilotActivity['actionCard'],
         });
+      continue;
+    }
+
+    if (FILE_EXPORT_TOOLS.has(name)) {
+      const data = resultsCapture?.get(name) as Omit<CopilotFileExportData, 'tool'> | undefined;
+      if (!data) continue;
+      const key = `file_export:${data.exportId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const meta = ACTIVITY_MAP[name];
+      if (meta) {
+        result.push({ ...meta, fileExport: { ...data, tool: name } as CopilotFileExportData });
+      }
       continue;
     }
 
