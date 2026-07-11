@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Role } from '@xcash/shared-types';
 import { BillingService } from '../billing/billing.service';
 import { ReportDataService } from '../report/report-data.service';
+import { ReportExportService } from '../report/report-export.service';
 import { CopilotKnowledgeService } from './copilot-knowledge.service';
 import { COPILOT_TOOLS } from './copilot-tool.registry';
 import { CopilotTransactionQueryService } from './copilot-tx-query.service';
@@ -17,6 +18,7 @@ export class CopilotToolService {
     private readonly txQueryService: CopilotTransactionQueryService,
     private readonly knowledgeService: CopilotKnowledgeService,
     private readonly billingService: BillingService,
+    private readonly exportService: ReportExportService,
   ) {}
 
   async execute(
@@ -33,6 +35,7 @@ export class CopilotToolService {
         txQueryService: this.txQueryService,
         knowledgeService: this.knowledgeService,
         billingService: this.billingService,
+        exportService: this.exportService,
       },
       tenantId,
       args,
