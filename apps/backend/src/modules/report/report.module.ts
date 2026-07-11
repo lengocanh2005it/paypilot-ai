@@ -8,6 +8,7 @@ import { MonthlyReportScheduler } from './monthly-report.scheduler';
 import { ReportController } from './report.controller';
 import { ReportSqlBuilder } from './report.sql';
 import { ReportDataService } from './report-data.service';
+import { ReportExportService } from './report-export.service';
 
 @Module({
   imports: [
@@ -17,7 +18,13 @@ import { ReportDataService } from './report-data.service';
     BullModule.registerQueue({ name: 'email-delivery' }),
   ],
   controllers: [ReportController],
-  providers: [ReportDataService, ReportSqlBuilder, MonthlyReportScheduler, PlanGuard],
-  exports: [ReportDataService, ReportSqlBuilder],
+  providers: [
+    ReportDataService,
+    ReportSqlBuilder,
+    ReportExportService,
+    MonthlyReportScheduler,
+    PlanGuard,
+  ],
+  exports: [ReportDataService, ReportSqlBuilder, ReportExportService],
 })
 export class ReportModule {}
