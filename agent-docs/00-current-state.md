@@ -2,7 +2,9 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **CopilotStreamService god-object decomposition** — extracted `CopilotConversationSetupService` (conversation + context + user message setup) and `CopilotQuotaManager` (quota increment + plan lookup + notification dispatch) from `CopilotStreamService`; slimmed stream service deps from 12→10; deleted dead code `copilot-tool.service.ts` + `copilot-agent.service.ts`; guard's `subMeta` extended to `{ id, copilotQuota }`; `CopilotQuotaManager` registered in `@Global()` `CommonServicesModule`. `pnpm verify` pass 11/11, 35 suites, 237 tests.
+Cập nhật lần cuối: **Unified quota management** — BankingService no longer reimplements quota check + increment + overage logging inline; delegates to `TransactionQuotaService.incrementUsage()` + `notifyAfterBatch()`. Eliminated ~60 lines of duplicated quota policy code. BankingModule imports BillingModule. `pnpm verify` pass 11/11, 35 suites, 237 tests.
+
+Trước đó — **CopilotStreamService god-object decomposition** — extracted `CopilotConversationSetupService` (conversation + context + user message setup) and `CopilotQuotaManager` (quota increment + plan lookup + notification dispatch) from `CopilotStreamService`; slimmed stream service deps from 12→10; deleted dead code `copilot-tool.service.ts` + `copilot-agent.service.ts`; guard's `subMeta` extended to `{ id, copilotQuota }`; `CopilotQuotaManager` registered in `@Global()` `CommonServicesModule`. `pnpm verify` pass 11/11, 35 suites, 237 tests.
 
 Trước đó — **CopilotStreamService god-object decomposition** — extracted `CopilotConversationSetupService` (single `prepare()` method: findOrCreate conversation + saveUserMessage + getHistoryForContext + getFinancialContext + config lookup → returns `ConversationPreparation` DTO) and `CopilotQuotaManager` (incrementAndNotify: reads planPricing from SubscriptionQueryAdapter + bumps Redis counter + dispatches QuotaNotificationService) from CopilotStreamService; slimmed stream service constructor deps from 12→10; deleted dead code `copilot-tool.service.ts` (pass-through wrapper) + `copilot-agent.service.ts` (unused); extended guard's `subMeta` from `{ id }` to `{ id, copilotQuota }` so CopilotQuotaManager can read quota from request; `CopilotQuotaManager` registered in `@Global()` CommonServicesModule. `pnpm verify` pass 11/11, 35 suites, 237 tests.
 
@@ -417,9 +419,9 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   ├── password-reset.service.ts
 │   │           │   └── change-password.service.ts
 │   │           ├── banking/                   # POST /webhook/cas → enqueue ai-classify ✅
-│   │           │   ├── banking.service.ts          # handleCasWebhook() — business logic only (no signature verification) ✅
+│   │           │   ├── banking.service.ts          # handleCasWebhook() — delegates quota to TransactionQuotaService (no inline quota logic) ✅
 │   │           │   ├── banking.service.spec.ts     # 4 tests: probe/duplicate/quota-block/happy-path ✅
-│   │           │   ├── banking.module.ts           # imports RedisModule, provides CasWebhookHandler ✅
+│   │           │   ├── banking.module.ts           # imports RedisModule + BillingModule (TransactionQuotaService), provides CasWebhookHandler ✅
 │   │           │   ├── cas-webhook.handler.ts      # CasWebhookHandler: verifySignature() + parsePayload() — adapter concerns ✅
 │   │           │   ├── cas-webhook.handler.spec.ts # 4 tests: probe/parse/optional-fields/skip-verify ✅
 │   │           │   ├── webhook.controller.ts       # HTTP intake layer → dispatches to CasWebhookHandler + BankingService ✅
@@ -489,6 +491,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 │   │           │   ├── billing.controller.ts  # + POST /billing/upgrade, /upgrade/:orderCode/mock-confirm
 │   │           │   ├── billing.service.ts      # + upgrade(), confirmPayment()
 │   │           │   ├── billing.module.ts
+│   │           │   ├── transaction-quota.service.ts  # TransactionQuotaService — quota check + increment + overage log + notification (used by BankingService + ImportService) ✅
 │   │           │   ├── payos.service.ts        # PayOS v2 SDK wrapper, mock fallback
 │   │           │   ├── payos-webhook.controller.ts  # POST /webhook/payos-billing
 │   │           │   └── dto/upgrade-billing.dto.ts

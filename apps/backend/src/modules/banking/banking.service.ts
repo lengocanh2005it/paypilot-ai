@@ -1,20 +1,13 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import { Prisma, SubscriptionPlan, TransactionDirection, TransactionSource } from '@prisma/client';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma, TransactionDirection, TransactionSource } from '@prisma/client';
 import type { Queue } from 'bullmq';
-import { isOveragePlan } from '../../common/constants/quota-policy';
-import { QuotaNotificationService } from '../../common/services/quota-notification.service';
 import { createAuditLog } from '../../common/util/audit-log.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WEBHOOK_QUEUE } from '../../queue/queue.module';
 import { RedisService } from '../../redis/redis.service';
 import { AI_CLASSIFY_JOB } from '../ai/classification.constants';
+import { TransactionQuotaService } from '../billing/transaction-quota.service';
 import type { CasWebhookPayload } from './cas-webhook.handler';
 
 export interface CasWebhookResult {
@@ -36,7 +29,7 @@ export class BankingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
-    private readonly quotaNotificationService: QuotaNotificationService,
+    private readonly transactionQuotaService: TransactionQuotaService,
     @InjectQueue(WEBHOOK_QUEUE) private readonly webhookQueue: Queue,
   ) {}
 
@@ -94,11 +87,11 @@ export class BankingService {
         throw new NotFoundException('Không tìm thấy subscription active cho tenant');
       }
 
-      const isOverQuota = subscription.transactionUsedThisCycle >= subscription.transactionQuota;
-
-      if (isOverQuota && subscription.plan === SubscriptionPlan.free) {
-        throw new ForbiddenException('Đã hết quota tháng này. Vui lòng nâng cấp gói.');
-      }
+      const { oldUsed } = await this.transactionQuotaService.incrementUsage(
+        tx as any,
+        subscription,
+        grant.tenantId,
+      );
 
       const transaction = await tx.transaction.create({
         data: {
@@ -116,24 +109,6 @@ export class BankingService {
         },
       });
 
-      await tx.subscription.update({
-        where: { id: subscription.id },
-        data: {
-          transactionUsedThisCycle: { increment: 1 },
-        },
-      });
-
-      // Chỉ log overage cho Starter/Pro — Free bị chặn ở trên, Enterprise không tính phí vượt
-      if (isOverQuota && isOveragePlan(subscription.plan)) {
-        await tx.usageLog.create({
-          data: {
-            tenantId: grant.tenantId,
-            metric: 'overage_transaction',
-            value: new Prisma.Decimal(1),
-          },
-        });
-      }
-
       await createAuditLog(tx, {
         tenantId: grant.tenantId,
         entityType: 'transaction',
@@ -147,25 +122,25 @@ export class BankingService {
         },
       });
 
-      return { transaction, subscription };
+      return { transaction, subscription, oldUsed };
     });
 
-    const { transaction: savedTx, subscription: currentSubscription } = saved;
+    const { transaction: savedTx, subscription: currentSubscription, oldUsed } = saved;
 
     await this.webhookQueue.add(AI_CLASSIFY_JOB, { transactionDbId: savedTx.id });
 
-    void this.quotaNotificationService
-      .checkAndNotify({
-        tenantId: grant.tenantId,
-        oldUsed: currentSubscription.transactionUsedThisCycle - 1,
-        quota: currentSubscription.transactionQuota,
-        plan: currentSubscription.plan,
-        overagePricePerTransaction: currentSubscription.overagePricePerTransaction
-          ? Number(currentSubscription.overagePricePerTransaction)
-          : null,
-        cycleStart: currentSubscription.currentCycleStart,
-        added: 1,
-      })
+    void this.transactionQuotaService
+      .notifyAfterBatch(
+        {
+          transactionUsedThisCycle: oldUsed,
+          transactionQuota: currentSubscription.transactionQuota,
+          plan: currentSubscription.plan,
+          overagePricePerTransaction: currentSubscription.overagePricePerTransaction,
+          currentCycleStart: currentSubscription.currentCycleStart,
+        },
+        grant.tenantId,
+        1,
+      )
       .catch((err: unknown) =>
         this.logger.warn(`Quota notification failed for tenant ${grant.tenantId}`, err),
       );

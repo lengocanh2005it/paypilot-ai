@@ -1,11 +1,11 @@
 import { getQueueToken } from '@nestjs/bullmq';
-import { ForbiddenException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SubscriptionPlan, TransactionStatus } from '@prisma/client';
-import { QuotaNotificationService } from '../../common/services/quota-notification.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WEBHOOK_QUEUE } from '../../queue/queue.module';
 import { RedisService } from '../../redis/redis.service';
+import { TransactionQuotaService } from '../billing/transaction-quota.service';
 import { BankingService } from './banking.service';
 import type { CasWebhookPayload } from './cas-webhook.handler';
 import { CasWebhookHandler } from './cas-webhook.handler';
@@ -21,12 +21,8 @@ describe('BankingService', () => {
     casGrant: {
       findUnique: jest.fn(),
     },
-    subscription: {
-      findFirst: jest.fn(),
-    },
     transaction: {
       findUnique: jest.fn(),
-      create: jest.fn(),
     },
     $transaction: jest.fn(),
   };
@@ -62,8 +58,9 @@ describe('BankingService', () => {
     add: jest.fn().mockResolvedValue(undefined),
   };
 
-  const quotaNotificationService = {
-    checkAndNotify: jest.fn().mockResolvedValue(undefined),
+  const transactionQuotaService = {
+    incrementUsage: jest.fn().mockResolvedValue({ oldUsed: 10 }),
+    notifyAfterBatch: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -76,7 +73,7 @@ describe('BankingService', () => {
         { provide: RedisService, useValue: redisClient },
         { provide: CasWebhookHandler, useValue: webhookHandler },
         { provide: getQueueToken(WEBHOOK_QUEUE), useValue: webhookQueue },
-        { provide: QuotaNotificationService, useValue: quotaNotificationService },
+        { provide: TransactionQuotaService, useValue: transactionQuotaService },
       ],
     }).compile();
 
@@ -99,7 +96,7 @@ describe('BankingService', () => {
     expect(prisma.casGrant.findUnique).not.toHaveBeenCalled();
   });
 
-  it('blocks free plan when quota is exceeded', async () => {
+  it('throws when no active subscription found', async () => {
     redisClient.set.mockResolvedValue('OK');
     prisma.casGrant.findUnique.mockResolvedValue({
       grantId: 'grant-1',
@@ -109,37 +106,23 @@ describe('BankingService', () => {
     prisma.$transaction.mockImplementation(async (callback) =>
       callback({
         subscription: {
-          findFirst: jest.fn().mockResolvedValue({
-            id: 'sub-1',
-            tenantId: 'tenant-1',
-            plan: SubscriptionPlan.free,
-            transactionQuota: 100,
-            transactionUsedThisCycle: 100,
-          }),
-        },
-        transaction: {
-          create: jest.fn(),
-        },
-        subscriptionUpdate: {
-          update: jest.fn(),
+          findFirst: jest.fn().mockResolvedValue(null),
         },
       }),
     );
 
-    await expect(service.handleCasWebhook(parsedPayload)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(service.handleCasWebhook(parsedPayload)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('saves transaction and increments usage on happy path', async () => {
+  it('delegates quota increment to TransactionQuotaService', async () => {
     redisClient.set.mockResolvedValue('OK');
     prisma.casGrant.findUnique.mockResolvedValue({
       grantId: 'grant-1',
       tenantId: 'tenant-1',
     });
     prisma.transaction.findUnique.mockResolvedValue(null);
-    prisma.$transaction.mockImplementation(async (callback) =>
-      callback({
+    prisma.$transaction.mockImplementation(async (callback) => {
+      const tx = {
         subscription: {
           findFirst: jest.fn().mockResolvedValue({
             id: 'sub-1',
@@ -147,8 +130,9 @@ describe('BankingService', () => {
             plan: SubscriptionPlan.free,
             transactionQuota: 100,
             transactionUsedThisCycle: 10,
+            overagePricePerTransaction: null,
+            currentCycleStart: new Date(),
           }),
-          update: jest.fn().mockResolvedValue({}),
         },
         transaction: {
           create: jest.fn().mockResolvedValue({
@@ -157,14 +141,10 @@ describe('BankingService', () => {
             status: TransactionStatus.pending,
           }),
         },
-        usageLog: {
-          create: jest.fn(),
-        },
-        auditLog: {
-          create: jest.fn(),
-        },
-      }),
-    );
+        auditLog: { create: jest.fn() },
+      };
+      return callback(tx);
+    });
 
     const result = await service.handleCasWebhook(parsedPayload);
 
@@ -174,7 +154,8 @@ describe('BankingService', () => {
       tenantId: 'tenant-1',
       status: TransactionStatus.pending,
     });
-    expect(redisClient.set).toHaveBeenCalledWith('webhook:cas:txn:txn-1', '1', 'EX', 86400, 'NX');
+    expect(transactionQuotaService.incrementUsage).toHaveBeenCalledTimes(1);
+    expect(transactionQuotaService.notifyAfterBatch).toHaveBeenCalledTimes(1);
     expect(webhookQueue.add).toHaveBeenCalledWith('ai-classify', { transactionDbId: 'db-txn-1' });
   });
 });

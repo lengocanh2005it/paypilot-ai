@@ -94,6 +94,48 @@ export class TransactionQuotaService {
   }
 
   /**
+   * Increment quota usage for a single transaction inside a Prisma transaction (tx).
+   * Returns { overageLogged, oldUsed } so caller can fire notification with correct oldUsed.
+   */
+  async incrementUsage(
+    tx: Omit<
+      PrismaService,
+      '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+    >,
+    subscription: {
+      id: string;
+      transactionUsedThisCycle: number;
+      transactionQuota: number;
+      plan: SubscriptionPlan;
+      overagePricePerTransaction: Prisma.Decimal | null;
+      currentCycleStart: Date;
+    },
+    tenantId: string,
+  ): Promise<{ oldUsed: number }> {
+    const oldUsed = subscription.transactionUsedThisCycle;
+
+    await tx.subscription.update({
+      where: { id: subscription.id },
+      data: { transactionUsedThisCycle: { increment: 1 } },
+    });
+
+    if (isOveragePlan(subscription.plan)) {
+      const overCount = Math.max(0, oldUsed + 1 - subscription.transactionQuota);
+      if (overCount > 0) {
+        await tx.usageLog.create({
+          data: {
+            tenantId,
+            metric: 'overage_transaction',
+            value: new Prisma.Decimal(overCount),
+          },
+        });
+      }
+    }
+
+    return { oldUsed };
+  }
+
+  /**
    * Fire quota notifications after a batch import.
    * Non-blocking: errors are logged but not thrown.
    */
