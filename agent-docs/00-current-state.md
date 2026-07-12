@@ -2,7 +2,7 @@
 
 > Mục đích: cho biết **chính xác** cái gì đã tồn tại trong repo ngay lúc này, để agent không cần `find`/`grep`/`ls` lại từ đầu mỗi session mới. File này phải được cập nhật mỗi khi có thay đổi cấu trúc đáng kể (thêm module, thêm page, đổi dependency lớn, thêm service hạ tầng). Nếu file này và thực tế code lệch nhau, **tin thực tế code**, và sửa lại file này ngay sau đó.
 
-Cập nhật lần cuối: **Unified quota management** — BankingService no longer reimplements quota check + increment + overage logging inline; delegates to `TransactionQuotaService.incrementUsage()` + `notifyAfterBatch()`. Eliminated ~60 lines of duplicated quota policy code. BankingModule imports BillingModule. `pnpm verify` pass 11/11, 35 suites, 237 tests.
+Cập nhật lần cuối: **Frontend paginated list + useCopilotPage decomposition** — Created `PaginatedListView` shared component (loading/error/empty/dual-layout/pagination in one wrapper). Decomposed `useCopilotPage` (248L, 27 return values) into 3 focused sub-hooks: `useCopilotConversationManager` (conversation lifecycle + state), `useCopilotScroll` (scroll refs + intersection observer + scroll position preservation), `useCopilotSidebar` (sidebar/collapsed UI state). `useCopilotPage` is now a thin orchestrator composing these three. `pnpm verify` pass 11/11, 40 suites, 280 tests.
 
 Trước đó — **CopilotStreamService god-object decomposition** — extracted `CopilotConversationSetupService` (conversation + context + user message setup) and `CopilotQuotaManager` (quota increment + plan lookup + notification dispatch) from `CopilotStreamService`; slimmed stream service deps from 12→10; deleted dead code `copilot-tool.service.ts` + `copilot-agent.service.ts`; guard's `subMeta` extended to `{ id, copilotQuota }`; `CopilotQuotaManager` registered in `@Global()` `CommonServicesModule`. `pnpm verify` pass 11/11, 35 suites, 237 tests.
 
@@ -562,6 +562,9 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   ├── useCopilotConversations.ts  # infinite query sidebar (cursor, staleTime 30s) + refreshListAfterChat + quota optimistic ✅
 │           │   ├── useCopilotHistoryPage.ts    # offset pagination cho Settings CopilotHistoryTab ✅
 │           │   ├── useCopilotChat.ts           # extracted send/stream/stop logic from CopilotPage ✅
+│           │   ├── useCopilotConversationManager.ts  # conversation lifecycle: load/select/delete/persist messages ✅
+│           │   ├── useCopilotScroll.ts         # scroll refs, intersection observer, scroll-position preservation ✅
+│           │   ├── useCopilotSidebar.ts        # sidebar open + history collapsed state ✅
 │           │   └── useNotifications.ts, useDebouncedValue
 │           ├── components/
 │           │   ├── copilot/
@@ -591,6 +594,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   │   ├── UserAvatar.tsx          # User avatar component ✅
 │           │   │   ├── ErrorBoundary.tsx       # React error boundary ✅
 │           │   │   ├── PaginationBar.tsx       # Shared prev/next pagination + page number ✅
+│           │   │   ├── PaginatedListView.tsx   # Generic 3-state wrapper (loading/error/empty + dual mobile/desktop layout + pagination) ✅
 │           │   │   ├── StatCard.tsx            # Unified stat card (DashboardStatCard + SummaryCard merged) ✅
 │           │   │   ├── SummaryCard.tsx         # Re-exports StatCard for compat ✅
 │           │   │   └── DashboardStatCard.tsx   # Re-exports StatCard for compat ✅
@@ -604,7 +608,7 @@ paypilot-ai/                                   ← tên folder local có thể k
 │           │   ├── review/ReviewPage.tsx      # Human Review queue (confirm/correct/skip) + SwipeableReviewCard mobile ✅
 │           │   ├── reports/ReportsPage.tsx    # Báo cáo tháng + export Excel ✅
 │           │   ├── analytics/AnalyticsPage.tsx # So sánh tháng, BarChart thu/chi, top 5 danh mục ✅
-│           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat — 2-column layout (sidebar+chat), mobile Sheet, localStorage persistence, history from DB, infinite scroll, stop button (Phase 4+5); ~440 lines after hook extraction ✅
+│           │   ├── copilot/CopilotPage.tsx    # AI Copilot chat — thin orchestrator composing useCopilotPage (which composes 3 sub-hooks) ✅
 │           │   ├── settings/SettingsPage.tsx  # Tabs: Banking/Threshold/Notifications/Team/Nhật ký/Billing/Lịch sử Copilot ✅
 │           │   ├── settings/CopilotHistoryTab.tsx  # Phase 7 — bảng lịch sử Copilot trong Settings ✅
 │           │   ├── settings/tabs/billing/
