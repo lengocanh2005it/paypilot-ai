@@ -16,6 +16,7 @@ import { CopilotConversationService } from './copilot-conversation.service';
 import { CopilotConversationSetupService } from './copilot-conversation-setup.service';
 import { CopilotKnowledgeService } from './copilot-knowledge.service';
 import { CopilotStreamService } from './copilot-stream.service';
+import { CopilotToolDepsProvider } from './copilot-tool-deps.provider';
 import { CopilotTransactionQueryService } from './copilot-tx-query.service';
 
 @Module({
@@ -36,6 +37,7 @@ import { CopilotTransactionQueryService } from './copilot-tx-query.service';
     CopilotConversationSetupService,
     CopilotKnowledgeService,
     CopilotStreamService,
+    CopilotToolDepsProvider,
     CopilotTransactionQueryService,
     PlanGuard,
     CopilotQuotaGuard,
